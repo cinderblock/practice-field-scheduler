@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import express from "express";
+import { setupWebSocketServer } from "./websocket.js";
 
 // Constants
 const isProduction = process.env.NODE_ENV === "production";
@@ -65,6 +66,12 @@ app.use("*all", async (req, res) => {
 });
 
 // Start http server
-app.listen(port, () => {
+const httpServer = app.listen(port, (err) => {
+  if (err) {
+    console.error(err);
+    process.exit(1);
+    return;
+  }
   console.log(`Server started at http://localhost:${port}`);
+  setupWebSocketServer(httpServer);
 });

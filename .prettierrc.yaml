@@ -1,0 +1,4 @@
+# Prettier configuration
+printWidth: 120
+arrowParens: avoid
+trailingComma: all

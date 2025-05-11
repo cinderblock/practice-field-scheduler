@@ -1,6 +1,15 @@
-import fs from "node:fs/promises";
+/**
+ * This is the main entry point for the backend.
+ * It does two things:
+ * 1. Starts an HTTP server to serve and SSR files
+ * 2. Sets up a WebSocket server to handle all updates
+ */
+
+import { readFile } from "node:fs/promises";
 import express from "express";
 import { setupWebSocketServer } from "./websocket.js";
+import { exit } from "./util/exit.js";
+import { ViteDevServer } from "vite";
 
 // Constants
 const isProduction = process.env.NODE_ENV === "production";
@@ -8,16 +17,13 @@ const port = process.env.PORT || 5173;
 const base = process.env.BASE || "/";
 
 // Cached production assets
-const templateHtml = isProduction
-  ? await fs.readFile("./dist/client/index.html", "utf-8")
-  : "";
+const templateHtml = isProduction ? await readFile("./dist/client/index.html", "utf-8") : "";
 
 // Create http server
 const app = express();
 
 // Add Vite or respective production middlewares
-/** @type {import('vite').ViteDevServer | undefined} */
-let vite;
+let vite: ViteDevServer;
 if (!isProduction) {
   const { createServer } = await import("vite");
   vite = await createServer({
@@ -43,7 +49,7 @@ app.use("*all", async (req, res) => {
     let render;
     if (!isProduction) {
       // Always read fresh template in development
-      template = await fs.readFile("./index.html", "utf-8");
+      template = await readFile("./index.html", "utf-8");
       template = await vite.transformIndexHtml(url, template);
       render = (await vite.ssrLoadModule("/src/entry-server.jsx")).render;
     } else {
@@ -66,10 +72,10 @@ app.use("*all", async (req, res) => {
 });
 
 // Start http server
-const httpServer = app.listen(port, (err) => {
+const httpServer = app.listen(port, err => {
   if (err) {
     console.error(err);
-    process.exit(1);
+    exit(1);
     return;
   }
   console.log(`Server started at http://localhost:${port}`);

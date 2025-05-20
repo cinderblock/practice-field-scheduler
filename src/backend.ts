@@ -2,8 +2,9 @@
  * This file handles the connection to the backend and provides a way to send and receive messages.
  */
 
-import { useCallback, useEffect, useState, type DependencyList } from "react";
+import { useCallback, useState, type DependencyList } from "react";
 import type { Reservation, SiteEvent, Blackout, AddReservationArgs, RemoveReservationArgs } from "../types";
+import { ListenerManager } from "./util/ListenerManager";
 
 const url = new URL(window.location.href);
 url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
@@ -62,18 +63,7 @@ const storage: Storage = {
   blackouts: [],
 };
 
-const updateListeners: ((storage: Storage) => void)[] = [];
-function addUpdateListener(listener: (storage: Storage) => void) {
-  if (updateListeners.length === 0) attachGlobalHandler();
-
-  updateListeners.push(listener);
-  return () => {
-    const index = updateListeners.indexOf(listener);
-    if (index !== -1) updateListeners.splice(index, 1);
-
-    if (updateListeners.length === 0) detachGlobalHandler();
-  };
-}
+const update = new ListenerManager<Storage>(attachGlobalHandler, detachGlobalHandler);
 
 function wsMessageHandler(event: MessageEvent<string>) {
   const message = event.data;
@@ -100,7 +90,7 @@ function parseMessage(message: string) {
     return;
   }
 
-  for (const listener of updateListeners) listener(storage);
+  update.notify(storage);
 }
 
 function updateReservation(reservation: Reservation) {
@@ -131,9 +121,7 @@ export function useBackend<T>(selector: Selector<T>, deps: DependencyList = []):
   // We don't add the selector to the dependency array because it gets recreated on every render
   // We could call useCallback where useBackend is called, but why repeat that everywhere?
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const listener = useCallback((storage: Storage) => setData(selector(storage)), [setData, ...deps]);
-
-  useEffect(() => addUpdateListener(listener), [listener]);
+  update.addListener(useCallback((storage: Storage) => setData(selector(storage)), deps));
 
   return data;
 }

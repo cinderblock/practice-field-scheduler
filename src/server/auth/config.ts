@@ -36,21 +36,37 @@ export const authConfig = {
 		}),
 		/**
 		 * ...add more providers here.
-     *
-     * Most other providers require a bit more work than the Discord provider. For example, the
-     * GitHub provider requires you to add the `refresh_token_expires_in` field to the Account
-     * model. Refer to the NextAuth.js docs for the provider you want to use. Example:
-     *
-     * @see https://next-auth.js.org/providers/github
-     */
-  ],
-  callbacks: {
-    session: ({ session, token }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: token.sub,
-      },
-    }),
-  },
+		 *
+		 * Most other providers require a bit more work than the Discord provider. For example, the
+		 * GitHub provider requires you to add the `refresh_token_expires_in` field to the Account
+		 * model. Refer to the NextAuth.js docs for the provider you want to use. Example:
+		 *
+		 * @see https://next-auth.js.org/providers/github
+		 */
+	],
+	callbacks: {
+		session: ({ session, token }) => ({
+			...session,
+			user: {
+				...session.user,
+				id: token.sub,
+			},
+		}),
+	},
+	// debug: true,
+	trustHost: true,
+	session: {
+		strategy: "jwt",
+	},
+	cookies: {
+		sessionToken: {
+			name: "next-auth.session-token",
+			options: {
+				httpOnly: true,
+				sameSite: "lax",
+				path: "/",
+				secure: process.env.NODE_ENV === "production",
+			},
+		},
+	},
 } satisfies NextAuthConfig;

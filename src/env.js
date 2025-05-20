@@ -11,7 +11,6 @@ export const env = createEnv({
 			process.env.NODE_ENV === "production"
 				? z.string()
 				: z.string().optional(),
-		AUTH_SLACK_ID: z.string(),
 		AUTH_SLACK_CLIENT_ID: z.string(),
 		AUTH_SLACK_CLIENT_SECRET: z.string(),
 		AUTH_SLACK_SIGNING_SECRET: z.string().optional(),
@@ -35,7 +34,6 @@ export const env = createEnv({
 	 */
 	runtimeEnv: {
 		AUTH_SECRET: process.env.AUTH_SECRET,
-		AUTH_SLACK_ID: process.env.AUTH_SLACK_ID,
 		AUTH_SLACK_CLIENT_ID: process.env.AUTH_SLACK_CLIENT_ID,
 		AUTH_SLACK_CLIENT_SECRET: process.env.AUTH_SLACK_CLIENT_SECRET,
 		AUTH_SLACK_SIGNING_SECRET: process.env.AUTH_SLACK_SIGNING_SECRET,

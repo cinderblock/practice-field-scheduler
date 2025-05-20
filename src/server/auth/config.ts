@@ -1,5 +1,6 @@
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import SlackProvider from "next-auth/providers/slack";
+import { env } from "../../env.js";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -28,13 +29,13 @@ declare module "next-auth" {
  * @see https://next-auth.js.org/configuration/options
  */
 export const authConfig = {
-  providers: [
-    SlackProvider({
-      clientId: process.env.AUTH_SLACK_CLIENT_ID,
-      clientSecret: process.env.AUTH_SLACK_CLIENT_SECRET,
-    }),
-    /**
-     * ...add more providers here.
+	providers: [
+		SlackProvider({
+			clientId: env.AUTH_SLACK_CLIENT_ID,
+			clientSecret: env.AUTH_SLACK_CLIENT_SECRET,
+		}),
+		/**
+		 * ...add more providers here.
      *
      * Most other providers require a bit more work than the Discord provider. For example, the
      * GitHub provider requires you to add the `refresh_token_expires_in` field to the Account

@@ -1,5 +1,6 @@
 import Link from "next/link";
-
+import { headers } from "next/headers";
+import { Context } from "~/server/backend";
 import { LatestPost } from "~/app/_components/post";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
 import { auth } from "~/server/auth";
@@ -33,6 +34,35 @@ function toLocalDateString(date: Date) {
 }
 
 async function LoggedIn({ session }: { session: Session }) {
+  const headersList = await headers();
+  const userAgent = headersList.get("user-agent") ?? "";
+  const forwardedFor = headersList.get("x-forwarded-for");
+  const ip =
+    (forwardedFor
+      ? forwardedFor.split(",")[0]
+      : headersList.get("x-real-ip")) ?? "unknown";
+
+  // Get reservations directly from server
+  const today = new Date();
+  const before = 1;
+  const after = 8;
+
+  // List of dates to grab data from the backend for SSR
+  const dates = Array.from({ length: after + before }, (_, i) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i - before);
+    return toLocalDateString(date);
+  });
+
+  const ctx = new Context(session, userAgent, ip);
+
+  const reservationsByDate = await Promise.all(
+    dates.map(async (date) => ({
+      date,
+      reservations: await ctx.listReservations(date),
+    }))
+  );
+
   return (
     <div className={styles.reservationCalendar}>
       <div className={styles.showcaseText + " " + styles.showcaseRow}>
@@ -41,7 +71,7 @@ async function LoggedIn({ session }: { session: Session }) {
           Sign out
         </Link>
       </div>
-      <ReservationCalendar />
+      <ReservationCalendar initialReservations={reservationsByDate} />
     </div>
   );
 }
@@ -66,14 +96,14 @@ async function oldBody({ session }: { session: Session }) {
           className={styles.card}
           href="https://create.t3.gg/en/usage/first-steps"
           target="_blank"
-						>
-							<h3 className={styles.cardTitle}>First Steps →</h3>
-							<div className={styles.cardText}>
-								Just the basics - Everything you need to know to set up your
-								database and authentication.
-							</div>
-						</Link>
-						<Link
+        >
+          <h3 className={styles.cardTitle}>First Steps →</h3>
+          <div className={styles.cardText}>
+            Just the basics - Everything you need to know to set up your
+            database and authentication.
+          </div>
+        </Link>
+        <Link
           className={styles.card}
           href="https://create.t3.gg/en/introduction"
           target="_blank"

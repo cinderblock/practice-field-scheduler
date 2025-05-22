@@ -2,16 +2,24 @@
 
 import styles from "../index.module.css";
 import { useInterval } from "./useInterval";
+import { api } from "~/trpc/react";
+import { useState } from "react";
+import type { Reservation } from "~/types";
 
 const TimeSlotBorders = [-2, 1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
 const TimeZone = "America/Los_Angeles";
 
+type InitialReservations = {
+  date: string;
+  reservations: Reservation[];
+}[];
+
 function pluralize(count: number, singular = "", plural = `${singular}s`) {
   return count === 1 ? singular : plural;
 }
 
-export function ReservationCalendar() {
+export function ReservationCalendar({ initialReservations }: { initialReservations: InitialReservations }) {
   const start = useInterval(() => {
     const now = new Date();
 
@@ -33,7 +41,7 @@ export function ReservationCalendar() {
     TimeZoneAlert() ?? (
       <>
         <div className={styles.calendarGrid}>
-          <Days start={new Date(start)} days={ReservationDays + 1} />
+          <Days start={new Date(start)} days={ReservationDays + 1} initialReservations={initialReservations} />
         </div>
         <p>
           We only allow reservations for the next {daysText}.
@@ -66,7 +74,7 @@ function TimeZoneAlert() {
   );
 }
 
-function Days({ start, days }: { start: Date; days: number }) {
+function Days({ start, days, initialReservations }: { start: Date; days: number; initialReservations: InitialReservations }) {
   const dates = Array.from({ length: days }, (_, i) => {
     const date = new Date(start);
     date.setDate(start.getDate() + i);
@@ -77,14 +85,14 @@ function Days({ start, days }: { start: Date; days: number }) {
     <>
       {dates.map((date) => (
         <div key={date.getTime()} className={styles.calendarDay}>
-          <Day date={date} />
+          <Day date={date} initialReservations={initialReservations} />
         </div>
       ))}
     </>
   );
 }
 
-function Day({ date }: { date: Date }) {
+function Day({ date, initialReservations }: { date: Date; initialReservations: InitialReservations }) {
   const dateString = date.toISOString().slice(0, 10);
   const dayString = date.toLocaleDateString(undefined, { weekday: "long" });
 
@@ -127,7 +135,7 @@ function Day({ date }: { date: Date }) {
           start.setHours(12 + a[index]!, 0, 0, 0);
           end.setHours(12 + a[index + 1]!, 0, 0, 0);
 
-          return <TimeSlot key={index} start={start} end={end} index={index} />;
+          return <TimeSlot key={index} start={start} end={end} index={index} initialReservations={initialReservations} />;
         })}
       </div>
     </div>
@@ -142,11 +150,31 @@ function dateToTime(date: Date) {
     .replace(" ", "\u00A0");
 }
 
-function TimeSlot({ start, end }: { start: Date; end: Date; index: number }) {
-  // Example reservations for demonstration
-  //   const reservations = [predictableGenerator(), predictableGenerator()];
-  const reservations = ["1", "2"];
+function TimeSlot({ start, end, initialReservations }: { start: Date; end: Date; index: number; initialReservations: InitialReservations }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const utils = api.useUtils();
+  
+  const dateStr = start.toISOString().split('T')[0]!;
+  const initialData = initialReservations.find(r => r.date === dateStr)?.reservations ?? [];
+  
+  const { data: reservations = initialData } = api.reservation.list.useQuery({
+    date: dateStr,
+  }, {
+    initialData,
+  });
 
+  const addReservation = api.reservation.add.useMutation({
+    onSuccess: () => {
+      utils.reservation.list.invalidate();
+      setIsAdding(false);
+    },
+  });
+
+  const removeReservation = api.reservation.remove.useMutation({
+    onSuccess: () => {
+      utils.reservation.list.invalidate();
+    },
+  });
 
   const hasStarted = useInterval(() => new Date() >= start, 1000, [start]);
   const hasEnded = useInterval(() => new Date() >= end, 1000, [end]);
@@ -163,13 +191,37 @@ function TimeSlot({ start, end }: { start: Date; end: Date; index: number }) {
         {dateToTime(start)} - {dateToTime(end)}
       </div>
       <div className={styles.reservationStack}>
-        {reservations.map((r, i) => (
+        {reservations.map((r: Reservation, i: number) => (
           <div key={i} className={styles.reservationPill}>
-            {r}
+            {r.team}
+            <button
+              onClick={() => removeReservation.mutate({
+                date: dateStr,
+                slot:  dateToTime(start),
+                team: r.team,
+                notes: r.notes ?? "",
+                priority: r.priority,
+              })}
+              className={styles.removeReservationBtn}
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>
-      <button className={styles.addReservationBtn}>+</button>
+      {!hasEnded && (
+        <button 
+          className={styles.addReservationBtn}
+          onClick={() => setIsAdding(true)}
+        >
+          +
+        </button>
+      )}
+      {isAdding && (
+        <div className={styles.addReservationModal}>
+          {/* TODO: Add form for new reservation */}
+        </div>
+      )}
     </div>
   );
 }

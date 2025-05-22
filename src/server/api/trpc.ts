@@ -90,12 +90,15 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 		await new Promise((resolve) => setTimeout(resolve, waitMs));
 	}
 
-	const result = await next();
+  const result = await next();
 
-	const end = Date.now();
-	console.log(`[TRPC] ${path} took ${end - start}ms to execute`);
+  const end = Date.now();
+  if (end - start > 100) {
+    // Only log slow requests
+    console.log(`[TRPC] ${path} took ${end - start}ms to execute`);
+  }
 
-	return result;
+  return result;
 });
 
 /**

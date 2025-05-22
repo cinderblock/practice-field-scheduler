@@ -15,13 +15,34 @@ export default async function Home() {
       <main className={styles.main}>
         <div className={styles.container}>
           <h1 className={styles.title}>Practice Field Scheduler</h1>
-          <div className={styles.reservationCalendar}>
-            {session && <LoggedInText session={session} />}
-            {session ? <ReservationCalendar /> : <LoginButton />}
-          </div>
+          {session ? <LoggedIn session={session} /> : <LoginButton />}
         </div>
       </main>
     </HydrateClient>
+  );
+}
+
+function toLocalDateString(date: Date) {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const yyyy = y.toString().padStart(4, "0");
+  const mm = m.toString().padStart(2, "0");
+  const dd = d.toString().padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+async function LoggedIn({ session }: { session: Session }) {
+  return (
+    <div className={styles.reservationCalendar}>
+      <div className={styles.showcaseText + " " + styles.showcaseRow}>
+        <span>Logged in as {session.user?.name}</span>
+        <Link href="/api/auth/signout" className={styles.logoutButtonSmall}>
+          Sign out
+        </Link>
+      </div>
+      <ReservationCalendar />
+    </div>
   );
 }
 
@@ -33,22 +54,6 @@ function LoginButton() {
         Sign in
       </Link>
     </>
-  );
-}
-
-function LogoutButton() {
-  return (
-    <Link href="/api/auth/signout" className={styles.logoutButtonSmall}>
-      Sign out
-    </Link>
-  );
-}
-function LoggedInText({ session }: { session: Session }) {
-  return (
-    <div className={styles.showcaseText + " " + styles.showcaseRow}>
-      <span>Logged in as {session.user?.name}</span>
-      <LogoutButton />
-    </div>
   );
 }
 

@@ -392,38 +392,45 @@ function TimeSlot({
 								{dateToTime(start)} - {dateToTime(end)}
 							</span>
 						</div>
-						<div className={styles.formGroup}>
-							<label className={styles.checkboxLabel}>
+						<form
+							onSubmit={e => {
+								e.preventDefault();
+								handleAddReservation();
+							}}
+						>
+							<div className={styles.formGroup}>
+								<label className={styles.checkboxLabel}>
+									<input
+										type="checkbox"
+										checked={priority}
+										onChange={e => setPriority(e.target.checked)}
+										className={styles.hiddenCheckbox}
+									/>
+									<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
+									<span className={styles.checkboxText}>Prioritize</span>
+								</label>
+							</div>
+							<div className={styles.formGroup}>
 								<input
-									type="checkbox"
-									checked={priority}
-									onChange={e => setPriority(e.target.checked)}
-									className={styles.hiddenCheckbox}
+									type="text"
+									id="teamNumber"
+									value={teamNumber}
+									onChange={e => {
+										setTeamNumber(e.target.value);
+										setTempTeamNumber(e.target.value);
+									}}
+									placeholder="Enter team number"
 								/>
-								<span className={styles.checkboxEmoji}>{priority ? "✔️" : "✖️"}</span>
-								<span className={styles.checkboxText}>Prioritize</span>
-							</label>
-						</div>
-						<div className={styles.formGroup}>
-							<input
-								type="text"
-								id="teamNumber"
-								value={teamNumber}
-								onChange={e => {
-									setTeamNumber(e.target.value);
-									setTempTeamNumber(e.target.value);
-								}}
-								placeholder="Enter team number"
-							/>
-						</div>
-						<div className={styles.modalActions}>
-							<button type="button" onClick={handleAddReservation} disabled={!teamNumber}>
-								Add
-							</button>
-							<button type="button" onClick={handleCancelAdd}>
-								Cancel
-							</button>
-						</div>
+							</div>
+							<div className={styles.modalActions}>
+								<button type="submit" disabled={!teamNumber}>
+									Add
+								</button>
+								<button type="button" onClick={handleCancelAdd}>
+									Cancel
+								</button>
+							</div>
+						</form>
 					</div>
 				</div>
 			)}

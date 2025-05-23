@@ -228,10 +228,13 @@ function TimeSlot({
 						id: "temp-id",
 						created: new Date(),
 						userId: "temp-user",
-						priority: false,
+						priority: newReservation.priority, // Include the priority in the optimistic update
 					},
 				];
 			});
+
+			// Clear the temporary team number after the optimistic update
+			setTempTeamNumber(null);
 
 			return { previousData };
 		},
@@ -245,14 +248,14 @@ function TimeSlot({
 			});
 			setIsAdding(false);
 			setTeamNumber("");
-			setTempTeamNumber(null);
 		},
 		onError: (err, newReservation, context) => {
 			// Rollback on error
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date: dateStr }, context.previousData);
 			}
-			setTempTeamNumber(null);
+			// Restore the temporary team number on error
+			setTempTeamNumber(newReservation.team);
 		},
 		onSettled: () => {
 			// Don't refetch
@@ -311,7 +314,7 @@ function TimeSlot({
 
 	const handleAddReservation = () => {
 		if (!teamNumber) return;
-		setTempTeamNumber(null); // Clear the temporary pill before showing optimistic update
+		// Don't clear tempTeamNumber here - let the optimistic update handle it
 		addReservation.mutate({
 			date: dateStr,
 			slot: slotStr,

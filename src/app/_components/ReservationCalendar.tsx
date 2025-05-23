@@ -167,12 +167,30 @@ function TimeSlot({
 }) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [teamNumber, setTeamNumber] = useState("");
+	const [priority, setPriority] = useState(false);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
 	const utils = api.useUtils();
 
 	const dateStr = dateToDateString(start);
 	const slotStr = dateToTime(start);
+	const dayString = start.toLocaleDateString(undefined, { weekday: "long" });
+
+	// Calculate days difference
+	const today = useInterval(() => {
+		const now = new Date();
+		now.setHours(0, 0, 0, 0);
+		return now.getTime();
+	}, 1000);
+
+	const diffDays = Math.round((start.getTime() - today) / (1000 * 60 * 60 * 24));
+	let dayLabel = "";
+	if (diffDays === 0) dayLabel = "(today)";
+	else if (diffDays === 1) dayLabel = "(tomorrow)";
+	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
+
+	const isWeekend = start.getDay() === 0 || start.getDay() === 6;
+
 	const initialData = initialReservations.find(r => r.date === dateStr)?.reservations ?? [];
 
 	const { data: reservations = initialData } = api.reservation.list.useQuery(
@@ -299,18 +317,20 @@ function TimeSlot({
 			slot: slotStr,
 			team: teamNumber,
 			notes: "",
-			priority: false,
+			priority,
 		});
 	};
 
 	const handleOpenAddModal = () => {
 		setIsAdding(true);
 		setTempTeamNumber(""); // Start with empty temporary pill
+		setPriority(false); // Reset priority when opening modal
 	};
 
 	const handleCancelAdd = () => {
 		setIsAdding(false);
 		setTeamNumber("");
+		setPriority(false);
 		setTempTeamNumber(null);
 	};
 
@@ -363,8 +383,28 @@ function TimeSlot({
 				<div className={styles.addReservationModal}>
 					<div className={styles.modalContent}>
 						<h3>Add Reservation</h3>
+						<div className={styles.modalSubheader}>
+							<span className={styles.dayName}>
+								{dayString} {dayLabel && <span className={styles.dayLabel}>{dayLabel}</span>}
+							</span>
+							<span className={styles.dayDate}>{dateStr}</span>
+							<span className={styles.timeSlotTime}>
+								{dateToTime(start)} - {dateToTime(end)}
+							</span>
+						</div>
 						<div className={styles.formGroup}>
-							<label htmlFor="teamNumber">Team Number:</label>
+							<label className={styles.checkboxLabel}>
+								<input
+									type="checkbox"
+									checked={priority}
+									onChange={e => setPriority(e.target.checked)}
+									className={styles.hiddenCheckbox}
+								/>
+								<span className={styles.checkboxEmoji}>{priority ? "✔️" : "✖️"}</span>
+								<span className={styles.checkboxText}>Prioritize</span>
+							</label>
+						</div>
+						<div className={styles.formGroup}>
 							<input
 								type="text"
 								id="teamNumber"

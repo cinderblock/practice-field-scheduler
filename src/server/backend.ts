@@ -428,10 +428,10 @@ export class Context {
 
     // Return only non-abandoned reservations for the given date
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
-  }
+	}
 }
 
-export { reservations, blackouts, siteEvents };
+// export { reservations, blackouts, siteEvents };
 
 ////// Storage Management //////
 

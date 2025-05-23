@@ -202,6 +202,8 @@ export class Context {
 
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return reservation;
 	}
 
 	async addBlackout(blackout: Omit<Blackout, "created" | "userId" | "deleted">) {

@@ -37,6 +37,7 @@ import crypto from "node:crypto";
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs
 const AdvancedReservationDays = 7; // Number of days in the future that reservations can be made
+const DisableWrites = false; // If true, the server will not write to the database
 
 type LogCommon = {
 	timestamp: Date;
@@ -465,6 +466,7 @@ async function readJsonFile(filePath: string) {
 
 // Write JSON data to a file
 async function writeJsonFile(filePath: string, data: JsonData) {
+	if (DisableWrites) return;
 	try {
 		await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
 	} catch (err) {
@@ -474,6 +476,7 @@ async function writeJsonFile(filePath: string, data: JsonData) {
 
 // Append a log entry to the logs file
 async function appendLog(logEntry: JsonData) {
+	if (DisableWrites) return;
 	try {
 		const logLine = JSON.stringify(logEntry) + "\n";
 		await appendFile(LOGS_FILE, logLine, "utf-8");

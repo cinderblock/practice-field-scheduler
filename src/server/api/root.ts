@@ -1,7 +1,7 @@
 console.log("Loading api/root.ts");
 
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
-import { reservationRouter } from "./routers/reservation";
+import { reservationRouter } from "~/server/api/routers/reservation";
 
 /**
  * This is the primary router for your server.

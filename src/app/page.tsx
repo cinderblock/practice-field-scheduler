@@ -57,10 +57,10 @@ async function LoggedIn({ session }: { session: Session }) {
   const ctx = new Context(session, userAgent, ip);
 
   const reservationsByDate = await Promise.all(
-    dates.map(async (date) => ({
+		dates.map(async date => ({
       date,
       reservations: await ctx.listReservations(date),
-    }))
+		})),
   );
 
   return (

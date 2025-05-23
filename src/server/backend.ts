@@ -111,7 +111,7 @@ function findReservation(
 }
 
 async function log(entry: LogEntry) {
-  return appendLog(entry).catch((err) => {
+	return appendLog(entry).catch(err => {
     console.error("Error logging entry:", err);
   });
 }
@@ -122,7 +122,7 @@ export class Context {
   constructor(
     private session: Session,
     private userAgent: string,
-    private ip: string
+		private ip: string,
   ) {
     this.user = this.getUser();
   }
@@ -160,13 +160,13 @@ export class Context {
         ...ctx,
         type: "created",
         date: reservation.date,
-        slot: reservation.slot,
-        team: reservation.team,
-        notes: reservation.notes,
-      })
-    );
+				slot: reservation.slot,
+				team: reservation.team,
+				notes: reservation.notes,
+			}),
+		);
 
-    jobs.push(tellClientsAboutReservationChange(res));
+		jobs.push(tellClientsAboutReservationChange(res));
 
     jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
 
@@ -211,15 +211,13 @@ export class Context {
     jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
 
     const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
 
-  async addBlackout(
-    blackout: Omit<Blackout, "created" | "userId" | "deleted">
-  ) {
-    this.restrictToAdmin("Only admins can add blackouts");
+	async addBlackout(blackout: Omit<Blackout, "created" | "userId" | "deleted">) {
+		this.restrictToAdmin("Only admins can add blackouts");
 
-    const release = await changeLock.acquire();
+		const release = await changeLock.acquire();
     const ctx = this.getContext();
     const jobs: Promise<unknown>[] = [];
 
@@ -235,26 +233,23 @@ export class Context {
       log({
         ...ctx,
         type: "blackoutAdd",
-        date: blackout.date,
-        slot: blackout.slot,
-        reason: blackout.reason,
-      })
-    );
-    jobs.push(tellClientsAboutBlackoutChange(newBlackout));
+				date: blackout.date,
+				slot: blackout.slot,
+				reason: blackout.reason,
+			}),
+		);
+		jobs.push(tellClientsAboutBlackoutChange(newBlackout));
 
     jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
 
     const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
 
-  async removeBlackout({
-    date,
-    slot,
-  }: Omit<Blackout, "created" | "userId" | "deleted">) {
-    this.restrictToAdmin("Only admins can remove blackouts");
+	async removeBlackout({ date, slot }: Omit<Blackout, "created" | "userId" | "deleted">) {
+		this.restrictToAdmin("Only admins can remove blackouts");
 
-    const blackout = blackouts.find((b) => b.date === date && b.slot === slot);
+		const blackout = blackouts.find(b => b.date === date && b.slot === slot);
     if (!blackout) {
       throw new Error("Blackout not found");
     }
@@ -311,15 +306,13 @@ export class Context {
     jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
 
     const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
 
-  async removeSiteEvent({
-    date,
-  }: Omit<SiteEvent, "created" | "userId" | "deleted">) {
-    this.restrictToAdmin("Only admins can remove site events");
+	async removeSiteEvent({ date }: Omit<SiteEvent, "created" | "userId" | "deleted">) {
+		this.restrictToAdmin("Only admins can remove site events");
 
-    const event = siteEvents.find((e) => e.date === date && !e.deleted);
+		const event = siteEvents.find(e => e.date === date && !e.deleted);
 
     if (!event) throw new Error("Site event not found");
 
@@ -411,24 +404,16 @@ export class Context {
     if (this.isAdmin()) return; // Admins can reserve any date
 
     const thisMorning = new Date();
-    thisMorning.setHours(0, 0, 0, 0); // Set time to midnight
-    const reservationDate = new Date(date);
+		thisMorning.setHours(0, 0, 0, 0); // Set time to midnight
+		const reservationDate = new Date(date);
 
-    if (reservationDate < thisMorning)
-      throw new PermissionError("Cannot reserve a date in the past");
+		if (reservationDate < thisMorning) throw new PermissionError("Cannot reserve a date in the past");
 
-    if (
-      reservationDate >
-      new Date(
-        new Date().getTime() + 1000 * 60 * 60 * 24 * AdvancedReservationDays
-      )
-    )
-      throw new PermissionError(
-        `Cannot reserve a date more than ${AdvancedReservationDays} days in advance`
-      );
-  }
+		if (reservationDate > new Date(new Date().getTime() + 1000 * 60 * 60 * 24 * AdvancedReservationDays))
+			throw new PermissionError(`Cannot reserve a date more than ${AdvancedReservationDays} days in advance`);
+	}
 
-  private getContext() {
+	private getContext() {
     return {
       timestamp: new Date(),
       userId: this.user.id,
@@ -442,10 +427,7 @@ export class Context {
     this.user;
 
     // Return only non-abandoned reservations for the given date
-    return reservations.filter(
-      (reservation) =>
-        reservation.date === date && !reservation.abandoned
-    );
+		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
   }
 }
 

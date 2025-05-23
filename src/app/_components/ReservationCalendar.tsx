@@ -58,10 +58,7 @@ export function ReservationCalendar({
 }
 
 function useTimezone() {
-  return useInterval(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    500
-  );
+	return useInterval(() => Intl.DateTimeFormat().resolvedOptions().timeZone, 500);
 }
 
 // Check if client's timezone is not the same as the server's and show a warning
@@ -93,12 +90,12 @@ function Days({
     return date;
   });
 
-  return (
-    <>
-      {dates.map((date) => (
-        <div key={date.getTime()} className={styles.calendarDay}>
-          <Day date={date} initialReservations={initialReservations} />
-        </div>
+	return (
+		<>
+			{dates.map(date => (
+				<div key={date.getTime()} className={styles.calendarDay}>
+					<Day date={date} initialReservations={initialReservations} />
+				</div>
       ))}
     </>
 	);
@@ -127,23 +124,16 @@ function Day({
   else if (diffDays === 1) dayLabel = "(tomorrow)";
   else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
 
-  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+	const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
-  return (
-    <div
-      className={
-        isWeekend
-          ? `${styles.dayContainer} ${styles.weekend}`
-          : styles.dayContainer
-      }
-    >
-      <div className={styles.dayHeader}>
-        <span className={styles.dayName}>
-          {dayString}{" "}
-          {dayLabel && <span className={styles.dayLabel}>{dayLabel}</span>}
-        </span>
-        <span className={styles.dayDate}>{dateString}</span>
-      </div>
+	return (
+		<div className={isWeekend ? `${styles.dayContainer} ${styles.weekend}` : styles.dayContainer}>
+			<div className={styles.dayHeader}>
+				<span className={styles.dayName}>
+					{dayString} {dayLabel && <span className={styles.dayLabel}>{dayLabel}</span>}
+				</span>
+				<span className={styles.dayDate}>{dateString}</span>
+			</div>
       <div className={styles.timeSlotRow}>
         {TimeSlotBorders.map((_, index, a) => {
           if (index === a.length - 1) return null;

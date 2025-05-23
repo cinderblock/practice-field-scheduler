@@ -14,61 +14,62 @@ import { resolve, join } from "node:path";
 import { exit } from "./util/exit";
 import { Lock } from "./util/Lock";
 import {
-  tellClientsAboutBlackoutChange,
-  tellClientsAboutReservationChange,
-  tellClientsAboutSiteEvent,
+	tellClientsAboutBlackoutChange,
+	tellClientsAboutReservationChange,
+	tellClientsAboutSiteEvent,
 } from "./websocket";
 import type { JsonData } from "./util/JsonData";
 import type {
-  AddReservationArgs,
-  Blackout,
-  EventDate,
-  RemoveReservationArgs,
-  Reservation,
-  SiteEvent,
-  Team,
-  TeamFull,
-  TimeSlot,
-  UserId,
+	AddReservationArgs,
+	Blackout,
+	EventDate,
+	RemoveReservationArgs,
+	Reservation,
+	SiteEvent,
+	Team,
+	TeamFull,
+	TimeSlot,
+	UserId,
 } from "~/types";
 import type { Session } from "next-auth";
+import crypto from "crypto";
 
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs
 const AdvancedReservationDays = 7; // Number of days in the future that reservations can be made
 
 type LogCommon = {
-  timestamp: Date;
-  ip: string;
-  userAgent: string;
-  userId: UserId;
+	timestamp: Date;
+	ip: string;
+	userAgent: string;
+	userId: UserId;
 };
 
 type LogReservationEntry = LogCommon & {
-  type: "created" | "updated" | "deleted";
-  date: EventDate;
-  slot: TimeSlot;
-  team: TeamFull;
-  notes?: string;
+	type: "created" | "updated" | "deleted";
+	date: EventDate;
+	slot: TimeSlot;
+	team: TeamFull;
+	notes?: string;
 };
 
 type LogBlackoutEntry = LogCommon & {
-  type: "blackoutAdd" | "blackoutRemove";
-  date: EventDate;
-  slot: TimeSlot;
-  reason?: string;
+	type: "blackoutAdd" | "blackoutRemove";
+	date: EventDate;
+	slot: TimeSlot;
+	reason?: string;
 };
 
 type LogSiteEventEntry = LogCommon & {
-  type: "siteEventAdd" | "siteEventRemove";
-  date: EventDate;
-  notes?: string;
+	type: "siteEventAdd" | "siteEventRemove";
+	date: EventDate;
+	notes?: string;
 };
 
 type LogUserEntry = LogCommon & {
-  type: "userAdd" | "userUpdate";
-  userId: UserId;
-  name: string;
+	type: "userAdd" | "userUpdate";
+	userId: UserId;
+	name: string;
 	teams: Team[] | "admin";
 };
 
@@ -76,11 +77,11 @@ type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | Log
 
 type UserEntry = {
 	id: UserId;
-  name: string;
-  created: Date | string;
-  updated: Date | string;
-  disabled?: boolean;
-  teams: Team[] | "admin";
+	name: string;
+	created: Date | string;
+	updated: Date | string;
+	disabled?: boolean;
+	teams: Team[] | "admin";
 };
 
 const reservations: Reservation[] = [];
@@ -90,76 +91,63 @@ const users: UserEntry[] = [];
 const houseTeams: Team[] = [];
 
 export class PermissionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PermissionError";
-  }
+	constructor(message: string) {
+		super(message);
+		this.name = "PermissionError";
+	}
 }
 
-function findReservation(
-  date: EventDate,
-  slot: TimeSlot,
-  team: TeamFull
-): Reservation | undefined {
-  return reservations.find(
-    (reservation) =>
-      reservation.date === date &&
-      reservation.slot === slot &&
-      reservation.team === team &&
-      !reservation.abandoned
-  );
+function getReservation(id: string): Reservation | undefined {
+	return reservations.find(reservation => reservation.id === id && !reservation.abandoned);
 }
 
 async function log(entry: LogEntry) {
 	return appendLog(entry).catch(err => {
-    console.error("Error logging entry:", err);
-  });
+		console.error("Error logging entry:", err);
+	});
 }
 
 export class Context {
-  private user: UserEntry;
+	private user: UserEntry;
 
-  constructor(
-    private session: Session,
-    private userAgent: string,
+	constructor(
+		private session: Session,
+		private userAgent: string,
 		private ip: string,
-  ) {
-    this.user = this.getUser();
-  }
+	) {
+		this.user = this.getUser();
+	}
 
-  async addReservation(reservation: AddReservationArgs) {
-    this.restrictToTeam(
-      reservation.team,
-      "Only team members can add reservations"
-    );
-    this.restrictTimeframe(reservation.date);
+	async addReservation(reservation: AddReservationArgs) {
+		console.log("Add reservation - PID:", process.pid);
+		this.restrictToTeam(reservation.team, "Only team members can add reservations");
+		this.restrictTimeframe(reservation.date);
 
-    const existingReservation = findReservation(
-      reservation.date,
-      reservation.slot,
-      reservation.team
-    );
-    if (existingReservation) {
-      throw new Error("Reservation already exists for this date and slot");
-    }
+		const existingReservation = reservations.find(
+			r => r.date === reservation.date && r.slot === reservation.slot && r.team === reservation.team && !r.abandoned,
+		);
+		if (existingReservation) {
+			throw new Error("Reservation already exists for this date and slot");
+		}
 
-    const release = await changeLock.acquire();
-    const ctx = this.getContext();
-    const jobs: Promise<unknown>[] = [];
+		const release = await changeLock.acquire();
+		const ctx = this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
-    const res: Reservation = {
-      ...reservation,
-      userId: this.user.id,
-      created: ctx.timestamp,
-    };
+		const res: Reservation = {
+			...reservation,
+			id: crypto.randomUUID(),
+			userId: this.user.id,
+			created: ctx.timestamp,
+		};
 
-    reservations.push(res);
+		reservations.push(res);
 
-    jobs.push(
-      log({
-        ...ctx,
-        type: "created",
-        date: reservation.date,
+		jobs.push(
+			log({
+				...ctx,
+				type: "created",
+				date: reservation.date,
 				slot: reservation.slot,
 				team: reservation.team,
 				notes: reservation.notes,
@@ -168,49 +156,51 @@ export class Context {
 
 		jobs.push(tellClientsAboutReservationChange(res));
 
-    jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
+		jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
 
-    const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
 
-  async removeReservation({ date, slot, team, reason }: RemoveReservationArgs) {
-    this.restrictToTeam(team, "Only team members can remove reservations");
-    this.restrictTimeframe(date);
+		return res;
+	}
 
-    const reservation = findReservation(date, slot, team);
+	async removeReservation({ id, reason }: RemoveReservationArgs) {
+		const reservation = getReservation(id);
 
-    if (!reservation) {
-      throw new Error("Reservation not found");
-    }
+		if (!reservation) {
+			throw new Error("Reservation not found");
+		}
 
-    const release = await changeLock.acquire();
-    const ctx = this.getContext();
-    const jobs: Promise<unknown>[] = [];
+		this.restrictToTeam(reservation.team, "Only team members can remove reservations");
+		this.restrictTimeframe(reservation.date);
 
-    jobs.push(
-      log({
-        ...ctx,
-        type: "deleted",
-        date,
-        slot,
-        team,
-        notes: reason,
-      })
-    );
+		const release = await changeLock.acquire();
+		const ctx = this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
-    // Mark as abandoned instead of deleting
-    reservation.abandoned = ctx.timestamp;
-    // Update the user ID to the current user
-    reservation.userId = this.user.id;
-    // Store the reason for the removal
-    if (reason) reservation.notes = reason;
+		jobs.push(
+			log({
+				...ctx,
+				type: "deleted",
+				date: reservation.date,
+				slot: reservation.slot,
+				team: reservation.team,
+				notes: reason,
+			}),
+		);
 
-    jobs.push(tellClientsAboutReservationChange(reservation));
+		// Mark as abandoned instead of deleting
+		reservation.abandoned = ctx.timestamp;
+		// Update the user ID to the current user
+		reservation.userId = this.user.id;
+		// Store the reason for the removal
+		if (reason) reservation.notes = reason;
 
-    jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
+		jobs.push(tellClientsAboutReservationChange(reservation));
 
-    const done = Promise.all(jobs);
+		jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
+
+		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 	}
 
@@ -218,21 +208,21 @@ export class Context {
 		this.restrictToAdmin("Only admins can add blackouts");
 
 		const release = await changeLock.acquire();
-    const ctx = this.getContext();
-    const jobs: Promise<unknown>[] = [];
+		const ctx = this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
-    const newBlackout: Blackout = {
-      ...blackout,
-      created: ctx.timestamp,
-      userId: this.user.id, // Update the user ID to the current user
-    };
+		const newBlackout: Blackout = {
+			...blackout,
+			created: ctx.timestamp,
+			userId: this.user.id, // Update the user ID to the current user
+		};
 
-    blackouts.push(newBlackout);
+		blackouts.push(newBlackout);
 
-    jobs.push(
-      log({
-        ...ctx,
-        type: "blackoutAdd",
+		jobs.push(
+			log({
+				...ctx,
+				type: "blackoutAdd",
 				date: blackout.date,
 				slot: blackout.slot,
 				reason: blackout.reason,
@@ -240,9 +230,9 @@ export class Context {
 		);
 		jobs.push(tellClientsAboutBlackoutChange(newBlackout));
 
-    jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
+		jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
 
-    const done = Promise.all(jobs);
+		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 	}
 
@@ -250,20 +240,20 @@ export class Context {
 		this.restrictToAdmin("Only admins can remove blackouts");
 
 		const blackout = blackouts.find(b => b.date === date && b.slot === slot);
-    if (!blackout) {
-      throw new Error("Blackout not found");
-    }
+		if (!blackout) {
+			throw new Error("Blackout not found");
+		}
 
-    const jobs: Promise<unknown>[] = [];
-    const ctx = this.getContext();
-    const release = await changeLock.acquire();
+		const jobs: Promise<unknown>[] = [];
+		const ctx = this.getContext();
+		const release = await changeLock.acquire();
 
-    blackout.deleted = ctx.timestamp; // Mark as deleted
-    blackout.userId = this.user.id; // Update the user ID to the current user
+		blackout.deleted = ctx.timestamp; // Mark as deleted
+		blackout.userId = this.user.id; // Update the user ID to the current user
 
-    jobs.push(
-      log({
-        ...ctx,
+		jobs.push(
+			log({
+				...ctx,
 				type: "blackoutRemove",
 				date: blackout.date,
 				slot: blackout.slot,
@@ -272,29 +262,29 @@ export class Context {
 
 		jobs.push(tellClientsAboutBlackoutChange(blackout));
 
-    jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
+		jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
 
-    const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
 
-  async addSiteEvent(event: Pick<SiteEvent, "date" | "notes">) {
-    this.restrictToAdmin("Only admins can add site events");
+	async addSiteEvent(event: Pick<SiteEvent, "date" | "notes">) {
+		this.restrictToAdmin("Only admins can add site events");
 
-    const release = await changeLock.acquire();
-    const ctx = this.getContext();
-    const jobs: Promise<unknown>[] = [];
+		const release = await changeLock.acquire();
+		const ctx = this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
-    const newEvent: SiteEvent = {
-      ...event,
-      created: ctx.timestamp,
-      userId: this.user.id, // Update the user ID to the current user
-    };
+		const newEvent: SiteEvent = {
+			...event,
+			created: ctx.timestamp,
+			userId: this.user.id, // Update the user ID to the current user
+		};
 
-    siteEvents.push(newEvent);
+		siteEvents.push(newEvent);
 
-    jobs.push(
-      log({
+		jobs.push(
+			log({
 				...ctx,
 				type: "siteEventAdd",
 				...event,
@@ -303,9 +293,9 @@ export class Context {
 
 		jobs.push(tellClientsAboutSiteEvent(newEvent));
 
-    jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
+		jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
 
-    const done = Promise.all(jobs);
+		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 	}
 
@@ -314,16 +304,16 @@ export class Context {
 
 		const event = siteEvents.find(e => e.date === date && !e.deleted);
 
-    if (!event) throw new Error("Site event not found");
+		if (!event) throw new Error("Site event not found");
 
-    const release = await changeLock.acquire();
-    const ctx = this.getContext();
-    const jobs: Promise<unknown>[] = [];
+		const release = await changeLock.acquire();
+		const ctx = this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
-    event.deleted = ctx.timestamp;
+		event.deleted = ctx.timestamp;
 
-    jobs.push(
-      log({
+		jobs.push(
+			log({
 				...ctx,
 				type: "siteEventRemove",
 				date: event.date,
@@ -332,14 +322,14 @@ export class Context {
 
 		jobs.push(tellClientsAboutSiteEvent(event));
 
-    jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
+		jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
 
-    const done = Promise.all(jobs);
-    await (ContinueOnError ? done.finally(release) : done.then(release));
-  }
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
 
-  private getUser(): UserEntry {
-    if (!this.session?.user) {
+	private getUser(): UserEntry {
+		if (!this.session?.user) {
 			throw new PermissionError("Not authenticated");
 		}
 
@@ -347,63 +337,63 @@ export class Context {
 		if (!user) {
 			// Create new user entry on first login
 			const newUser: UserEntry = {
-        id: this.session.user.id,
-        name: this.session.user.name ?? this.session.user.email ?? "Unknown",
-        created: new Date(),
-        updated: new Date(),
-        teams: FirstUserIsAdmin && !users.length ? "admin" : [],
-      };
-      users.push(newUser);
-      
-      // Save the updated users array
-      void writeJsonFile(USERS_FILE, users).catch(err => {
-        console.error("Error saving users:", err);
-      });
-      
-      return newUser;
-    }
+				id: this.session.user.id,
+				name: this.session.user.name ?? this.session.user.email ?? "Unknown",
+				created: new Date(),
+				updated: new Date(),
+				teams: FirstUserIsAdmin && !users.length ? "admin" : [],
+			};
+			users.push(newUser);
 
-    if (user.disabled) {
-      throw new PermissionError("User disabled");
-    }
+			// Save the updated users array
+			void writeJsonFile(USERS_FILE, users).catch(err => {
+				console.error("Error saving users:", err);
+			});
 
-    return user;
-  }
+			return newUser;
+		}
 
-  getTeams() {
-    return this.user.teams;
-  }
+		if (user.disabled) {
+			throw new PermissionError("User disabled");
+		}
 
-  getName() {
-    return this.user.name;
-  }
+		return user;
+	}
 
-  private getEditPermissions() {
-    return this.user.teams;
-  }
+	getTeams() {
+		return this.user.teams;
+	}
 
-  private isAdmin() {
-    return this.getEditPermissions() === "admin";
-  }
+	getName() {
+		return this.user.name;
+	}
 
-  private restrictToAdmin(message: string) {
-    if (this.isAdmin()) return;
-    throw new PermissionError(message);
-  }
+	private getEditPermissions() {
+		return this.user.teams;
+	}
 
-  private restrictToTeam(team: Team | TeamFull, message: string) {
-    if (typeof team === "string") team = parseInt(team, 10);
+	private isAdmin() {
+		return this.getEditPermissions() === "admin";
+	}
 
-    const permissions = this.getEditPermissions();
-    if (permissions === "admin") return;
-    if (permissions.includes(team)) return;
-    throw new PermissionError(message);
-  }
+	private restrictToAdmin(message: string) {
+		if (this.isAdmin()) return;
+		throw new PermissionError(message);
+	}
 
-  private restrictTimeframe(date: EventDate) {
-    if (this.isAdmin()) return; // Admins can reserve any date
+	private restrictToTeam(team: Team | TeamFull, message: string) {
+		if (typeof team === "string") team = parseInt(team, 10);
 
-    const thisMorning = new Date();
+		const permissions = this.getEditPermissions();
+		if (permissions === "admin") return;
+		if (permissions.includes(team)) return;
+		throw new PermissionError(message);
+	}
+
+	private restrictTimeframe(date: EventDate) {
+		if (this.isAdmin()) return; // Admins can reserve any date
+
+		const thisMorning = new Date();
 		thisMorning.setHours(0, 0, 0, 0); // Set time to midnight
 		const reservationDate = new Date(date);
 
@@ -414,19 +404,19 @@ export class Context {
 	}
 
 	private getContext() {
-    return {
-      timestamp: new Date(),
-      userId: this.user.id,
-      userAgent: this.userAgent,
-      ip: this.ip,
-    };
-  }
+		return {
+			timestamp: new Date(),
+			userId: this.user.id,
+			userAgent: this.userAgent,
+			ip: this.ip,
+		};
+	}
 
-  async listReservations(date: EventDate): Promise<Reservation[]> {
-    // First check if user is logged in
+	async listReservations(date: EventDate): Promise<Reservation[]> {
+		// First check if user is logged in
 		if (!this.user) throw new PermissionError("Not authenticated");
 
-    // Return only non-abandoned reservations for the given date
+		// Return only non-abandoned reservations for the given date
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
 	}
 }
@@ -454,53 +444,53 @@ const initialized = changeLock.acquire();
 
 // Make sure we're never running across a year's boundary
 setInterval(async () => {
-  if (new Date().getFullYear().toString() === YEAR) return;
+	if (new Date().getFullYear().toString() === YEAR) return;
 
-  console.warn("Year has changed. Shutting down to ensure data integrity.");
+	console.warn("Year has changed. Shutting down to ensure data integrity.");
 
-  // Wait for any ongoing changes to finish
-  await changeLock.acquire();
+	// Wait for any ongoing changes to finish
+	await changeLock.acquire();
 
-  process.exit(0);
-  // Systemd should restart the process automatically
+	process.exit(0);
+	// Systemd should restart the process automatically
 }, 1000).unref(); // Check every second and unref to avoid keeping Node.js alive
 
 // Read JSON data from a file
 async function readJsonFile(filePath: string) {
-  const data = await readFile(filePath, "utf-8");
-  return JSON.parse(data);
+	const data = await readFile(filePath, "utf-8");
+	return JSON.parse(data);
 }
 
 // Write JSON data to a file
 async function writeJsonFile(filePath: string, data: JsonData) {
-  try {
-    await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Error writing to file:", filePath, err);
-  }
+	try {
+		await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+	} catch (err) {
+		console.error("Error writing to file:", filePath, err);
+	}
 }
 
 // Append a log entry to the logs file
 async function appendLog(logEntry: JsonData) {
-  try {
-    const logLine = JSON.stringify(logEntry) + "\n";
-    await appendFile(LOGS_FILE, logLine, "utf-8");
-  } catch (err) {
-    console.error("Error appending to logs file:", err);
-  }
+	try {
+		const logLine = JSON.stringify(logEntry) + "\n";
+		await appendFile(LOGS_FILE, logLine, "utf-8");
+	} catch (err) {
+		console.error("Error appending to logs file:", err);
+	}
 }
 
 function isHouseTeam(team: Team) {
-  return houseTeams.includes(team);
+	return houseTeams.includes(team);
 }
 
 function getFilePath(array: unknown[]) {
-  if (array === reservations) return RESERVATIONS_FILE;
-  if (array === blackouts) return BLACKOUTS_FILE;
-  if (array === siteEvents) return SITE_EVENTS_FILE;
-  if (array === users) return USERS_FILE;
-  if (array === houseTeams) return HOUSE_TEAMS_FILE;
-  throw new Error("Unknown array type");
+	if (array === reservations) return RESERVATIONS_FILE;
+	if (array === blackouts) return BLACKOUTS_FILE;
+	if (array === siteEvents) return SITE_EVENTS_FILE;
+	if (array === users) return USERS_FILE;
+	if (array === houseTeams) return HOUSE_TEAMS_FILE;
+	throw new Error("Unknown array type");
 }
 
 async function notifyClientsAboutChange(array: unknown[]) {
@@ -510,10 +500,10 @@ async function notifyClientsAboutChange(array: unknown[]) {
 }
 
 async function initializePart(array: unknown[]) {
-  const filePath = getFilePath(array);
+	const filePath = getFilePath(array);
 
-  try {
-    const data = await readJsonFile(filePath);
+	try {
+		const data = await readJsonFile(filePath);
 
 		if (!Array.isArray(data)) throw new Error(`Invalid data in ${filePath}`);
 
@@ -535,16 +525,16 @@ async function initializePart(array: unknown[]) {
 		);
 
 		notifyClientsAboutChange(array);
-  } catch (err) {
-    if (!(err instanceof Error)) throw err;
-    if (!("code" in err)) throw err;
-    if (err.code !== "ENOENT") throw err;
+	} catch (err) {
+		if (!(err instanceof Error)) throw err;
+		if (!("code" in err)) throw err;
+		if (err.code !== "ENOENT") throw err;
 
-    // File doesn't exist, so we create it
-    await mkdir(resolve(filePath, ".."), { recursive: true });
-    // All of our data files are JSON arrays, so we can initialize them as empty arrays
-    await writeFile(filePath, "[]", "utf-8");
-  }
+		// File doesn't exist, so we create it
+		await mkdir(resolve(filePath, ".."), { recursive: true });
+		// All of our data files are JSON arrays, so we can initialize them as empty arrays
+		await writeFile(filePath, "[]", "utf-8");
+	}
 }
 
 (async () => {
@@ -554,16 +544,16 @@ async function initializePart(array: unknown[]) {
 
 	const jobs: Promise<unknown>[] = [];
 
-  jobs.push(initializePart(reservations));
-  jobs.push(initializePart(blackouts));
-  jobs.push(initializePart(siteEvents));
-  jobs.push(initializePart(users));
-  jobs.push(initializePart(houseTeams));
+	jobs.push(initializePart(reservations));
+	jobs.push(initializePart(blackouts));
+	jobs.push(initializePart(siteEvents));
+	jobs.push(initializePart(users));
+	jobs.push(initializePart(houseTeams));
 
-  await Promise.all(jobs);
+	await Promise.all(jobs);
 
-  done();
+	done();
 })().catch(err => {
-  console.error("Error initializing data:", err);
-  exit(1); // Exit the process on initialization error
+	console.error("Error initializing data:", err);
+	exit(1); // Exit the process on initialization error
 });

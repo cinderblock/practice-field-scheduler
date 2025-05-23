@@ -235,7 +235,7 @@
   box-shadow: 0 4px 16px rgba(80, 80, 120, 0.15);
 }
 
-.timeSlotCurrent {  
+.timeSlotCurrent {
   background: #0f5764;
   color: #a4a4a5;
 }
@@ -268,6 +268,40 @@
   box-shadow: 0 1px 4px rgba(80, 80, 120, 0.08);
   text-align: center;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.reservationPill.pendingDeletion {
+  opacity: 0.6;
+}
+
+.removeReservationBtn {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.reservationPill:hover .removeReservationBtn {
+  opacity: 0.8;
+}
+
+.removeReservationBtn:hover {
+  opacity: 1 !important;
+}
+
+.removeReservationBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .addReservationBtn {
@@ -291,7 +325,8 @@
 .timeSlotStackContainer:hover .addReservationBtn {
   opacity: 1;
 }
-.timeSlotOver .addReservationBtn, .timeSlotCurrent .addReservationBtn {
+.timeSlotOver .addReservationBtn,
+.timeSlotCurrent .addReservationBtn {
   display: none;
 }
 
@@ -358,4 +393,78 @@
   font-size: 0.9rem;
   color: #a7bfff;
   text-align: center;
+}
+
+.addReservationModal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modalContent {
+  background: #232347;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  min-width: 300px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.formGroup {
+  margin-bottom: 1rem;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #a7bfff;
+}
+
+.formGroup input {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #35356b;
+  background: #1a1a3a;
+  color: white;
+}
+
+.modalActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.modalActions button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.modalActions button:first-child {
+  background: #f7c873;
+  color: #232347;
+}
+
+.modalActions button:last-child {
+  background: #35356b;
+  color: white;
+}
+
+.modalActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pendingAddition {
+  opacity: 0.7;
+  background: linear-gradient(90deg, #6d6df7 60%, #a7bfff 100%);
 }

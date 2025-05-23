@@ -424,7 +424,7 @@ export class Context {
 
   async listReservations(date: EventDate): Promise<Reservation[]> {
     // First check if user is logged in
-    this.user;
+		if (!this.user) throw new PermissionError("Not authenticated");
 
     // Return only non-abandoned reservations for the given date
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);

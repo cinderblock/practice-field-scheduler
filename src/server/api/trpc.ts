@@ -83,15 +83,15 @@ export const createTRPCRouter = t.router;
  * network latency that would occur in production but not in local development.
  */
 const timingMiddleware = t.middleware(async ({ next, path }) => {
-  const start = Date.now();
-
-  if (t._config.isDev) {
-    // artificial delay in dev
-    const waitMs = Math.floor(Math.random() * 400) + 100;
+	if (t._config.isDev) {
+		// artificial delay in dev
+		const waitMs = Math.floor(Math.random() * 400) + 100;
 		await new Promise(resolve => setTimeout(resolve, waitMs));
-  }
+	}
 
-  const result = await next();
+	const start = Date.now();
+
+	const result = await next();
 
   const end = Date.now();
   if (end - start > 100) {

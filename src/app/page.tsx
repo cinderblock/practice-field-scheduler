@@ -61,7 +61,7 @@ async function LoggedIn({ session }: { session: Session }) {
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
 				<span>Logged in as {session.user?.name}</span>
 				<Link href="/api/auth/signout" className={styles.logoutButtonSmall}>
-					Sign out
+					Sign&nbsp;out
 				</Link>
 			</div>
 			<ReservationCalendar initialReservations={reservationsByDate} />
@@ -74,7 +74,7 @@ function LoginButton() {
 		<>
 			<h2>Please log in to view the reservation calendar.</h2>
 			<Link href="/api/auth/signin" className={styles.loginButton}>
-				Sign in
+				Sign&nbsp;in
 			</Link>
 		</>
 	);

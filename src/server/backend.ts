@@ -7,6 +7,8 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
+console.log("Loading backend.ts");
+
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { exit } from "./util/exit";
@@ -564,9 +566,11 @@ async function initializePart(array: unknown[]) {
 }
 
 (async () => {
-  const done = await initialized; // Wait for the lock to be acquired
+	const done = await initialized; // Wait for the lock to be acquired
 
-  const jobs: Promise<unknown>[] = [];
+	console.log("Initializing data - PID:", process.pid);
+
+	const jobs: Promise<unknown>[] = [];
 
   jobs.push(initializePart(reservations));
   jobs.push(initializePart(blackouts));

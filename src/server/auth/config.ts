@@ -1,3 +1,5 @@
+console.log("Loading auth/config.ts");
+
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import SlackProvider from "next-auth/providers/slack";
 import { env } from "../../env.js";

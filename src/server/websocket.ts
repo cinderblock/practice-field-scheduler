@@ -1,3 +1,5 @@
+console.log("Loading websocket.ts");
+
 import type { Blackout, Reservation, SiteEvent } from "~/types";
 
 // TODO: Implement proper WebSocket handling

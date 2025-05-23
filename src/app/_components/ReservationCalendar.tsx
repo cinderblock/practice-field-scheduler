@@ -16,12 +16,16 @@ type InitialReservations = {
 }[];
 
 function pluralize(count: number, singular = "", plural = `${singular}s`) {
-  return count === 1 ? singular : plural;
+	return count === 1 ? singular : plural;
 }
 
-export function ReservationCalendar({ initialReservations }: { initialReservations: InitialReservations }) {
-  const start = useInterval(() => {
-    const now = new Date();
+export function ReservationCalendar({
+	initialReservations,
+}: {
+	initialReservations: InitialReservations;
+}) {
+	const start = useInterval(() => {
+		const now = new Date();
 
     // Add 12 because time slots are relative to noon
     if (now.getHours() >= 12 + TimeSlotBorders[TimeSlotBorders.length - 1]!) {
@@ -71,13 +75,21 @@ function TimeZoneAlert() {
       <p>Your timezone is different from the lab's.</p>
       <p>Contact the admin if you need support for this.</p>
     </div>
-  );
+	);
 }
 
-function Days({ start, days, initialReservations }: { start: Date; days: number; initialReservations: InitialReservations }) {
-  const dates = Array.from({ length: days }, (_, i) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + i);
+function Days({
+	start,
+	days,
+	initialReservations,
+}: {
+	start: Date;
+	days: number;
+	initialReservations: InitialReservations;
+}) {
+	const dates = Array.from({ length: days }, (_, i) => {
+		const date = new Date(start);
+		date.setDate(start.getDate() + i);
     return date;
   });
 
@@ -89,12 +101,18 @@ function Days({ start, days, initialReservations }: { start: Date; days: number;
         </div>
       ))}
     </>
-  );
+	);
 }
 
-function Day({ date, initialReservations }: { date: Date; initialReservations: InitialReservations }) {
-  const dateString = date.toISOString().slice(0, 10);
-  const dayString = date.toLocaleDateString(undefined, { weekday: "long" });
+function Day({
+	date,
+	initialReservations,
+}: {
+	date: Date;
+	initialReservations: InitialReservations;
+}) {
+	const dateString = date.toISOString().slice(0, 10);
+	const dayString = date.toLocaleDateString(undefined, { weekday: "long" });
 
   // Calculate days difference
   const today = useInterval(() => {
@@ -135,7 +153,9 @@ function Day({ date, initialReservations }: { date: Date; initialReservations: I
           start.setHours(12 + a[index]!, 0, 0, 0);
           end.setHours(12 + a[index + 1]!, 0, 0, 0);
 
-          return <TimeSlot key={index} start={start} end={end} index={index} initialReservations={initialReservations} />;
+					return (
+						<TimeSlot key={index} start={start} end={end} index={index} initialReservations={initialReservations} />
+					);
         })}
       </div>
     </div>

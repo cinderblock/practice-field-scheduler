@@ -67,17 +67,13 @@ type LogUserEntry = LogCommon & {
   type: "userAdd" | "userUpdate";
   userId: UserId;
   name: string;
-  teams: Team[] | "admin";
+	teams: Team[] | "admin";
 };
 
-type LogEntry =
-  | LogReservationEntry
-  | LogBlackoutEntry
-  | LogSiteEventEntry
-  | LogUserEntry;
+type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | LogUserEntry;
 
 type UserEntry = {
-  id: UserId;
+	id: UserId;
   name: string;
   created: Date | string;
   updated: Date | string;
@@ -271,13 +267,13 @@ export class Context {
     jobs.push(
       log({
         ...ctx,
-        type: "blackoutRemove",
-        date: blackout.date,
-        slot: blackout.slot,
-      })
-    );
+				type: "blackoutRemove",
+				date: blackout.date,
+				slot: blackout.slot,
+			}),
+		);
 
-    jobs.push(tellClientsAboutBlackoutChange(blackout));
+		jobs.push(tellClientsAboutBlackoutChange(blackout));
 
     jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));
 
@@ -302,13 +298,13 @@ export class Context {
 
     jobs.push(
       log({
-        ...ctx,
-        type: "siteEventAdd",
-        ...event,
-      })
-    );
+				...ctx,
+				type: "siteEventAdd",
+				...event,
+			}),
+		);
 
-    jobs.push(tellClientsAboutSiteEvent(newEvent));
+		jobs.push(tellClientsAboutSiteEvent(newEvent));
 
     jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
 
@@ -333,13 +329,13 @@ export class Context {
 
     jobs.push(
       log({
-        ...ctx,
-        type: "siteEventRemove",
-        date: event.date,
-      })
-    );
+				...ctx,
+				type: "siteEventRemove",
+				date: event.date,
+			}),
+		);
 
-    jobs.push(tellClientsAboutSiteEvent(event));
+		jobs.push(tellClientsAboutSiteEvent(event));
 
     jobs.push(writeJsonFile(SITE_EVENTS_FILE, siteEvents));
 
@@ -349,13 +345,13 @@ export class Context {
 
   private getUser(): UserEntry {
     if (!this.session?.user) {
-      throw new PermissionError("Not authenticated");
-    }
+			throw new PermissionError("Not authenticated");
+		}
 
-    const user = users.find((u) => u.id === this.session.user.id);
-    if (!user) {
-      // Create new user entry on first login
-      const newUser: UserEntry = {
+		const user = users.find(u => u.id === this.session.user.id);
+		if (!user) {
+			// Create new user entry on first login
+			const newUser: UserEntry = {
         id: this.session.user.id,
         name: this.session.user.name ?? this.session.user.email ?? "Unknown",
         created: new Date(),
@@ -524,12 +520,9 @@ function getFilePath(array: unknown[]) {
 }
 
 async function notifyClientsAboutChange(array: unknown[]) {
-  if (array === reservations)
-    return Promise.all(reservations.map(tellClientsAboutReservationChange));
-  if (array === blackouts)
-    return Promise.all(blackouts.map(tellClientsAboutBlackoutChange));
-  if (array === siteEvents)
-    return Promise.all(siteEvents.map(tellClientsAboutSiteEvent));
+	if (array === reservations) return Promise.all(reservations.map(tellClientsAboutReservationChange));
+	if (array === blackouts) return Promise.all(blackouts.map(tellClientsAboutBlackoutChange));
+	if (array === siteEvents) return Promise.all(siteEvents.map(tellClientsAboutSiteEvent));
 }
 
 async function initializePart(array: unknown[]) {
@@ -538,33 +531,26 @@ async function initializePart(array: unknown[]) {
   try {
     const data = await readJsonFile(filePath);
 
-    if (!Array.isArray(data)) throw new Error(`Invalid data in ${filePath}`);
+		if (!Array.isArray(data)) throw new Error(`Invalid data in ${filePath}`);
 
-    array.push(
-      ...data.filter((item) => {
-        // Filter out expired keys
-        if (array === users) {
-          if (typeof item !== "object" || item === null) return false;
-          if (typeof item.created !== "string") return false;
-          if (item.disabled) {
-            if (
-              new Date(item.created) <
-              new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 2)
-            )
-              return false; // 2 year expiration
-          } else if (
-            new Date(item.created) <
-            new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)
-          ) {
-            item.disabled = true;
-          }
-        }
+		array.push(
+			...data.filter(item => {
+				// Filter out expired keys
+				if (array === users) {
+					if (typeof item !== "object" || item === null) return false;
+					if (typeof item.created !== "string") return false;
+					if (item.disabled) {
+						if (new Date(item.created) < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 2)) return false; // 2 year expiration
+					} else if (new Date(item.created) < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)) {
+						item.disabled = true;
+					}
+				}
 
-        return true;
-      })
-    );
+				return true;
+			}),
+		);
 
-    notifyClientsAboutChange(array);
+		notifyClientsAboutChange(array);
   } catch (err) {
     if (!(err instanceof Error)) throw err;
     if (!("code" in err)) throw err;
@@ -577,7 +563,7 @@ async function initializePart(array: unknown[]) {
   }
 }
 
-(async function () {
+(async () => {
   const done = await initialized; // Wait for the lock to be acquired
 
   const jobs: Promise<unknown>[] = [];
@@ -591,7 +577,7 @@ async function initializePart(array: unknown[]) {
   await Promise.all(jobs);
 
   done();
-})().catch((err) => {
+})().catch(err => {
   console.error("Error initializing data:", err);
   exit(1); // Exit the process on initialization error
 });

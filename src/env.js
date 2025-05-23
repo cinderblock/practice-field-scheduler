@@ -7,16 +7,11 @@ export const env = createEnv({
 	 * isn't built with invalid env vars.
 	 */
 	server: {
-		AUTH_SECRET:
-			process.env.NODE_ENV === "production"
-				? z.string()
-				: z.string().optional(),
+		AUTH_SECRET: process.env.NODE_ENV === "production" ? z.string() : z.string().optional(),
 		AUTH_SLACK_CLIENT_ID: z.string().min(10),
 		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
 		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
-		NODE_ENV: z
-			.enum(["development", "test", "production"])
-			.default("development"),
+		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 	},
 
 	/**

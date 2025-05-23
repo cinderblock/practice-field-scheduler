@@ -11,5 +11,5 @@ export async function tellClientsAboutBlackoutChange(blackout: Blackout) {
 }
 
 export async function tellClientsAboutSiteEvent(event: SiteEvent) {
-  console.log("Site event changed:", event);
-} 
+	console.log("Site event changed:", event);
+}

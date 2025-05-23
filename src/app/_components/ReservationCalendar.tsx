@@ -27,9 +27,11 @@ export function ReservationCalendar({
 }) {
 	const start = useInterval(() => {
 		const now = new Date();
+		const lastTimeSlot = TimeSlotBorders[TimeSlotBorders.length - 1];
+		if (lastTimeSlot === undefined) throw new Error("TimeSlotBorders is empty");
 
 		// Add 12 because time slots are relative to noon
-		if (now.getHours() >= 12 + TimeSlotBorders[TimeSlotBorders.length - 1]!) {
+		if (now.getHours() >= 12 + lastTimeSlot) {
 			// Start tomorrow after the last time slot of the day
 			now.setDate(now.getDate() + 1);
 		}
@@ -40,7 +42,7 @@ export function ReservationCalendar({
 		return now.getTime();
 	});
 
-	const daysText = ReservationDays + " " + pluralize(ReservationDays, "day");
+	const daysText = `${ReservationDays} ${pluralize(ReservationDays, "day")}`;
 
 	return (
 		TimeZoneAlert() ?? (
@@ -285,9 +287,9 @@ function TimeSlot({
 
 	const current = hasStarted && !hasEnded;
 
-	let style = styles.timeSlotStackContainer;
-	if (current) style += " " + styles.timeSlotCurrent;
-	if (hasEnded) style += " " + styles.timeSlotOver;
+	const style = [styles.timeSlotStackContainer];
+	if (current) style.push(styles.timeSlotCurrent);
+	if (hasEnded) style.push(styles.timeSlotOver);
 
 	const handleAddReservation = () => {
 		if (!teamNumber) return;
@@ -313,7 +315,7 @@ function TimeSlot({
 	};
 
 	return (
-		<div className={style}>
+		<div className={style.join(" ")}>
 			<div className={styles.timeSlotTime}>
 				{dateToTime(start)} - {dateToTime(end)}
 			</div>
@@ -327,6 +329,7 @@ function TimeSlot({
 					>
 						{r.team}
 						<button
+							type="button"
 							onClick={() => {
 								console.log("Removing reservation:", {
 									id: r.id,
@@ -345,14 +348,14 @@ function TimeSlot({
 				{tempTeamNumber !== null && isAdding && (
 					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
 						{tempTeamNumber || "New Team"}
-						<button onClick={handleCancelAdd} className={styles.removeReservationBtn}>
+						<button type="button" onClick={handleCancelAdd} className={styles.removeReservationBtn}>
 							×
 						</button>
 					</div>
 				)}
 			</div>
 			{!hasEnded && (
-				<button className={styles.addReservationBtn} onClick={handleOpenAddModal}>
+				<button type="button" className={styles.addReservationBtn} onClick={handleOpenAddModal}>
 					+
 				</button>
 			)}
@@ -371,14 +374,15 @@ function TimeSlot({
 									setTempTeamNumber(e.target.value);
 								}}
 								placeholder="Enter team number"
-								autoFocus
 							/>
 						</div>
 						<div className={styles.modalActions}>
-							<button onClick={handleAddReservation} disabled={!teamNumber}>
+							<button type="button" onClick={handleAddReservation} disabled={!teamNumber}>
 								Add
 							</button>
-							<button onClick={handleCancelAdd}>Cancel</button>
+							<button type="button" onClick={handleCancelAdd}>
+								Cancel
+							</button>
 						</div>
 					</div>
 				</div>

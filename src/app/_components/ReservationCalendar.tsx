@@ -5,7 +5,7 @@ import { useInterval } from "./useInterval";
 import { api } from "~/trpc/react";
 import { useState } from "react";
 import type { Reservation } from "~/types";
-import { dateToDateString, dateToTime } from "~/server/util/timeUtils";
+import { dateToDateString, dateToTime, dateToTimeSlotString } from "~/server/util/timeUtils";
 
 const TimeSlotBorders = [-2, 1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
@@ -147,7 +147,12 @@ function Day({
 					end.setHours(12 + a[index + 1]!, 0, 0, 0);
 
 					return (
-						<TimeSlot key={index} start={start} end={end} index={index} initialReservations={initialReservations} />
+						<TimeSlot
+							key={dateToTimeSlotString(start)}
+							start={start}
+							end={end}
+							initialReservations={initialReservations}
+						/>
 					);
 				})}
 			</div>
@@ -162,7 +167,6 @@ function TimeSlot({
 }: {
 	start: Date;
 	end: Date;
-	index: number;
 	initialReservations: InitialReservations;
 }) {
 	const [isAdding, setIsAdding] = useState(false);

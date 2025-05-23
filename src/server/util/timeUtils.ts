@@ -15,3 +15,9 @@ export function dateToDateString(date: Date) {
 	const dd = d.toString().padStart(2, "0");
 	return `${yyyy}-${mm}-${dd}`;
 }
+
+export function dateToTimeSlotString(date: Date) {
+	const d = dateToDateString(date);
+	const t = dateToTime(date);
+	return `${d} ${t}`;
+}

@@ -83,6 +83,8 @@ type UserEntry = {
 	updated: Date | string;
 	disabled?: boolean;
 	teams: Team[] | "admin";
+	email: string;
+	image: string;
 };
 
 const reservations: Reservation[] = [];
@@ -351,6 +353,8 @@ export class Context {
 				created: new Date(),
 				updated: new Date(),
 				teams: FirstUserIsAdmin && !users.length ? "admin" : [],
+				email: this.session.user.email ?? "",
+				image: this.session.user.image ?? "",
 			};
 			users.push(newUser);
 

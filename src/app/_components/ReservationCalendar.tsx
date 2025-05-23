@@ -440,3 +440,24 @@ function TimeSlot({
 		</div>
 	);
 }
+
+// Add these right after the imports
+process.on("exit", code => {
+	console.log(`🔴 Process ${process.pid} exiting with code: ${code}`);
+});
+
+process.on("SIGTERM", () => {
+	console.log(`🔴 Process ${process.pid} received SIGTERM`);
+});
+
+process.on("SIGINT", () => {
+	console.log(`🔴 Process ${process.pid} received SIGINT`);
+});
+
+process.on("uncaughtException", err => {
+	console.error(`🔴 Uncaught Exception in PID ${process.pid}:`, err);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+	console.error(`🔴 Unhandled Rejection in PID ${process.pid}:`, reason);
+});

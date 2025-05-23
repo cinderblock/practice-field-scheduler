@@ -7,7 +7,7 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
-console.log("Loading backend.ts");
+console.log(`🟢 Backend module loading - PID: ${process.pid}`);
 
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
@@ -120,7 +120,7 @@ export class Context {
 	}
 
 	async addReservation(reservation: AddReservationArgs) {
-		console.log("Add reservation - PID:", process.pid);
+		console.log("🟢 addReservation START - PID:", process.pid);
 		this.restrictToTeam(reservation.team, "Only team members can add reservations");
 		this.restrictTimeframe(reservation.date);
 
@@ -131,7 +131,9 @@ export class Context {
 			throw new Error("Reservation already exists for this date and slot");
 		}
 
+		console.log("🟡 About to acquire lock - PID:", process.pid);
 		const release = await changeLock.acquire();
+		console.log("🟡 Lock acquired - PID:", process.pid);
 		const ctx = this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
@@ -159,8 +161,12 @@ export class Context {
 
 		jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
 
+		console.log("🟡 About to start Promise.all with", jobs.length, "jobs - PID:", process.pid);
 		const done = Promise.all(jobs);
+
+		console.log("🟡 About to await Promise.all - PID:", process.pid);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+		console.log("🟢 addReservation END - PID:", process.pid);
 
 		return res;
 	}
@@ -561,4 +567,28 @@ async function initializePart(array: unknown[]) {
 })().catch(err => {
 	console.error("Error initializing data:", err);
 	exit(1); // Exit the process on initialization error
+});
+
+process.on("exit", code => {
+	console.log(`🔴 Process ${process.pid} exiting with code: ${code}`);
+});
+
+process.on("beforeExit", code => {
+	console.log(`🔴 Process ${process.pid} before exit with code: ${code}`);
+});
+
+process.on("SIGTERM", () => {
+	console.log(`🔴 Process ${process.pid} received SIGTERM`);
+});
+
+process.on("SIGINT", () => {
+	console.log(`🔴 Process ${process.pid} received SIGINT`);
+});
+
+process.on("uncaughtException", err => {
+	console.error(`🔴 Uncaught Exception in PID ${process.pid}:`, err);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+	console.error(`🔴 Unhandled Rejection in PID ${process.pid}:`, reason);
 });

@@ -32,7 +32,7 @@ import type {
 	UserId,
 } from "~/types";
 import type { Session } from "next-auth";
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs

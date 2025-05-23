@@ -143,8 +143,12 @@ function Day({
 					const start = new Date(date);
 					const end = new Date(date);
 
-					start.setHours(12 + a[index]!, 0, 0, 0);
-					end.setHours(12 + a[index + 1]!, 0, 0, 0);
+					const startHours = a[index];
+					const endHours = a[index + 1];
+					if (startHours === undefined || endHours === undefined) throw new Error("TimeSlotBorders is empty");
+
+					start.setHours(12 + startHours, 0, 0, 0);
+					end.setHours(12 + endHours, 0, 0, 0);
 
 					return (
 						<TimeSlot

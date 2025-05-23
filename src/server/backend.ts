@@ -391,7 +391,7 @@ export class Context {
 	}
 
 	private restrictToTeam(team: Team | TeamFull, message: string) {
-		if (typeof team === "string") team = parseInt(team, 10);
+		if (typeof team === "string") team = Number.parseInt(team, 10);
 
 		const permissions = this.getEditPermissions();
 		if (permissions === "admin") return;
@@ -484,8 +484,8 @@ async function writeJsonFile(filePath: string, data: JsonData) {
 async function appendLog(logEntry: JsonData) {
 	if (DisableWrites) return;
 	try {
-		const logLine = JSON.stringify(logEntry) + "\n";
-		await appendFile(LOGS_FILE, logLine, "utf-8");
+		const logLine = JSON.stringify(logEntry);
+		await appendFile(LOGS_FILE, `${logLine}\n`, "utf-8");
 	} catch (err) {
 		console.error("Error appending to logs file:", err);
 	}

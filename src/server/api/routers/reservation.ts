@@ -27,8 +27,8 @@ export const reservationRouter = createTRPCRouter({
 		)
 		.mutation(async ({ input, ctx }) => {
 			console.log("Remove reservation - PID:", process.pid);
-			await ctx.context.removeReservation(input);
-			return { success: true };
+			const reservation = await ctx.context.removeReservation(input);
+			return { success: true, reservation };
 		}),
 
 	list: protectedProcedure.input(z.object({ date: z.string() })).query(async ({ input, ctx }) => {

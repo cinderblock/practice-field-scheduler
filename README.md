@@ -32,10 +32,9 @@ ngrok http 3000
 
 Ngrok will provide you with a public URL.
 Use the URL in these places:
-1. OAuth redirect URI in Slack app settings
-2. `NEXTAUTH_URL` environment variable
-3. `allowedDevOrigins` in `next.config.js`
-4. Browser URL
+1. OAuth redirect URI in [Slack app settings](https://api.slack.com/apps/A08S73XASQM/oauth)
+2. `NEXTAUTH_URL` environment variable (in `.env` or `.env.local`)
+3. Browser URL for development
 
 ### Technology Stack
 

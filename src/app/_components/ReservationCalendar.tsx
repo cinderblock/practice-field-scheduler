@@ -351,6 +351,7 @@ function TimeSlot({
 				{dateToTime(start)} - {dateToTime(end)}
 			</div>
 			<div className={styles.reservationStack}>
+				{/* Existing reservations */}
 				{slotReservations.map(r => (
 					<div
 						key={r.id}
@@ -376,6 +377,7 @@ function TimeSlot({
 						</button>
 					</div>
 				))}
+				{/* Pending addition */}
 				{tempTeamNumber !== null && isAdding && (
 					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
 						{tempTeamNumber || "New Team"}
@@ -385,11 +387,13 @@ function TimeSlot({
 					</div>
 				)}
 			</div>
+			{/* Add reservation button */}
 			{!hasEnded && (
 				<button type="button" className={styles.addReservationBtn} onClick={handleOpenAddModal}>
 					+
 				</button>
 			)}
+			{/* Add reservation modal */}
 			{isAdding && (
 				<div className={styles.addReservationModal}>
 					<div className={styles.modalContent}>

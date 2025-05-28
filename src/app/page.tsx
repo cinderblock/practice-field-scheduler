@@ -59,8 +59,19 @@ async function LoggedIn({ session }: { session: Session }) {
 	return (
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
-				<span>Logged in as {session.user?.name}</span>
-				<Link href="/api/auth/signout" className={styles.logoutButtonSmall}>
+				<span>
+					Logged in as {session.user?.name}
+					{session.user?.image && (
+						<img
+							style={{ userSelect: "none" }}
+							src={session.user.image}
+							alt={`${session.user.name}'s profile`}
+							className={styles.profileImage}
+							width={48}
+						/>
+					)}
+				</span>
+				<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
 					Sign&nbsp;out
 				</Link>
 			</div>

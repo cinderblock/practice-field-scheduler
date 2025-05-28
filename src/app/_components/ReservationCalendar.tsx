@@ -446,7 +446,7 @@ function TimeSlot({
 				{/* Pending addition */}
 				{tempTeamNumber !== null && isAdding && (
 					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
-						<span style={{ userSelect: "none" }}>{tempTeamNumber || "New Team"}</span>
+						<span style={{ userSelect: "none" }}>{tempTeamNumber || "New Reservation"}</span>
 					</div>
 				)}
 			</div>

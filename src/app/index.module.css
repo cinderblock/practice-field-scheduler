@@ -193,6 +193,10 @@
   box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
 }
 
+.weekend {
+  background: #3a2a4a;
+}
+
 .dayHeader {
   display: flex;
   justify-content: space-between;

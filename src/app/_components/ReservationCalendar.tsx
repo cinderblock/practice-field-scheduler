@@ -351,7 +351,7 @@ function TimeSlot({
 				{dateToTime(start)} - {dateToTime(end)}
 			</div>
 			<div className={styles.reservationStack}>
-				{slotReservations.map((r: Reservation, i: number) => (
+				{slotReservations.map(r => (
 					<div
 						key={r.id}
 						className={`${styles.reservationPill} ${

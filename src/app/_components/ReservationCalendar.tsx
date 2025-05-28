@@ -426,6 +426,7 @@ function TimeSlot({
 					>
 						{r.team}
 						<button
+							style={{ userSelect: "none" }}
 							type="button"
 							onClick={() => {
 								console.log("Removing reservation:", {
@@ -445,7 +446,7 @@ function TimeSlot({
 				{/* Pending addition */}
 				{tempTeamNumber !== null && isAdding && (
 					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
-						{tempTeamNumber || "New Team"}
+						<span style={{ userSelect: "none" }}>{tempTeamNumber || "New Team"}</span>
 						<button type="button" onClick={handleCancelAdd} className={styles.removeReservationBtn}>
 							×
 						</button>
@@ -454,7 +455,12 @@ function TimeSlot({
 			</div>
 			{/* Add reservation button */}
 			{!hasEnded && (
-				<button type="button" className={styles.addReservationBtn} onClick={handleOpenAddModal}>
+				<button
+					style={{ userSelect: "none" }}
+					type="button"
+					className={styles.addReservationBtn}
+					onClick={handleOpenAddModal}
+				>
 					+
 				</button>
 			)}

@@ -425,22 +425,24 @@ function TimeSlot({
 						} ${r.id === "temp-id" ? styles.pendingAddition : ""}`}
 					>
 						{r.team}
-						<button
-							style={{ userSelect: "none" }}
-							type="button"
-							onClick={() => {
-								console.log("Removing reservation:", {
-									id: r.id,
-								});
-								removeReservation.mutate({
-									id: r.id,
-								});
-							}}
-							className={styles.removeReservationBtn}
-							disabled={pendingDeletions.has(r.id)}
-						>
-							{pendingDeletions.has(r.id) ? "⌛" : "×"}
-						</button>
+						{!hasEnded && (
+							<button
+								style={{ userSelect: "none" }}
+								type="button"
+								onClick={() => {
+									console.log("Removing reservation:", {
+										id: r.id,
+									});
+									removeReservation.mutate({
+										id: r.id,
+									});
+								}}
+								className={styles.removeReservationBtn}
+								disabled={pendingDeletions.has(r.id)}
+							>
+								{pendingDeletions.has(r.id) ? "⌛" : "×"}
+							</button>
+						)}
 					</div>
 				))}
 				{/* Pending addition */}

@@ -227,7 +227,6 @@ function TimeSlot({
 
 			// Optimistically update the cache
 			utils.reservation.list.setData({ date: dateStr }, old => {
-				if (!old) return [];
 				if (!Array.isArray(old)) return [];
 				return [
 					...old,
@@ -249,7 +248,6 @@ function TimeSlot({
 		onSuccess: ({ reservation }) => {
 			// Update the cache with the real reservation from the server
 			utils.reservation.list.setData({ date: dateStr }, old => {
-				if (!old) return [];
 				if (!Array.isArray(old)) return [];
 				// Replace the temp reservation with the real one
 				return old.map(r => (r.id === "temp-id" ? reservation : r));
@@ -286,7 +284,6 @@ function TimeSlot({
 		onSuccess: (data, { id }) => {
 			// Now remove it from the cache
 			utils.reservation.list.setData({ date: dateStr }, old => {
-				if (!old) return [];
 				if (!Array.isArray(old)) return [];
 				return old.filter(r => r.id !== id);
 			});

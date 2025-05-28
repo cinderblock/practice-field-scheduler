@@ -530,8 +530,7 @@
 }
 
 .pendingAddition {
-  opacity: 0.7;
-  background: linear-gradient(90deg, #6d6df7 60%, #a7bfff 100%);
+  opacity: 0.6;
 }
 
 .profileImage {

@@ -5,7 +5,6 @@ import { useInterval } from "./useInterval";
 import { api } from "~/trpc/react";
 import { useState } from "react";
 import type { Reservation } from "~/types";
-import { dateToDateString, dateToTime, dateToTimeSlotString } from "~/server/util/timeUtils";
 
 const TimeSlotBorders = [-2, 1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
@@ -16,6 +15,124 @@ type InitialReservations = {
 	reservations: Reservation[];
 }[];
 
+/**
+ * Returns the current date in the fixed timezone
+ * @returns The current date in the fixed timezone
+ */
+function getToday(): string {
+	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
+}
+
+/**
+ * Returns the time zone name for a given date and time
+ * @example assuming TimeZone is "America/Los_Angeles"
+ * getTimeZoneName("2024-01-01") // "PST"
+ * getTimeZoneName("2024-06-01") // "PDT"
+ *
+ * @param date - The date to get the time zone name for
+ * @param time - The time to get the time zone name for
+ * @returns The time zone name for the given date and time
+ */
+function getTimeZoneName(date: string, time = "00:00"): string {
+	const testDate = new Date(`${date}T12:00:00`);
+	const formatter = new Intl.DateTimeFormat("en", {
+		timeZone: TimeZone,
+		timeZoneName: "short",
+	});
+	const timeZoneName = formatter.formatToParts(testDate).find(part => part.type === "timeZoneName")?.value;
+
+	if (!timeZoneName) throw new Error("Failed to get time zone name");
+
+	return timeZoneName;
+}
+
+function createDateFromStrings(date: string, time: string | number = "00:00"): Date {
+	if (typeof time === "number") time = `${time.toString().padStart(2, "0")}:00`;
+
+	const timeZoneName = getTimeZoneName(date, time);
+
+	// Parse the actual datetime with the correct timezone abbreviation
+	return new Date(`${date} ${time} ${timeZoneName}`);
+}
+
+function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {
+	let mins = minute?.toString().padStart(2, "0");
+	if (minute === undefined) mins = "";
+	else mins = `:${mins}`;
+
+	const am_pm = hour < 12 ? "am" : "pm";
+	if (hour > 12) hour -= 12;
+
+	return <>{`${hour}${mins}${am_pm}`}</>;
+}
+
+function TimeRangeDisplay({ date, start, end }: { date: string; start: number; end: number }) {
+	return (
+		<span className={styles.timeSlotTime}>
+			<TimeDisplay date={date} hour={start} /> - <TimeDisplay date={date} hour={end} />
+		</span>
+	);
+}
+function getWeekdayFromDateString(date: string): string {
+	return new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+}
+
+function isWeekend(date: string): boolean {
+	const formatter = new Intl.DateTimeFormat("en-US", {
+		timeZone: "UTC",
+		weekday: "short",
+	});
+	return formatter.format(new Date(`${date}T12:00:00`)).startsWith("S");
+}
+
+function DayName({ date }: { date: string }) {
+	const dayString = getWeekdayFromDateString(date);
+
+	// Calculate days difference
+	const today = useInterval(getToday, 1000);
+	const diffDays = getDateDaysDifference(date, today);
+
+	let dayLabel = "";
+	if (diffDays === 0) dayLabel = "(today)";
+	else if (diffDays === 1) dayLabel = "(tomorrow)";
+	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
+
+	return (
+		<span className={styles.dayName} style={{ whiteSpace: "nowrap" }}>
+			{dayString}
+			{dayLabel && (
+				<span className={styles.dayLabel} style={{ userSelect: "none" }}>
+					{dayLabel}
+				</span>
+			)}
+		</span>
+	);
+}
+
+function DayDate({ date }: { date: string }) {
+	return <span className={styles.dayDate}>{date}</span>;
+}
+
+function addDaysToDateString(date: string, days: number): string {
+	const d = new Date(`${date}T12:00:00`);
+	d.setDate(d.getDate() + days);
+	return d.toISOString().slice(0, 10);
+}
+
+function getDateDaysDifference(from: string, until: string): number {
+	const a = new Date(`${until}T12:00:00`);
+	const b = new Date(`${from}T12:00:00`);
+	const delta = b.getTime() - a.getTime();
+	const day = 1000 * 60 * 60 * 24;
+	return Math.round(delta / day);
+}
+
+function hourToTimeSlot(hour: number, minute = 0): string {
+	const am_pm = hour < 12 ? "am" : "pm";
+	if (hour > 12) hour -= 12;
+	return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}${am_pm}`;
+}
+
 function pluralize(count: number, singular = "", plural = `${singular}s`) {
 	return count === 1 ? singular : plural;
 }
@@ -25,56 +142,33 @@ export function ReservationCalendar({
 }: {
 	initialReservations: InitialReservations;
 }) {
-	const start = useInterval(() => {
-		const now = new Date();
+	const startDate = useInterval(() => {
+		const today = getToday();
+
 		const lastTimeSlot = TimeSlotBorders[TimeSlotBorders.length - 1];
 		if (lastTimeSlot === undefined) throw new Error("TimeSlotBorders is empty");
 
-		// Add 12 because time slots are relative to noon
-		if (now.getHours() >= 12 + lastTimeSlot) {
-			// Start tomorrow after the last time slot of the day
-			now.setDate(now.getDate() + 1);
-		}
+		const lastEventToday = createDateFromStrings(today, lastTimeSlot + 12);
 
-		// Set time to local midnight
-		now.setHours(0, 0, 0, 0);
+		// Start tomorrow after the last time slot of the day
+		if (new Date() >= lastEventToday) return addDaysToDateString(today, 1);
 
-		return now.getTime();
+		return today;
 	});
 
 	const daysText = `${ReservationDays} ${pluralize(ReservationDays, "day")}`;
 
 	return (
-		TimeZoneAlert() ?? (
-			<>
-				<div className={styles.calendarGrid}>
-					<Days start={new Date(start)} days={ReservationDays + 1} initialReservations={initialReservations} />
-				</div>
-				<p>
-					We only allow reservations for the next {daysText}.
-					<br />
-					Please check back later for more availability.
-				</p>
-			</>
-		)
-	);
-}
-
-function useTimezone() {
-	return useInterval(() => Intl.DateTimeFormat().resolvedOptions().timeZone, 500);
-}
-
-// Check if client's timezone is not the same as the server's and show a warning
-function TimeZoneAlert() {
-	const renderTimeZone = useTimezone();
-
-	if (renderTimeZone === TimeZone) return null;
-
-	return (
-		<div className={styles.timezoneAlert}>
-			<p>Your timezone is different from the lab's.</p>
-			<p>Contact the admin if you need support for this.</p>
-		</div>
+		<>
+			<div className={styles.calendarGrid}>
+				<Days start={startDate} days={ReservationDays + 1} initialReservations={initialReservations} />
+			</div>
+			<p>
+				We only allow reservations for the next {daysText}.
+				<br />
+				Please check back later for more availability.
+			</p>
+		</>
 	);
 }
 
@@ -83,20 +177,16 @@ function Days({
 	days,
 	initialReservations,
 }: {
-	start: Date;
+	start: string;
 	days: number;
 	initialReservations: InitialReservations;
 }) {
-	const dates = Array.from({ length: days }, (_, i) => {
-		const date = new Date(start);
-		date.setDate(start.getDate() + i);
-		return date;
-	});
+	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
 
 	return (
 		<>
 			{dates.map(date => (
-				<div key={date.getTime()} className={styles.calendarDay}>
+				<div key={date} className={styles.calendarDay}>
 					<Day date={date} initialReservations={initialReservations} />
 				</div>
 			))}
@@ -108,53 +198,35 @@ function Day({
 	date,
 	initialReservations,
 }: {
-	date: Date;
+	date: string;
 	initialReservations: InitialReservations;
 }) {
-	const dateString = date.toISOString().slice(0, 10);
-	const dayString = date.toLocaleDateString(undefined, { weekday: "long" });
-
-	// Calculate days difference
-	const today = useInterval(() => {
-		const now = new Date();
-		now.setHours(0, 0, 0, 0);
-		return now.getTime();
-	}, 1000);
-
-	const diffDays = Math.round((date.getTime() - today) / (1000 * 60 * 60 * 24));
-	let dayLabel = "";
-	if (diffDays === 0) dayLabel = "(today)";
-	else if (diffDays === 1) dayLabel = "(tomorrow)";
-	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
-
-	const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+	const style = [styles.dayContainer];
+	if (isWeekend(date)) style.push(styles.weekend);
 
 	return (
-		<div className={isWeekend ? `${styles.dayContainer} ${styles.weekend}` : styles.dayContainer}>
+		<div className={style.join(" ")}>
 			<div className={styles.dayHeader}>
-				<span className={styles.dayName}>
-					{dayString} {dayLabel && <span className={styles.dayLabel}>{dayLabel}</span>}
-				</span>
-				<span className={styles.dayDate}>{dateString}</span>
+				<DayName date={date} />
+				<DayDate date={date} />
 			</div>
 			<div className={styles.timeSlotRow}>
 				{TimeSlotBorders.map((_, index, a) => {
 					if (index === a.length - 1) return null;
-					const start = new Date(date);
-					const end = new Date(date);
 
 					const startHours = a[index];
 					const endHours = a[index + 1];
 					if (startHours === undefined || endHours === undefined) throw new Error("TimeSlotBorders is empty");
 
-					start.setHours(12 + startHours, 0, 0, 0);
-					end.setHours(12 + endHours, 0, 0, 0);
+					const startHour = 12 + startHours;
+					const endHour = 12 + endHours;
 
 					return (
 						<TimeSlot
-							key={dateToTimeSlotString(start)}
-							start={start}
-							end={end}
+							key={`${date}_${startHour}`}
+							date={date}
+							startHour={startHour}
+							endHour={endHour}
 							initialReservations={initialReservations}
 						/>
 					);
@@ -165,12 +237,14 @@ function Day({
 }
 
 function TimeSlot({
-	start,
-	end,
+	date,
+	startHour,
+	endHour,
 	initialReservations,
 }: {
-	start: Date;
-	end: Date;
+	date: string;
+	startHour: number;
+	endHour: number;
 	initialReservations: InitialReservations;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
@@ -180,30 +254,22 @@ function TimeSlot({
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
 	const utils = api.useUtils();
 
-	const dateStr = dateToDateString(start);
-	const slotStr = dateToTime(start);
-	const dayString = start.toLocaleDateString(undefined, { weekday: "long" });
+	const slot = hourToTimeSlot(startHour);
 
 	// Calculate days difference
-	const today = useInterval(() => {
-		const now = new Date();
-		now.setHours(0, 0, 0, 0);
-		return now.getTime();
-	}, 1000);
+	const today = useInterval(getToday, 1000);
+	const diffDays = getDateDaysDifference(date, today);
 
-	const diffDays = Math.round((start.getTime() - today) / (1000 * 60 * 60 * 24));
 	let dayLabel = "";
 	if (diffDays === 0) dayLabel = "(today)";
 	else if (diffDays === 1) dayLabel = "(tomorrow)";
 	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
 
-	const isWeekend = start.getDay() === 0 || start.getDay() === 6;
-
-	const initialData = initialReservations.find(r => r.date === dateStr)?.reservations ?? [];
+	const initialData = initialReservations.find(r => r.date === date)?.reservations ?? [];
 
 	const { data: reservations = initialData } = api.reservation.list.useQuery(
 		{
-			date: dateStr,
+			date: date,
 		},
 		{
 			initialData,
@@ -215,7 +281,7 @@ function TimeSlot({
 	}
 
 	// Filter reservations for this specific time slot
-	const slotReservations = reservations.filter(r => r.slot === slotStr);
+	const slotReservations = reservations.filter(r => r.slot === slot);
 
 	const addReservation = api.reservation.add.useMutation({
 		onMutate: async newReservation => {
@@ -223,10 +289,10 @@ function TimeSlot({
 			await utils.reservation.list.cancel();
 
 			// Get the current data for the affected date
-			const previousData = utils.reservation.list.getData({ date: dateStr });
+			const previousData = utils.reservation.list.getData({ date });
 
 			// Optimistically update the cache
-			utils.reservation.list.setData({ date: dateStr }, old => {
+			utils.reservation.list.setData({ date }, old => {
 				if (!Array.isArray(old)) return [];
 				return [
 					...old,
@@ -247,7 +313,7 @@ function TimeSlot({
 		},
 		onSuccess: ({ reservation }) => {
 			// Update the cache with the real reservation from the server
-			utils.reservation.list.setData({ date: dateStr }, old => {
+			utils.reservation.list.setData({ date }, old => {
 				if (!Array.isArray(old)) return [];
 				// Replace the temp reservation with the real one
 				return old.map(r => (r.id === "temp-id" ? reservation : r));
@@ -258,7 +324,7 @@ function TimeSlot({
 		onError: (err, newReservation, context) => {
 			// Rollback on error
 			if (context?.previousData) {
-				utils.reservation.list.setData({ date: dateStr }, context.previousData);
+				utils.reservation.list.setData({ date }, context.previousData);
 			}
 			// Restore the temporary team number on error
 			setTempTeamNumber(newReservation.team);
@@ -274,7 +340,7 @@ function TimeSlot({
 			await utils.reservation.list.cancel();
 
 			// Get the current data for the affected date
-			const previousData = utils.reservation.list.getData({ date: dateStr });
+			const previousData = utils.reservation.list.getData({ date });
 
 			// Mark the reservation as pending deletion in local state
 			setPendingDeletions(prev => new Set([...prev, id]));
@@ -283,7 +349,7 @@ function TimeSlot({
 		},
 		onSuccess: (data, { id }) => {
 			// Now remove it from the cache
-			utils.reservation.list.setData({ date: dateStr }, old => {
+			utils.reservation.list.setData({ date }, old => {
 				if (!Array.isArray(old)) return [];
 				return old.filter(r => r.id !== id);
 			});
@@ -297,7 +363,7 @@ function TimeSlot({
 		onError: (err, variables, context) => {
 			// Rollback on error
 			if (context?.previousData) {
-				utils.reservation.list.setData({ date: dateStr }, context.previousData);
+				utils.reservation.list.setData({ date }, context.previousData);
 			}
 			// Remove from pending deletions
 			setPendingDeletions(prev => {
@@ -308,8 +374,12 @@ function TimeSlot({
 		},
 	});
 
-	const hasStarted = useInterval(() => new Date() >= start, 1000, [start]);
-	const hasEnded = useInterval(() => new Date() >= end, 1000, [end]);
+	// Create Date objects for time comparisons using lab timezone
+	const startTime = createDateFromStrings(date, startHour);
+	const endTime = createDateFromStrings(date, endHour);
+
+	const hasStarted = useInterval(() => new Date() >= startTime, 1000, [startTime]);
+	const hasEnded = useInterval(() => new Date() >= endTime, 1000, [endTime]);
 
 	const current = hasStarted && !hasEnded;
 
@@ -321,8 +391,8 @@ function TimeSlot({
 		if (!teamNumber) return;
 		// Don't clear tempTeamNumber here - let the optimistic update handle it
 		addReservation.mutate({
-			date: dateStr,
-			slot: slotStr,
+			date: date,
+			slot: slot,
 			team: teamNumber,
 			notes: "",
 			priority,
@@ -344,9 +414,7 @@ function TimeSlot({
 
 	return (
 		<div className={style.join(" ")}>
-			<div className={styles.timeSlotTime}>
-				{dateToTime(start)} - {dateToTime(end)}
-			</div>
+			<TimeRangeDisplay date={date} start={startHour} end={endHour} />
 			<div className={styles.reservationStack}>
 				{/* Existing reservations */}
 				{slotReservations.map(r => (
@@ -396,13 +464,9 @@ function TimeSlot({
 					<div className={styles.modalContent}>
 						<h3>Add Reservation</h3>
 						<div className={styles.modalSubheader}>
-							<span className={styles.dayName}>
-								{dayString} {dayLabel && <span className={styles.dayLabel}>{dayLabel}</span>}
-							</span>
-							<span className={styles.dayDate}>{dateStr}</span>
-							<span className={styles.timeSlotTime}>
-								{dateToTime(start)} - {dateToTime(end)}
-							</span>
+							<DayName date={date} />
+							<DayDate date={date} />
+							<TimeRangeDisplay date={date} start={startHour} end={endHour} />
 						</div>
 						<form
 							onSubmit={e => {

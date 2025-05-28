@@ -447,9 +447,6 @@ function TimeSlot({
 				{tempTeamNumber !== null && isAdding && (
 					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
 						<span style={{ userSelect: "none" }}>{tempTeamNumber || "New Team"}</span>
-						<button type="button" onClick={handleCancelAdd} className={styles.removeReservationBtn}>
-							×
-						</button>
 					</div>
 				)}
 			</div>

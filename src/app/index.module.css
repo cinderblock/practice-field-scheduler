@@ -329,8 +329,7 @@
 .timeSlotStackContainer:hover .addReservationBtn {
   opacity: 1;
 }
-.timeSlotOver .addReservationBtn,
-.timeSlotCurrent .addReservationBtn {
+.timeSlotOver .addReservationBtn {
   display: none;
 }
 

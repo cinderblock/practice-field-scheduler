@@ -353,7 +353,7 @@ function TimeSlot({
 			<div className={styles.reservationStack}>
 				{slotReservations.map((r: Reservation, i: number) => (
 					<div
-						key={i}
+						key={r.id}
 						className={`${styles.reservationPill} ${
 							pendingDeletions.has(r.id) ? styles.pendingDeletion : ""
 						} ${r.id === "temp-id" ? styles.pendingAddition : ""}`}

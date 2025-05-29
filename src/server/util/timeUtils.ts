@@ -21,3 +21,20 @@ export function dateToTimeSlotString(date: Date) {
 	const t = dateToTime(date);
 	return `${d} ${t}`;
 }
+export function dateToLocalString(date: Date) {
+	return date
+		.toLocaleString("en-US", {
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			hour12: true,
+			timeZoneName: "short",
+		})
+		.replace(
+			/(\d+)\/(\d+)\/(\d+),\s(\d+):(\d+):(\d+)\s(AM|PM)\s(.+)/,
+			(_, m, d, y, h, min, s, ampm, tz) => `${y}-${m}-${d} ${h}:${min}:${s}${ampm.toLowerCase()} ${tz}`,
+		);
+}

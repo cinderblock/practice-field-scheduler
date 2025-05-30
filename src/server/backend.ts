@@ -440,31 +440,12 @@ export class Context {
 		// First check if user is logged in
 		if (!this.user) throw new PermissionError("Not authenticated");
 
-		// Read directly from file to ensure fresh data (in-memory array may be stale due to HMR)
-		console.log(`📋 listReservations for ${date} - PID: ${process.pid} - Reading from file`);
-
-		try {
-			const fileData = await readJsonFile(RESERVATIONS_FILE);
-			const allReservations = Array.isArray(fileData) ? (fileData as Reservation[]) : [];
-			const filteredReservations = allReservations.filter(
-				reservation => reservation.date === date && !reservation.abandoned,
-			);
-
-			console.log(
-				`📋 File-based reservations for ${date}: ${filteredReservations.length} (total in file: ${allReservations.length})`,
-			);
-			console.log(`📋 In-memory reservations: ${reservations.length} (for comparison)`);
-
-			return filteredReservations;
-		} catch (error) {
-			console.error(`❌ Error reading reservations file: ${error}`);
-			// Fallback to in-memory array if file read fails
-			const filteredReservations = reservations.filter(
-				reservation => reservation.date === date && !reservation.abandoned,
-			);
-			console.log(`📋 Fallback to in-memory: ${filteredReservations.length} reservations for ${date}`);
-			return filteredReservations;
-		}
+		// Return only non-abandoned reservations for the given date from in-memory array
+		const result = reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
+		console.log(
+			`📋 [${MODULE_INSTANCE_ID}] listReservations(${date}) returning ${result.length} items (total in memory: ${reservations.length}) - PID: ${process.pid}`,
+		);
+		return result;
 	}
 }
 

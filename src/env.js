@@ -15,6 +15,8 @@ export const env = createEnv({
 		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
 		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+		FIRST_API_USERNAME: z.string().min(1),
+		FIRST_API_AUTH_TOKEN: z.string().length(36),
 	},
 
 	/**
@@ -36,7 +38,8 @@ export const env = createEnv({
 		AUTH_SLACK_CLIENT_SECRET: process.env.AUTH_SLACK_CLIENT_SECRET,
 		AUTH_SLACK_SIGNING_SECRET: process.env.AUTH_SLACK_SIGNING_SECRET,
 		NODE_ENV: process.env.NODE_ENV,
-		// NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
+		FIRST_API_USERNAME: process.env.FIRST_API_USERNAME,
+		FIRST_API_AUTH_TOKEN: process.env.FIRST_API_AUTH_TOKEN,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

@@ -39,6 +39,14 @@ const ContinueOnError = true; // If true, the server will continue running even 
 const AdvancedReservationDays = 7; // Number of days in the future that reservations can be made
 const DisableWrites = false; // If true, the server will not write to the database
 
+// Add unique module instance ID for tracking reinitialization
+const MODULE_INSTANCE_ID = crypto.randomUUID().substring(0, 8);
+console.log(`🔥 Backend module instance ${MODULE_INSTANCE_ID} loading - PID: ${process.pid}`);
+
+console.log(
+	`📦 [${MODULE_INSTANCE_ID}] Using globals - reservations: ${reservations.length}, initialized: ${globalThis.__backendInitialized} - PID: ${process.pid}`,
+);
+
 type LogCommon = {
 	timestamp: Date;
 	ip: string;
@@ -122,8 +130,7 @@ export class Context {
 	}
 
 	async addReservation(reservation: AddReservationArgs) {
-		console.log("🟢 addReservation START - PID:", process.pid);
-		console.log("🟢 Adding reservation:", JSON.stringify(reservation));
+		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation START - PID: ${process.pid}`);
 		this.restrictToTeam(reservation.team, "Only team members can add reservations");
 		this.restrictTimeframe(reservation.date);
 
@@ -134,9 +141,9 @@ export class Context {
 			throw new Error("Reservation already exists for this date and slot");
 		}
 
-		console.log("🟡 About to acquire lock - PID:", process.pid);
+		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to acquire lock - PID: ${process.pid}`);
 		const release = await changeLock.acquire();
-		console.log("🟡 Lock acquired - PID:", process.pid);
+		console.log(`🟡 [${MODULE_INSTANCE_ID}] Lock acquired - PID: ${process.pid}`);
 		const ctx = this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
@@ -147,10 +154,10 @@ export class Context {
 			created: ctx.timestamp,
 		};
 
-		console.log("🟡 Adding to in-memory array - PID:", process.pid);
-		console.log("🟡 Before: in-memory reservations count:", reservations.length);
+		console.log(
+			`🟡 [${MODULE_INSTANCE_ID}] Adding to reservations array (current size: ${reservations.length}) - PID: ${process.pid}`,
+		);
 		reservations.push(res);
-		console.log("🟡 After: in-memory reservations count:", reservations.length);
 
 		jobs.push(
 			log({
@@ -167,13 +174,12 @@ export class Context {
 
 		jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
 
-		console.log("🟡 About to start Promise.all with", jobs.length, "jobs - PID:", process.pid);
+		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to start Promise.all with ${jobs.length} jobs - PID: ${process.pid}`);
 		const done = Promise.all(jobs);
 
-		console.log("🟡 About to await Promise.all - PID:", process.pid);
+		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to await Promise.all - PID: ${process.pid}`);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
-		console.log("🟢 addReservation END - PID:", process.pid);
-		console.log("🟢 Final in-memory reservations count:", reservations.length);
+		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation END - PID: ${process.pid}`);
 
 		return res;
 	}
@@ -544,11 +550,21 @@ async function notifyClientsAboutChange(array: unknown[]) {
 
 async function initializePart(array: unknown[]) {
 	const filePath = getFilePath(array);
+	const arrayName = getArrayName(array);
+
+	console.log(`🔧 [${MODULE_INSTANCE_ID}] Initializing ${arrayName} from ${filePath} - PID: ${process.pid}`);
 
 	try {
 		const data = await readJsonFile(filePath);
 
 		if (!Array.isArray(data)) throw new Error(`Invalid data in ${filePath}`);
+
+		if (array.length > 0) {
+			console.log(
+				`🔴 [${MODULE_INSTANCE_ID}] REINITIALIZING ${arrayName}: ${array.length} existing items will be replaced - PID: ${process.pid}`,
+			);
+			array.length = 0;
+		}
 
 		array.push(
 			...data.filter(item => {
@@ -567,6 +583,7 @@ async function initializePart(array: unknown[]) {
 			}),
 		);
 
+		console.log(`✅ [${MODULE_INSTANCE_ID}] ${arrayName} initialized with ${array.length} items - PID: ${process.pid}`);
 		notifyClientsAboutChange(array);
 	} catch (err) {
 		if (!(err instanceof Error)) throw err;
@@ -577,13 +594,23 @@ async function initializePart(array: unknown[]) {
 		await mkdir(resolve(filePath, ".."), { recursive: true });
 		// All of our data files are JSON arrays, so we can initialize them as empty arrays
 		await writeFile(filePath, "[]", "utf-8");
+		console.log(`📁 [${MODULE_INSTANCE_ID}] Created empty ${arrayName} file - PID: ${process.pid}`);
 	}
+}
+
+function getArrayName(array: unknown[]): string {
+	if (array === reservations) return "reservations";
+	if (array === blackouts) return "blackouts";
+	if (array === siteEvents) return "siteEvents";
+	if (array === users) return "users";
+	if (array === houseTeams) return "houseTeams";
+	return "unknown";
 }
 
 (async () => {
 	const done = await initialized; // Wait for the lock to be acquired
 
-	console.log("Initializing data - PID:", process.pid);
+	console.log(`🚀 [${MODULE_INSTANCE_ID}] Starting data initialization - PID: ${process.pid}`);
 
 	const jobs: Promise<unknown>[] = [];
 
@@ -595,9 +622,10 @@ async function initializePart(array: unknown[]) {
 
 	await Promise.all(jobs);
 
+	console.log(`🎉 [${MODULE_INSTANCE_ID}] Data initialization complete - PID: ${process.pid}`);
 	done();
 })().catch(err => {
-	console.error("Error initializing data:", err);
+	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);
 	exit(1); // Exit the process on initialization error
 });
 

@@ -123,6 +123,7 @@ export class Context {
 
 	async addReservation(reservation: AddReservationArgs) {
 		console.log("🟢 addReservation START - PID:", process.pid);
+		console.log("🟢 Adding reservation:", JSON.stringify(reservation));
 		this.restrictToTeam(reservation.team, "Only team members can add reservations");
 		this.restrictTimeframe(reservation.date);
 
@@ -146,7 +147,10 @@ export class Context {
 			created: ctx.timestamp,
 		};
 
+		console.log("🟡 Adding to in-memory array - PID:", process.pid);
+		console.log("🟡 Before: in-memory reservations count:", reservations.length);
 		reservations.push(res);
+		console.log("🟡 After: in-memory reservations count:", reservations.length);
 
 		jobs.push(
 			log({
@@ -169,6 +173,7 @@ export class Context {
 		console.log("🟡 About to await Promise.all - PID:", process.pid);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 		console.log("🟢 addReservation END - PID:", process.pid);
+		console.log("🟢 Final in-memory reservations count:", reservations.length);
 
 		return res;
 	}
@@ -596,3 +601,10 @@ process.on("uncaughtException", err => {
 process.on("unhandledRejection", (reason, promise) => {
 	console.error(`🔴 Unhandled Rejection in PID ${process.pid}:`, reason);
 });
+
+let interval = 3000;
+(function uptimeLoop() {
+	console.log(`Process ${process.pid} has been running for ${process.uptime()} seconds`);
+	interval *= 1.1;
+	setTimeout(uptimeLoop, interval);
+})();

@@ -10,8 +10,8 @@ import { auth } from "~/server/auth";
 import { HydrateClient } from "~/trpc/server";
 import styles from "./index.module.css";
 import type { Session } from "next-auth";
-import { dateToDateString, dateToLocalString } from "~/server/util/timeUtils";
-import { PrettyTimeDelta } from "./_components/PrettyTimeDelta";
+import { dateToDateString } from "~/server/util/timeUtils";
+import { RenderTime } from "./_components/RenderTime";
 
 export default async function Home() {
 	const session = await auth();
@@ -77,20 +77,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				</Link>
 			</div>
 			<ReservationCalendar initialReservations={reservationsByDate} />
-			<RenderTime />
-		</div>
-	);
-}
-
-const renderTime = new Date();
-function RenderTime() {
-	return (
-		<div style={{ fontSize: "0.8rem", color: "#666", textAlign: "center", marginBottom: "1rem" }}>
-			<span suppressHydrationWarning>{dateToLocalString(renderTime)}</span>
-			<br />
-			<PrettyTimeDelta date={renderTime} />
-			<br />
-			PID: {process.pid}
+			<RenderTime time={new Date()} pid={process.pid} />
 		</div>
 	);
 }

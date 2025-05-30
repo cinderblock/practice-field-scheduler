@@ -250,6 +250,7 @@ export class Context {
 				reason: blackout.reason,
 			}),
 		);
+
 		jobs.push(tellClientsAboutBlackoutChange(newBlackout));
 
 		jobs.push(writeJsonFile(BLACKOUTS_FILE, blackouts));

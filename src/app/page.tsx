@@ -34,7 +34,6 @@ async function LoggedIn({ session }: { session: Session }) {
 	const forwardedFor = headersList.get("x-forwarded-for");
 	const ip = (forwardedFor ? forwardedFor.split(",")[0] : headersList.get("x-real-ip")) ?? "unknown";
 
-	// Get reservations directly from server
 	const today = new Date();
 	const before = 1;
 	const after = 8;

@@ -43,6 +43,29 @@ const DisableWrites = false; // If true, the server will not write to the databa
 const MODULE_INSTANCE_ID = crypto.randomUUID().substring(0, 8);
 console.log(`🔥 Backend module instance ${MODULE_INSTANCE_ID} loading - PID: ${process.pid}`);
 
+// Global storage for HMR persistence
+declare global {
+	var __reservations: Reservation[] | undefined;
+	var __blackouts: Blackout[] | undefined;
+	var __siteEvents: SiteEvent[] | undefined;
+	var __users: UserEntry[] | undefined;
+	var __houseTeams: Team[] | undefined;
+	var __backendInitialized: boolean | undefined;
+}
+
+// Initialize or reuse global arrays
+globalThis.__reservations ||= [];
+globalThis.__blackouts ||= [];
+globalThis.__siteEvents ||= [];
+globalThis.__users ||= [];
+globalThis.__houseTeams ||= [];
+
+const reservations = globalThis.__reservations;
+const blackouts = globalThis.__blackouts;
+const siteEvents = globalThis.__siteEvents;
+const users = globalThis.__users;
+const houseTeams = globalThis.__houseTeams;
+
 console.log(
 	`📦 [${MODULE_INSTANCE_ID}] Using globals - reservations: ${reservations.length}, initialized: ${globalThis.__backendInitialized} - PID: ${process.pid}`,
 );
@@ -94,12 +117,6 @@ type UserEntry = {
 	email: string;
 	image: string;
 };
-
-const reservations: Reservation[] = [];
-const blackouts: Blackout[] = [];
-const siteEvents: SiteEvent[] = [];
-const users: UserEntry[] = [];
-const houseTeams: Team[] = [];
 
 export class PermissionError extends Error {
 	constructor(message: string) {
@@ -592,6 +609,13 @@ function getArrayName(array: unknown[]): string {
 (async () => {
 	const done = await initialized; // Wait for the lock to be acquired
 
+	// Skip initialization if already done (HMR persistence)
+	if (globalThis.__backendInitialized) {
+		console.log(`⚡ [${MODULE_INSTANCE_ID}] Skipping initialization - already done (HMR) - PID: ${process.pid}`);
+		done();
+		return;
+	}
+
 	console.log(`🚀 [${MODULE_INSTANCE_ID}] Starting data initialization - PID: ${process.pid}`);
 
 	const jobs: Promise<unknown>[] = [];
@@ -604,6 +628,7 @@ function getArrayName(array: unknown[]): string {
 
 	await Promise.all(jobs);
 
+	globalThis.__backendInitialized = true;
 	console.log(`🎉 [${MODULE_INSTANCE_ID}] Data initialization complete - PID: ${process.pid}`);
 	done();
 })().catch(err => {

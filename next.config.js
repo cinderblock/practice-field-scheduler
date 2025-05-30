@@ -6,7 +6,7 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
-  allowedDevOrigins: ["*.ngrok-free.app"],
+	allowedDevOrigins: [process.env.NEXTAUTH_URL?.replace("https://", "") ?? "localhost"],
 };
 
 export default config;

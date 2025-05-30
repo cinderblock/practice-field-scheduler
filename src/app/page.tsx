@@ -86,7 +86,7 @@ const renderTime = new Date();
 function RenderTime() {
 	return (
 		<div style={{ fontSize: "0.8rem", color: "#666", textAlign: "center", marginBottom: "1rem" }}>
-			{dateToLocalString(renderTime)}
+			<span suppressHydrationWarning>{dateToLocalString(renderTime)}</span>
 			<br />
 			<PrettyTimeDelta date={renderTime} />
 			<br />

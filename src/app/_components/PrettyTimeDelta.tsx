@@ -6,7 +6,7 @@ export function PrettyTimeDelta({ date }: { date: Date }) {
 	const now = useInterval(() => new Date(), 1000);
 	const delta = now.getTime() - date.getTime();
 	const formatted = `${formatTimeDelta(delta)} ago`.replace(" ", "\u00A0");
-	return <span>{formatted}</span>;
+	return <span suppressHydrationWarning>{formatted}</span>;
 }
 
 function formatTimeDelta(ms: number): string {

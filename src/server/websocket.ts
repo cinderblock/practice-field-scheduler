@@ -4,10 +4,7 @@ import type { Blackout, Reservation, SiteEvent } from "~/types";
 
 // TODO: Implement proper WebSocket handling
 export async function tellClientsAboutReservationChange(reservation: Reservation) {
-	// For now, just log the change
-	console.log(
-		`Reservation changed - ${reservation.id} - ${reservation.date} - ${reservation.slot} - ${reservation.team}`,
-	);
+	// TODO: Implement
 }
 
 export async function tellClientsAboutBlackoutChange(blackout: Blackout) {

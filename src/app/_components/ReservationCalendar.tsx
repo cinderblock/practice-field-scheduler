@@ -5,6 +5,7 @@ import { useInterval } from "./useInterval";
 import { api } from "~/trpc/react";
 import { useState } from "react";
 import type { Reservation } from "~/types";
+import { TeamAvatar } from "./TeamAvatar";
 
 const TimeSlotBorders = [-2, 1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
@@ -157,6 +158,13 @@ function ReservationPill({
 	disabled = false,
 }: ReservationPillProps) {
 	const teamStr = teamNumber.toString();
+	const number = Number.parseInt(teamStr);
+	// Use 1.5em for more prominent avatar, wrapped to not affect text height
+	const avatar = number ? (
+		<span style={{ lineHeight: 0 }}>
+			<TeamAvatar teamNumber={number} size="1.5em" />
+		</span>
+	) : null;
 
 	const pillClasses = [styles.reservationPill];
 	if (isPendingDeletion) pillClasses.push(styles.pendingDeletion);
@@ -166,6 +174,7 @@ function ReservationPill({
 
 	return (
 		<div className={pillClasses.join(" ")}>
+			{avatar}
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}
 			</span>

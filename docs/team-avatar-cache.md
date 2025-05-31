@@ -36,7 +36,12 @@ function MyComponent() {
   return (
     <div>
       <TeamAvatar teamNumber={1234} size={64} />
-      <TeamAvatar teamNumber={5678} size={32} className="border rounded-full" />
+      <TeamAvatar 
+        teamNumber={9999} 
+        size={32} 
+        className="team-avatar-small" 
+        style={{ border: '1px solid #ccc', borderRadius: '50%' }}
+      />
     </div>
   );
 }

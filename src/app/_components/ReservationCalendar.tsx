@@ -6,6 +6,7 @@ import { api } from "~/trpc/react";
 import { useState } from "react";
 import type { Reservation } from "~/types";
 import { TeamAvatar } from "./TeamAvatar";
+import { TZDateMini } from "@date-fns/tz";
 
 const TimeSlotBorders = [1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
@@ -24,36 +25,12 @@ function getToday(): string {
 	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
 }
 
-/**
- * Returns the time zone name for a given date and time
- * @example assuming TimeZone is "America/Los_Angeles"
- * getTimeZoneName("2024-01-01") // "PST"
- * getTimeZoneName("2024-06-01") // "PDT"
- *
- * @param date - The date to get the time zone name for
- * @param time - The time to get the time zone name for
- * @returns The time zone name for the given date and time
- */
-function getTimeZoneName(date: string, time = "00:00"): string {
-	const testDate = new Date(`${date}T12:00:00`);
-	const formatter = new Intl.DateTimeFormat("en", {
-		timeZone: TimeZone,
-		timeZoneName: "short",
-	});
-	const timeZoneName = formatter.formatToParts(testDate).find(part => part.type === "timeZoneName")?.value;
-
-	if (!timeZoneName) throw new Error("Failed to get time zone name");
-
-	return timeZoneName;
-}
-
 function createDateFromStrings(date: string, time: string | number = "00:00"): Date {
 	if (typeof time === "number") time = `${time.toString().padStart(2, "0")}:00`;
 
-	const timeZoneName = getTimeZoneName(date, time);
+	const tzDate = new TZDateMini(`${date} ${time}`, TimeZone);
 
-	// Parse the actual datetime with the correct timezone abbreviation
-	return new Date(`${date} ${time} ${timeZoneName}`);
+	return new Date(tzDate.getTime());
 }
 
 function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {

@@ -176,9 +176,16 @@
 }
 
 .timeSlotRow {
-  display: flex;
-  flex-direction: row;
+  display: grid;
   gap: 0.5rem;
+  width: 100%;
+  overflow: hidden;
+  grid-template-rows: auto;
+}
+
+.timeSlotRow > * {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .timeSlot {
@@ -191,6 +198,9 @@
   padding: 1rem;
   margin-bottom: 1rem;
   box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .weekend {
@@ -227,13 +237,16 @@
   background: #35356b;
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem 2.2rem 0.75rem;
-  margin-right: 0.5rem;
-  min-width: 120px;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   transition: box-shadow 0.2s;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .timeSlotStackContainer:hover {
   box-shadow: 0 4px 16px rgba(80, 80, 120, 0.15);
@@ -265,18 +278,33 @@
 .reservationPill {
   background: linear-gradient(90deg, #6d6df7 60%, #a7bfff 100%);
   color: #fff;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 0.3rem 1rem;
   font-size: 0.95rem;
   font-weight: 500;
   box-shadow: 0 1px 4px rgba(80, 80, 120, 0.08);
   text-align: center;
-  white-space: nowrap;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  transition: opacity 0.2s ease-in-out;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  transition: all 0.2s ease-in-out;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+.reservationPillText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
 }
 
 .reservationPill.pendingDeletion {
@@ -284,28 +312,36 @@
 }
 
 .removeReservationBtn {
-  background: none;
+  background: rgba(0, 0, 0, 0.3);
   border: none;
   color: inherit;
   font-size: 1.2rem;
   cursor: pointer;
-  padding: 0;
+  padding: 0.1rem 0.3rem;
   line-height: 1;
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
   opacity: 0;
   transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: 3px;
 }
 
 .reservationPill:hover .removeReservationBtn {
   opacity: 0.8;
-}
-
-.removeReservationBtn:hover {
-  opacity: 1 !important;
+  pointer-events: auto;
 }
 
 .removeReservationBtn:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.removeReservationBtn:hover {
+  opacity: 1 !important;
 }
 
 .addReservationBtn {
@@ -352,8 +388,7 @@
     margin-right: 0.25rem;
   }
   .reservationPill {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.85rem;
+    border-radius: 8px;
   }
   .addReservationBtn {
     width: 1.5rem;
@@ -544,4 +579,11 @@
   height: 100%;
   width: auto;
   max-height: 2rem;
+}
+
+.calendarGrid {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  display: block; /* Ensure it's a block container */
 }

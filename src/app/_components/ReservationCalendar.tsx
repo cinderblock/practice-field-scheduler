@@ -260,13 +260,24 @@ function Day({
 	const style = [styles.dayContainer];
 	if (isWeekend(date)) style.push(styles.weekend);
 
+	// Calculate number of time slots (subtract 1 because we map pairs)
+	const numSlots = TimeSlotBorders.length - 1;
+
 	return (
 		<div className={style.join(" ")}>
 			<div className={styles.dayHeader}>
 				<DayName date={date} />
 				<DayDate date={date} />
 			</div>
-			<div className={styles.timeSlotRow}>
+			<div
+				className={styles.timeSlotRow}
+				style={
+					{
+						"--columns": numSlots,
+						gridTemplateColumns: `repeat(${numSlots}, 1fr)`,
+					} as React.CSSProperties & { "--columns": number }
+				}
+			>
 				{TimeSlotBorders.map((_, index, a) => {
 					if (index === a.length - 1) return null;
 

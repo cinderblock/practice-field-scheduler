@@ -230,6 +230,14 @@ export function ReservationCalendar({
 	);
 }
 
+function TimeSlotHeader({ startHour, endHour }: { startHour: number; endHour: number }) {
+	return (
+		<div className={styles.timeSlotHeader}>
+			<TimeRangeDisplay date={getToday()} start={startHour} end={endHour} />
+		</div>
+	);
+}
+
 function Days({
 	start,
 	days,
@@ -243,6 +251,29 @@ function Days({
 
 	return (
 		<>
+			{/* Time slot headers */}
+			<div
+				className={styles.timeSlotHeaders}
+				style={
+					{
+						"--columns": TimeSlotBorders.length - 1,
+					} as React.CSSProperties & { "--columns": number }
+				}
+			>
+				{TimeSlotBorders.map((_, index, a) => {
+					if (index === a.length - 1) return null;
+
+					const startHours = a[index];
+					const endHours = a[index + 1];
+					if (startHours === undefined || endHours === undefined) throw new Error("TimeSlotBorders is empty");
+
+					const startHour = 12 + startHours;
+					const endHour = 12 + endHours;
+
+					return <TimeSlotHeader key={`header_${startHour}`} startHour={startHour} endHour={endHour} />;
+				})}
+			</div>
+			{/* Day columns */}
 			{dates.map(date => (
 				<div key={date} className={styles.calendarDay}>
 					<Day date={date} initialReservations={initialReservations} />
@@ -496,7 +527,6 @@ function TimeSlot({
 
 	return (
 		<div className={style.join(" ")}>
-			<TimeRangeDisplay date={date} start={startHour} end={endHour} />
 			<div className={styles.reservationStack}>
 				{/* Existing reservations */}
 				{slotReservations.map(r => (

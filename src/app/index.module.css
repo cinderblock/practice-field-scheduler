@@ -595,6 +595,51 @@
 .calendarGrid {
   width: 100%;
   max-width: 100%;
+  display: block;
+  /* Ensure it's a block container */
+}
+
+.timeSlotHeaders {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
   overflow: hidden;
-  display: block; /* Ensure it's a block container */
+  grid-template-columns: repeat(var(--columns), 1fr);
+  margin-bottom: 0.5rem;
+  position: sticky;
+  top: 5; /* distance from the top of the viewport */
+  z-index: 10;
+  /* opacity: 0.9; */
+  padding: 1rem;
+  box-sizing: border-box;
+  background: #232347;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
+}
+
+.timeSlotHeaders > * {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.timeSlotHeader {
+  background: #1a1a3a;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  text-align: center;
+  color: #a7bfff;
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
+}
+
+@media (max-width: 640px) {
+  .timeSlotHeaders {
+    gap: 0.25rem;
+    padding: 0.5rem 0.25rem;
+  }
+  .timeSlotHeader {
+    padding: 0.25rem;
+    font-size: 0.85rem;
+  }
 }

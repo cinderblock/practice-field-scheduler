@@ -134,7 +134,7 @@
 }
 
 .loginButton {
-  border-radius: 9999px;
+  border-radius: 0.5em;
   background-color: rgb(255 255 255 / 0.1);
   padding: 0.75rem 2.5rem;
   font-weight: 600;
@@ -278,8 +278,8 @@
 .reservationPill {
   background: linear-gradient(90deg, #6d6df7 60%, #a7bfff 100%);
   color: #fff;
-  border-radius: 8px;
-  padding: 0.3rem 1rem;
+  border-radius: 7px;
+  padding: 0.3rem;
   font-size: 0.95rem;
   font-weight: 500;
   box-shadow: 0 1px 4px rgba(80, 80, 120, 0.08);
@@ -328,11 +328,25 @@
   pointer-events: none;
   z-index: 10;
   border-radius: 3px;
+  display: none;
 }
 
-.reservationPill:hover .removeReservationBtn {
-  opacity: 0.8;
-  pointer-events: auto;
+/* Desktop hover behavior */
+@media (hover: hover) and (pointer: fine) {
+  .reservationPill:hover .removeReservationBtn {
+    opacity: 0.8;
+    pointer-events: auto;
+    display: block;
+  }
+}
+
+/* Mobile behavior */
+@media (hover: none) and (pointer: coarse) {
+  .reservationPill.active .removeReservationBtn {
+    opacity: 0.8;
+    pointer-events: auto;
+    display: block;
+  }
 }
 
 .removeReservationBtn:disabled {
@@ -387,9 +401,6 @@
     padding: 0.25rem 0.25rem 1.2rem 0.25rem;
     margin-right: 0.25rem;
   }
-  .reservationPill {
-    border-radius: 8px;
-  }
   .addReservationBtn {
     width: 1.5rem;
     height: 1.5rem;
@@ -413,7 +424,7 @@
 .logoutButtonSmall {
   padding: 0.3rem 1rem;
   font-size: 1rem;
-  border-radius: 9999px;
+  border-radius: 0.5em;
   background-color: rgb(255 255 255 / 0.1);
   color: white;
   text-decoration: none;

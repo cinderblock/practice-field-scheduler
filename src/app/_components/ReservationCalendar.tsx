@@ -3,7 +3,7 @@
 import styles from "../index.module.css";
 import { useInterval } from "./useInterval";
 import { api } from "~/trpc/react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Reservation } from "~/types";
 import { TeamAvatar } from "./TeamAvatar";
 import { TZDateMini } from "@date-fns/tz";
@@ -136,6 +136,24 @@ function ReservationPill({
 }: ReservationPillProps) {
 	const teamStr = teamNumber.toString();
 	const number = Number.parseInt(teamStr);
+	const [isActive, setIsActive] = useState(false);
+	const pillRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		function handleClickOutside(event: MouseEvent | TouchEvent) {
+			if (pillRef.current && !pillRef.current.contains(event.target as Node)) {
+				setIsActive(false);
+			}
+		}
+
+		document.addEventListener("mousedown", handleClickOutside);
+		document.addEventListener("touchstart", handleClickOutside);
+		return () => {
+			document.removeEventListener("mousedown", handleClickOutside);
+			document.removeEventListener("touchstart", handleClickOutside);
+		};
+	}, []);
+
 	// Use 1.5em for more prominent avatar, wrapped to not affect text height
 	const avatar = number ? (
 		<span style={{ lineHeight: 0 }}>
@@ -146,11 +164,18 @@ function ReservationPill({
 	const pillClasses = [styles.reservationPill];
 	if (isPendingDeletion) pillClasses.push(styles.pendingDeletion);
 	if (isPendingAddition) pillClasses.push(styles.pendingAddition);
+	if (isActive) pillClasses.push(styles.active);
 
 	const displayText = teamStr || (isTemp ? "New Reservation" : teamStr);
 
 	return (
-		<div className={pillClasses.join(" ")}>
+		// biome-ignore lint/a11y/useKeyWithClickEvents: The pill is just a container, the X button is the interactive element
+		<div
+			ref={pillRef}
+			className={pillClasses.join(" ")}
+			onClick={() => setIsActive(true)}
+			onTouchStart={() => setIsActive(true)}
+		>
 			{avatar}
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}

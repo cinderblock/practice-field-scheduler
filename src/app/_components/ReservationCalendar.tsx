@@ -323,6 +323,19 @@ function TimeSlot({
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
 	const utils = api.useUtils();
 
+	useEffect(() => {
+		function handleEsc(event: KeyboardEvent) {
+			if (event.key === "Escape" && isAdding) {
+				handleCancelAdd();
+			}
+		}
+
+		document.addEventListener("keydown", handleEsc);
+		return () => {
+			document.removeEventListener("keydown", handleEsc);
+		};
+	}, [isAdding]);
+
 	const slot = hourToTimeSlot(startHour);
 
 	// Calculate days difference

@@ -7,7 +7,7 @@ import { useState } from "react";
 import type { Reservation } from "~/types";
 import { TeamAvatar } from "./TeamAvatar";
 
-const TimeSlotBorders = [-2, 1, 4, 7, 10]; // Relative to noon
+const TimeSlotBorders = [1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;
 const TimeZone = "America/Los_Angeles";
 

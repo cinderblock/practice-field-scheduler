@@ -137,6 +137,53 @@ function pluralize(count: number, singular = "", plural = `${singular}s`) {
 	return count === 1 ? singular : plural;
 }
 
+interface ReservationPillProps {
+	teamNumber: string | number;
+	onRemove?: () => void;
+	isTemp?: boolean;
+	isPendingDeletion?: boolean;
+	isPendingAddition?: boolean;
+	hasEnded?: boolean;
+	disabled?: boolean;
+}
+
+function ReservationPill({
+	teamNumber,
+	onRemove,
+	isTemp = false,
+	isPendingDeletion = false,
+	isPendingAddition = false,
+	hasEnded = false,
+	disabled = false,
+}: ReservationPillProps) {
+	const teamStr = teamNumber.toString();
+
+	const pillClasses = [styles.reservationPill];
+	if (isPendingDeletion) pillClasses.push(styles.pendingDeletion);
+	if (isPendingAddition) pillClasses.push(styles.pendingAddition);
+
+	const displayText = teamStr || (isTemp ? "New Reservation" : teamStr);
+
+	return (
+		<div className={pillClasses.join(" ")}>
+			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
+				{displayText}
+			</span>
+			{onRemove && !hasEnded && (
+				<button
+					style={{ userSelect: "none" }}
+					type="button"
+					onClick={onRemove}
+					className={styles.removeReservationBtn}
+					disabled={disabled}
+				>
+					{disabled ? "⌛" : "×"}
+				</button>
+			)}
+		</div>
+	);
+}
+
 export function ReservationCalendar({
 	initialReservations,
 }: {
@@ -418,38 +465,26 @@ function TimeSlot({
 			<div className={styles.reservationStack}>
 				{/* Existing reservations */}
 				{slotReservations.map(r => (
-					<div
+					<ReservationPill
 						key={r.id}
-						className={`${styles.reservationPill} ${
-							pendingDeletions.has(r.id) ? styles.pendingDeletion : ""
-						} ${r.id === "temp-id" ? styles.pendingAddition : ""}`}
-					>
-						{r.team}
-						{!hasEnded && (
-							<button
-								style={{ userSelect: "none" }}
-								type="button"
-								onClick={() => {
-									console.log("Removing reservation:", {
-										id: r.id,
-									});
-									removeReservation.mutate({
-										id: r.id,
-									});
-								}}
-								className={styles.removeReservationBtn}
-								disabled={pendingDeletions.has(r.id)}
-							>
-								{pendingDeletions.has(r.id) ? "⌛" : "×"}
-							</button>
-						)}
-					</div>
+						teamNumber={r.team}
+						isPendingDeletion={pendingDeletions.has(r.id)}
+						isPendingAddition={r.id === "temp-id"}
+						hasEnded={hasEnded}
+						disabled={pendingDeletions.has(r.id)}
+						onRemove={() => {
+							console.log("Removing reservation:", {
+								id: r.id,
+							});
+							removeReservation.mutate({
+								id: r.id,
+							});
+						}}
+					/>
 				))}
 				{/* Pending addition */}
 				{tempTeamNumber !== null && isAdding && (
-					<div className={`${styles.reservationPill} ${styles.pendingAddition}`}>
-						<span style={{ userSelect: "none" }}>{tempTeamNumber || "New Reservation"}</span>
-					</div>
+					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
 			{/* Add reservation button */}

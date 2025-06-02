@@ -181,6 +181,16 @@
   width: 100%;
   overflow: hidden;
   grid-template-rows: auto;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .timeSlotRow > * {
@@ -201,6 +211,11 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  transition: all 0.2s ease-in-out;
+}
+
+.dayContainer:hover {
+  box-shadow: 0 4px 16px rgba(80, 80, 120, 0.15);
 }
 
 .weekend {

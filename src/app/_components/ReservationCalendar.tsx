@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Reservation } from "~/types";
 import { TeamAvatar } from "./TeamAvatar";
 import { TZDateMini } from "@date-fns/tz";
+import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 
 const TimeSlotBorders = [1, 4, 7, 10]; // Relative to noon
 const ReservationDays = 7;

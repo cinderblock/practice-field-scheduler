@@ -660,9 +660,18 @@ process.on("unhandledRejection", (reason, promise) => {
 	console.error(`🔴 Unhandled Rejection in PID ${process.pid}:`, reason);
 });
 
+declare global {
+	var __uptimeTimeout: NodeJS.Timeout;
+}
+
 let interval = 3000;
+const start = new Date();
 (function uptimeLoop() {
-	console.log(`Process ${process.pid} has been running for ${process.uptime()} seconds`);
+	clearTimeout(globalThis.__uptimeTimeout);
+
+	console.log(
+		`Process ${process.pid} has been running for ${process.uptime().toFixed(0)} seconds. Reloaded ${((new Date().getTime() - start.getTime()) / 1000).toFixed(0)} seconds ago.`,
+	);
 	interval *= 1.1;
-	setTimeout(uptimeLoop, interval);
+	globalThis.__uptimeTimeout = setTimeout(uptimeLoop, interval).unref();
 })();

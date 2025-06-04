@@ -415,7 +415,7 @@ function TimeSlot({
 						id: "temp-id",
 						created: new Date(),
 						userId: "temp-user",
-						priority: newReservation.priority, // Include the priority in the optimistic update
+						priority: newReservation.priority,
 					},
 				];
 			});

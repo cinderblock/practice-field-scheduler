@@ -12,6 +12,7 @@ import styles from "./index.module.css";
 import type { Session } from "next-auth";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { RenderTime } from "./_components/RenderTime";
+import { Title } from "./_components/Title";
 
 export default async function Home() {
 	const session = await auth();
@@ -20,7 +21,7 @@ export default async function Home() {
 		<HydrateClient>
 			<main className={styles.main}>
 				<div className={styles.container}>
-					<h1 className={styles.title}>Practice Field Scheduler</h1>
+					<Title />
 					{session ? <LoggedIn session={session} /> : <LoginButton />}
 				</div>
 			</main>

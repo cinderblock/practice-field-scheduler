@@ -560,7 +560,7 @@ async function initializePart(array: unknown[]) {
 
 		if (array.length > 0) {
 			console.log(
-				`🔴 [${MODULE_INSTANCE_ID}] REINITIALIZING ${arrayName}: ${array.length} existing items will be replaced - PID: ${process.pid}`,
+				`🔴 [${MODULE_INSTANCE_ID}] REINITIALIZING ${arrayName}: ${array.length} existing items will be replaced with ${data.length} new items - PID: ${process.pid}`,
 			);
 			array.length = 0;
 		}

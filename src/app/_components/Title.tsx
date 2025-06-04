@@ -2,6 +2,7 @@
 
 import styles from "../index.module.css";
 import { useInterval } from "./useInterval";
+import { env } from "~/env";
 
 function isPride() {
 	const now = new Date();
@@ -15,5 +16,5 @@ export function Title() {
 
 	if (showRainbow) classes.push(styles.rainbowText, styles.rainbowTextAnimated);
 
-	return <h1 className={classes.join(" ")}>Practice Field Scheduler</h1>;
+	return <h1 className={classes.join(" ")}>{env.NEXT_PUBLIC_SITE_TITLE}</h1>;
 }

@@ -45,6 +45,10 @@ export const env = createEnv({
 				"Time slot borders must be in ascending order",
 			),
 		NEXT_PUBLIC_TIME_ZONE: z.string().refine(isValidTimeZone, "Invalid timezone"),
+		NEXT_PUBLIC_SITE_TITLE: z
+			.string()
+			.transform(val => val.trim())
+			.refine(val => val.length > 0, "Site title cannot be empty"),
 	},
 
 	/**
@@ -62,6 +66,7 @@ export const env = createEnv({
 		NEXT_PUBLIC_TIME_SLOT_BORDERS: process.env.NEXT_PUBLIC_TIME_SLOT_BORDERS,
 		NEXT_PUBLIC_RESERVATION_DAYS: process.env.NEXT_PUBLIC_RESERVATION_DAYS,
 		NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
+		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

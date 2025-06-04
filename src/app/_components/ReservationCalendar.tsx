@@ -8,10 +8,11 @@ import type { Reservation } from "~/types";
 import { TeamAvatar } from "./TeamAvatar";
 import { TZDateMini } from "@date-fns/tz";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
+import { env } from "~/env";
 
-const TimeSlotBorders = [1, 4, 7, 10]; // Relative to noon
-const ReservationDays = 7;
-const TimeZone = "America/Los_Angeles";
+const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
+const ReservationDays = env.NEXT_PUBLIC_RESERVATION_DAYS;
+const TimeZone = env.NEXT_PUBLIC_TIME_ZONE;
 
 type InitialReservations = {
 	date: string;

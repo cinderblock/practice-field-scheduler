@@ -25,7 +25,26 @@ export const env = createEnv({
 	 * `NEXT_PUBLIC_`.
 	 */
 	client: {
-		// NEXT_PUBLIC_CLIENTVAR: z.string(),
+		NEXT_PUBLIC_RESERVATION_DAYS: z
+			.string()
+			.transform(val => Number.parseInt(val, 10))
+			.refine(num => num > 0, "Reservation days must be a positive number"),
+		NEXT_PUBLIC_TIME_SLOT_BORDERS: z
+			.string()
+			.transform(val => val.split(/[^\d.-]/)) // Split by non-numeric characters
+			.transform(numbers => numbers.filter(Boolean)) // Filter out empty strings
+			.transform(numbers => numbers.map(v => Number.parseInt(v, 10))) // Parse as base 10 integers
+			.refine(numbers => numbers.length, "Time slot borders must be a comma-separated list of numbers")
+			.refine(numbers => numbers.length >= 2, "Time slots need at least two numbers to define a range")
+			.refine(numbers => numbers.every(n => !Number.isNaN(n)), "Time slot borders must be numbers")
+			.refine(numbers => numbers.every(n => n >= -12 && n <= 12), "Time slot borders must be between -12 and 12")
+			.refine(numbers => numbers.every((n, i) => numbers.indexOf(n) === i), "Time slot borders must be unique")
+			.refine(
+				// @ts-ignore
+				numbers => numbers.every((n, i, a) => !i || n > a[i - 1]),
+				"Time slot borders must be in ascending order",
+			),
+		NEXT_PUBLIC_TIME_ZONE: z.string().refine(isValidTimeZone, "Invalid timezone"),
 	},
 
 	/**
@@ -40,6 +59,9 @@ export const env = createEnv({
 		NODE_ENV: process.env.NODE_ENV,
 		FIRST_API_USERNAME: process.env.FIRST_API_USERNAME,
 		FIRST_API_AUTH_TOKEN: process.env.FIRST_API_AUTH_TOKEN,
+		NEXT_PUBLIC_TIME_SLOT_BORDERS: process.env.NEXT_PUBLIC_TIME_SLOT_BORDERS,
+		NEXT_PUBLIC_RESERVATION_DAYS: process.env.NEXT_PUBLIC_RESERVATION_DAYS,
+		NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
@@ -52,3 +74,15 @@ export const env = createEnv({
 	 */
 	emptyStringAsUndefined: true,
 });
+
+/**
+ * @param {string} timeZone
+ */
+function isValidTimeZone(timeZone) {
+	try {
+		Intl.DateTimeFormat(undefined, { timeZone });
+	} catch (e) {
+		return false;
+	}
+	return true;
+}

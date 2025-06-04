@@ -8,7 +8,10 @@ import { env } from "~/env";
 export const metadata: Metadata = {
 	title: env.NEXT_PUBLIC_SITE_TITLE,
 	description: "Schedule your practice field time",
-	icons: [{ rel: "icon", url: "/favicon.ico" }],
+	icons: [
+		{ rel: "icon", url: "/favicon-light.ico", media: "(prefers-color-scheme: light)" },
+		{ rel: "icon", url: "/favicon-dark.ico", media: "(prefers-color-scheme: dark)" },
+	],
 };
 
 const geist = Geist({

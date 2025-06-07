@@ -23,7 +23,7 @@ export default async function Home() {
 			<main className={styles.main}>
 				<GithubCorner />
 				<div className={styles.container}>
-					<div style={{ width: session ? "100px" : "600px" }}>
+					<div style={{ maxWidth: session ? "100px" : "600px", width: "100%" }}>
 						<TSLLogo />
 					</div>
 					<Title />

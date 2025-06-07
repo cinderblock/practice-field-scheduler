@@ -747,7 +747,7 @@
   }
 }
 
-.github-corner:hover .octo-arm {
+.githubCorner:hover .octoArm {
   animation: octocat-wave 560ms ease-in-out;
 }
 @keyframes octocat-wave {
@@ -765,10 +765,10 @@
   }
 }
 @media (max-width: 500px) {
-  .github-corner:hover .octo-arm {
+  .githubCorner:hover .octoArm {
     animation: none;
   }
-  .github-corner .octo-arm {
+  .githubCorner .octoArm {
     animation: octocat-wave 560ms ease-in-out;
   }
 }

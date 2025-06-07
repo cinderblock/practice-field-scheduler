@@ -1,6 +1,7 @@
 # Practice Field Reservation System
 
 [![Test](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml/badge.svg)](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml)
+[![Deploy](https://github.com/camerontacklind/field-scheduler/actions/workflows/deploy.yml/badge.svg)](https://github.com/camerontacklind/field-scheduler/actions/workflows/deploy.yml)
 
 ## Setup
 
@@ -30,7 +31,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 Slack requires HTTPS for all OAuth redirects.
 
-Each method generates a new URL that you can use to access your development server.
+Each method below generates a new URL that you can use to access your development server.
 
 Use the URL in these places:
 1. OAuth redirect URI in [Slack app settings](https://api.slack.com/apps/A08S73XASQM/oauth)

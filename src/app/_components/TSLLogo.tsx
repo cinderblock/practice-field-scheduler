@@ -11,7 +11,7 @@ export function TSLLogo() {
 	const june = useInterval(isJune, 1000);
 
 	return (
-		<div className={`${styles.tslLogo} ${june ? styles.rainbowSvg : ""}`} style={{ maxWidth: "600px", width: "100%" }}>
+		<div className={june ? styles.rainbowSvg : ""}>
 			<div style={{ visibility: june ? "hidden" : "visible" }}>
 				<SVG />
 			</div>

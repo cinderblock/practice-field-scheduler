@@ -804,11 +804,3 @@
     animation: octocat-wave 560ms ease-in-out;
   }
 }
-
-.tslLogo {
-  transition: all 0.3s ease-in-out;
-}
-
-.tslLogoImage {
-  transition: all 0.3s ease-in-out;
-}

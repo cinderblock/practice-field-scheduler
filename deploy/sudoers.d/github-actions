@@ -1,2 +1,2 @@
-# Allow daemon user to restart practice-field-scheduler service without password
-daemon ALL=(ALL) NOPASSWD: /bin/systemctl restart practice-field-scheduler.service 
+# Allow github user to restart practice-field-scheduler service without password
+github ALL=(ALL) NOPASSWD: /bin/systemctl restart practice-field-scheduler.service 

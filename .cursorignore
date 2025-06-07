@@ -1,0 +1,4 @@
+!.env.example
+!data/
+.next/
+node_modules/

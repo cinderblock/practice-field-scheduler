@@ -50,6 +50,7 @@ declare global {
 	var __siteEvents: SiteEvent[] | undefined;
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
+	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
 	var __backendInitialized: boolean | undefined;
 }
 
@@ -59,12 +60,14 @@ globalThis.__blackouts ||= [];
 globalThis.__siteEvents ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
+globalThis.__slackMappings ||= [];
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
 const siteEvents = globalThis.__siteEvents;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
+const slackMappings = globalThis.__slackMappings;
 
 console.log(
 	`📦 [${MODULE_INSTANCE_ID}] Using globals - reservations: ${reservations.length}, initialized: ${globalThis.__backendInitialized} - PID: ${process.pid}`,
@@ -373,33 +376,68 @@ export class Context {
 			throw new PermissionError("Not authenticated");
 		}
 
-		const user = users.find(u => u.id === this.session.user.id);
-		if (!user) {
-			// Create new user entry on first login
-			const newUser: UserEntry = {
-				id: this.session.user.id,
-				name: this.session.user.name ?? this.session.user.email ?? "Unknown",
-				created: new Date(),
-				updated: new Date(),
-				teams: FirstUserIsAdmin && !users.length ? "admin" : [],
-				email: this.session.user.email ?? "",
-				image: this.session.user.image ?? "",
-			};
-			users.push(newUser);
+		const slackId = this.session.user.id;
+		const email = this.session.user.email ?? "";
 
-			// Save the updated users array
-			void writeJsonFile(USERS_FILE, users).catch(err => {
-				console.error("Error saving users:", err);
-			});
-
-			return newUser;
+		// First check if we have a direct Slack ID mapping
+		const existingMapping = slackMappings.find(m => m.slackId === slackId);
+		if (existingMapping) {
+			const user = users.find(u => u.id === existingMapping.userId);
+			if (!user) {
+				throw new Error("User mapping exists but user not found");
+			}
+			if (user.disabled) {
+				throw new PermissionError("User disabled");
+			}
+			return user;
 		}
 
-		if (user.disabled) {
-			throw new PermissionError("User disabled");
+		// If no Slack ID mapping, check if we have a user with this email
+		if (email) {
+			const existingUser = users.find(u => u.email === email);
+			if (existingUser) {
+				// Found existing user by email, create a new Slack mapping
+				slackMappings.push({
+					slackId,
+					userId: existingUser.id,
+				});
+
+				// Save the new mapping
+				void writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings).catch(err => {
+					console.error("Error saving Slack mapping:", err);
+				});
+
+				return existingUser;
+			}
 		}
 
-		return user;
+		// No existing user found, create new user entry
+		const newUserId = crypto.randomUUID();
+		const newUser: UserEntry = {
+			id: newUserId,
+			name: this.session.user.name ?? email ?? "Unknown",
+			created: new Date(),
+			updated: new Date(),
+			teams: FirstUserIsAdmin && !users.length ? "admin" : [],
+			email,
+			image: this.session.user.image ?? "",
+		};
+		users.push(newUser);
+
+		// Add Slack mapping
+		slackMappings.push({
+			slackId,
+			userId: newUserId,
+		});
+
+		// Save both the updated users array and slack mappings
+		void Promise.all(
+			[users, slackMappings].map(a =>
+				writeJsonFile(getFilePath(a), a).catch(err => console.error("Error saving user data:", err)),
+			),
+		);
+
+		return newUser;
 	}
 
 	getTeams() {
@@ -477,6 +515,7 @@ const YEAR = new Date().getFullYear().toString();
 // Keys & Users persist across years, so we don't include the year in the path
 const KEYS_FILE = join(DATA_DIR, "keys.json");
 const USERS_FILE = join(DATA_DIR, "users.json");
+const SLACK_MAPPINGS_FILE = join(DATA_DIR, "slack.json");
 // Reservations, blackouts, and site events are year-specific
 const RESERVATIONS_FILE = join(DATA_DIR, YEAR, "reservations.json");
 const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
@@ -538,6 +577,7 @@ function getFilePath(array: unknown[]) {
 	if (array === siteEvents) return SITE_EVENTS_FILE;
 	if (array === users) return USERS_FILE;
 	if (array === houseTeams) return HOUSE_TEAMS_FILE;
+	if (array === slackMappings) return SLACK_MAPPINGS_FILE;
 	throw new Error("Unknown array type");
 }
 
@@ -603,6 +643,7 @@ function getArrayName(array: unknown[]): string {
 	if (array === siteEvents) return "siteEvents";
 	if (array === users) return "users";
 	if (array === houseTeams) return "houseTeams";
+	if (array === slackMappings) return "slackMappings";
 	return "unknown";
 }
 
@@ -625,6 +666,7 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(siteEvents));
 	jobs.push(initializePart(users));
 	jobs.push(initializePart(houseTeams));
+	jobs.push(initializePart(slackMappings));
 
 	await Promise.all(jobs);
 

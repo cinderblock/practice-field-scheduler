@@ -1,5 +1,7 @@
 # Practice Field Reservation System
 
+[![Test](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml/badge.svg)](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml)
+
 ## Setup
 
 ```bash

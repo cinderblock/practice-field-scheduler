@@ -1,3 +1,11 @@
 practice-field-scheduler.example.com {
+    handle /robots.txt {
+        header Content-Type text/plain
+        respond <<ROBOTS
+            User-agent: *
+            Disallow: /
+            ROBOTS
+    }
+
     reverse_proxy localhost:3000
 }

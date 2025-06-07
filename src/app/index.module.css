@@ -710,9 +710,8 @@
   grid-template-columns: repeat(var(--columns), 1fr);
   margin-bottom: 0.5rem;
   position: sticky;
-  top: 5; /* distance from the top of the viewport */
+  top: 5px;
   z-index: 10;
-  /* opacity: 0.9; */
   padding: 1rem;
   box-sizing: border-box;
   background: #274e6e;

@@ -32,7 +32,6 @@ export const reservationRouter = createTRPCRouter({
 		}),
 
 	list: protectedProcedure.input(z.object({ date: z.string() })).query(async ({ input, ctx }) => {
-		console.log("List reservations - PID:", process.pid);
 		return ctx.context.listReservations(input.date);
 	}),
 });

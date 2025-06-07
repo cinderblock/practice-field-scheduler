@@ -106,8 +106,6 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
-	console.log("Logged in - PID:", process.pid, "Reservations loaded:", reservationsByDate.length);
-
 	return (
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>

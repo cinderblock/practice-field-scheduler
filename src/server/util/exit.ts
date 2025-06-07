@@ -1,5 +1,3 @@
-console.log("Loading exit.ts");
-
 export function exit(code: number) {
 	process.exitCode = code;
 

@@ -7,8 +7,6 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
-console.log(`🟢 Backend module loading - PID: ${process.pid}`);
-
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { exit } from "./util/exit";
@@ -41,7 +39,6 @@ const DisableWrites = false; // If true, the server will not write to the databa
 
 // Add unique module instance ID for tracking reinitialization
 const MODULE_INSTANCE_ID = crypto.randomUUID().substring(0, 8);
-console.log(`🔥 Backend module instance ${MODULE_INSTANCE_ID} loading - PID: ${process.pid}`);
 
 // Global storage for HMR persistence
 declare global {
@@ -68,10 +65,6 @@ const siteEvents = globalThis.__siteEvents;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
-
-console.log(
-	`📦 [${MODULE_INSTANCE_ID}] Using globals - reservations: ${reservations.length}, initialized: ${globalThis.__backendInitialized} - PID: ${process.pid}`,
-);
 
 type LogCommon = {
 	timestamp: Date;
@@ -497,11 +490,7 @@ export class Context {
 		if (!this.user) throw new PermissionError("Not authenticated");
 
 		// Return only non-abandoned reservations for the given date from in-memory array
-		const result = reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
-		console.log(
-			`📋 [${MODULE_INSTANCE_ID}] listReservations(${date}) returning ${result.length} items (total in memory: ${reservations.length}) - PID: ${process.pid}`,
-		);
-		return result;
+		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
 	}
 }
 
@@ -591,8 +580,6 @@ async function initializePart(array: unknown[]) {
 	const filePath = getFilePath(array);
 	const arrayName = getArrayName(array);
 
-	console.log(`🔧 [${MODULE_INSTANCE_ID}] Initializing ${arrayName} from ${filePath} - PID: ${process.pid}`);
-
 	try {
 		const data = await readJsonFile(filePath);
 
@@ -622,7 +609,6 @@ async function initializePart(array: unknown[]) {
 			}),
 		);
 
-		console.log(`✅ [${MODULE_INSTANCE_ID}] ${arrayName} initialized with ${array.length} items - PID: ${process.pid}`);
 		notifyClientsAboutChange(array);
 	} catch (err) {
 		if (!(err instanceof Error)) throw err;
@@ -652,12 +638,9 @@ function getArrayName(array: unknown[]): string {
 
 	// Skip initialization if already done (HMR persistence)
 	if (globalThis.__backendInitialized) {
-		console.log(`⚡ [${MODULE_INSTANCE_ID}] Skipping initialization - already done (HMR) - PID: ${process.pid}`);
 		done();
 		return;
 	}
-
-	console.log(`🚀 [${MODULE_INSTANCE_ID}] Starting data initialization - PID: ${process.pid}`);
 
 	const jobs: Promise<unknown>[] = [];
 
@@ -671,49 +654,8 @@ function getArrayName(array: unknown[]): string {
 	await Promise.all(jobs);
 
 	globalThis.__backendInitialized = true;
-	console.log(`🎉 [${MODULE_INSTANCE_ID}] Data initialization complete - PID: ${process.pid}`);
 	done();
 })().catch(err => {
 	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);
 	exit(1); // Exit the process on initialization error
 });
-
-process.on("exit", code => {
-	console.log(`🔴 Process ${process.pid} exiting with code: ${code}`);
-});
-
-process.on("beforeExit", code => {
-	console.log(`🔴 Process ${process.pid} before exit with code: ${code}`);
-});
-
-process.on("SIGTERM", () => {
-	console.log(`🔴 Process ${process.pid} received SIGTERM`);
-});
-
-process.on("SIGINT", () => {
-	console.log(`🔴 Process ${process.pid} received SIGINT`);
-});
-
-process.on("uncaughtException", err => {
-	console.error(`🔴 Uncaught Exception in PID ${process.pid}:`, err);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-	console.error(`🔴 Unhandled Rejection in PID ${process.pid}:`, reason);
-});
-
-declare global {
-	var __uptimeTimeout: NodeJS.Timeout;
-}
-
-let interval = 3000;
-const start = new Date();
-(function uptimeLoop() {
-	clearTimeout(globalThis.__uptimeTimeout);
-
-	console.log(
-		`Process ${process.pid} has been running for ${process.uptime().toFixed(0)} seconds. Reloaded ${((new Date().getTime() - start.getTime()) / 1000).toFixed(0)} seconds ago.`,
-	);
-	interval *= 1.1;
-	globalThis.__uptimeTimeout = setTimeout(uptimeLoop, interval).unref();
-})();

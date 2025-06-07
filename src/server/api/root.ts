@@ -1,5 +1,3 @@
-console.log("Loading api/root.ts");
-
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 import { reservationRouter } from "~/server/api/routers/reservation";
 

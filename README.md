@@ -1,7 +1,7 @@
 # Practice Field Reservation System
 
-[![Test](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml/badge.svg)](https://github.com/camerontacklind/field-scheduler/actions/workflows/test.yml)
-[![Deploy](https://github.com/camerontacklind/field-scheduler/actions/workflows/deploy.yml/badge.svg)](https://github.com/camerontacklind/field-scheduler/actions/workflows/deploy.yml)
+[![Test](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/test.yml/badge.svg)](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/test.yml)
+[![Deploy](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/deploy.yml/badge.svg)](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/deploy.yml)
 
 ## Setup
 

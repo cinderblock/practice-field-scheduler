@@ -1,0 +1,35 @@
+[Unit]
+Description=Field Scheduler Next.js Application
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/field-scheduler
+Environment=NODE_ENV=production
+
+# Next Auth
+Environment=AUTH_SECRET=""
+Environment=AUTH_SLACK_CLIENT_ID=""
+Environment=AUTH_SLACK_CLIENT_SECRET=""
+Environment=AUTH_SLACK_SIGNING_SECRET=""
+Environment=NEXTAUTH_URL=""
+
+# FIRST API
+Environment=FIRST_API_USERNAME=""
+Environment=FIRST_API_AUTH_TOKEN=""
+
+# Calendar Configuration
+Environment=NEXT_PUBLIC_TIME_SLOT_BORDERS="-2, 4, 7, 10"
+Environment=NEXT_PUBLIC_RESERVATION_DAYS="7"
+Environment=NEXT_PUBLIC_TIME_ZONE="America/Los_Angeles"
+
+# Site Configuration
+Environment=NEXT_PUBLIC_SITE_TITLE="Practice Field Scheduler"
+
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

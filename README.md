@@ -13,6 +13,9 @@ npm install
 
 Copy `.env.example` to `.env` and fill in the required environment variables.
 
+Use `npx auth secret --raw` to generate a new `AUTH_SECRET`.
+See [Auth.js CLI](https://cli.authjs.dev) for more information.
+
 ### Run Development Server
 
 ```bash

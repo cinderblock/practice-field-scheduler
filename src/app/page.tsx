@@ -13,6 +13,7 @@ import type { Session } from "next-auth";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { RenderTime } from "./_components/RenderTime";
 import { Title } from "./_components/Title";
+import { TSLLogo } from "./_components/TSLLogo";
 
 export default async function Home() {
 	const session = await auth();
@@ -22,6 +23,9 @@ export default async function Home() {
 			<main className={styles.main}>
 				<GithubCorner />
 				<div className={styles.container}>
+					<div style={{ width: session ? "100px" : "600px" }}>
+						<TSLLogo />
+					</div>
 					<Title />
 					{session ? <LoggedIn session={session} /> : <LoginButton />}
 				</div>

@@ -75,9 +75,42 @@
   animation: rainbow 100s linear infinite;
 }
 
+.rainbowSvg {
+  background: linear-gradient(
+    to bottom,
+    #ff0000,
+    #ff7f00,
+    #ffff00,
+    #00ff00,
+    #0000ff,
+    #4b0082,
+    #9400d3,
+    #ff0000,
+    #ff7f00,
+    #ffff00,
+    #00ff00,
+    #0000ff,
+    #4b0082,
+    #9400d3,
+    #ff0000
+  );
+  background-size: auto 200%;
+  -webkit-mask-image: url("/tsl.svg");
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  animation: rainbowVertical 49s linear infinite;
+}
+
 @keyframes rainbow {
   to {
     background-position: 200% center;
+  }
+}
+
+@keyframes rainbowVertical {
+  to {
+    background-position: center 200%;
   }
 }
 
@@ -770,4 +803,12 @@
   .githubCorner .octoArm {
     animation: octocat-wave 560ms ease-in-out;
   }
+}
+
+.tslLogo {
+  transition: all 0.3s ease-in-out;
+}
+
+.tslLogoImage {
+  transition: all 0.3s ease-in-out;
 }

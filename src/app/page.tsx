@@ -32,12 +32,26 @@ export default async function Home() {
 
 function GithubCorner() {
 	return (
-		// biome-ignore lint/a11y/useAnchorContent: <explanation>
 		<a
 			href="https://github.com/cinderblock/practice-field-scheduler"
 			className={styles.githubCorner}
 			aria-label="View source on GitHub"
 		>
+			<span
+				style={{
+					position: "absolute",
+					width: "1px",
+					height: "1px",
+					padding: "0",
+					margin: "-1px",
+					overflow: "hidden",
+					clip: "rect(0, 0, 0, 0)",
+					whiteSpace: "nowrap",
+					border: "0",
+				}}
+			>
+				View source on GitHub
+			</span>
 			<svg
 				width="80"
 				height="80"

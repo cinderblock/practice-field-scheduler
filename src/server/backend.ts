@@ -445,6 +445,29 @@ export class Context {
 		return (await this.user).teams;
 	}
 
+	async getUsers() {
+		await initialized();
+
+		let u = users;
+
+		if (!this.isAdmin()) {
+			u = u.filter(user => !user.disabled);
+
+			// Remove email from the user object
+			u = u.map(user => ({
+				id: user.id,
+				name: user.name,
+				image: user.image,
+				created: user.created,
+				updated: user.updated,
+				teams: user.teams,
+				email: "",
+			}));
+		}
+
+		return u;
+	}
+
 	private async isAdmin() {
 		return (await this.getEditPermissions()) === "admin";
 	}

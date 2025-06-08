@@ -7,6 +7,17 @@ html {
   background-image: linear-gradient(to bottom, #2e026d, #15162c);
   color: white;
 }
+
+:root {
+  --accent-color: #f7c873;
+  --border-color: #35356b;
+  --background-primary: #232347;
+  --background-secondary: #1a1a3a;
+  --background-hover: #2a2a4a;
+  --text-primary: white;
+  --text-secondary: #a7bfff;
+}
+
 body {
   min-height: 100vh;
   background: transparent;

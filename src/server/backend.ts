@@ -49,6 +49,7 @@ declare global {
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
 	var __backendInitialized: boolean | undefined;
+	var __changeLock: Lock | undefined;
 }
 
 // Initialize or reuse global arrays
@@ -132,7 +133,7 @@ async function log(entry: LogEntry) {
 }
 
 export class Context {
-	private user: UserEntry;
+	private user: Promise<UserEntry>;
 
 	constructor(
 		private session: Session,
@@ -157,13 +158,13 @@ export class Context {
 		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to acquire lock - PID: ${process.pid}`);
 		const release = await changeLock.acquire();
 		console.log(`🟡 [${MODULE_INSTANCE_ID}] Lock acquired - PID: ${process.pid}`);
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		const res: Reservation = {
 			...reservation,
 			id: crypto.randomUUID(),
-			userId: this.user.id,
+			userId: (await this.user).id,
 			created: ctx.timestamp,
 		};
 
@@ -208,7 +209,7 @@ export class Context {
 		this.restrictTimeframe(reservation.date);
 
 		const release = await changeLock.acquire();
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		jobs.push(
@@ -225,7 +226,7 @@ export class Context {
 		// Mark as abandoned instead of deleting
 		reservation.abandoned = ctx.timestamp;
 		// Update the user ID to the current user
-		reservation.userId = this.user.id;
+		reservation.userId = (await this.user).id;
 		// Store the reason for the removal
 		if (reason) reservation.notes = reason;
 
@@ -243,13 +244,13 @@ export class Context {
 		this.restrictToAdmin("Only admins can add blackouts");
 
 		const release = await changeLock.acquire();
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		const newBlackout: Blackout = {
 			...blackout,
 			created: ctx.timestamp,
-			userId: this.user.id, // Update the user ID to the current user
+			userId: (await this.user).id, // Update the user ID to the current user
 		};
 
 		blackouts.push(newBlackout);
@@ -281,11 +282,11 @@ export class Context {
 		}
 
 		const jobs: Promise<unknown>[] = [];
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const release = await changeLock.acquire();
 
 		blackout.deleted = ctx.timestamp; // Mark as deleted
-		blackout.userId = this.user.id; // Update the user ID to the current user
+		blackout.userId = (await this.user).id; // Update the user ID to the current user
 
 		jobs.push(
 			log({
@@ -308,13 +309,13 @@ export class Context {
 		this.restrictToAdmin("Only admins can add site events");
 
 		const release = await changeLock.acquire();
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		const newEvent: SiteEvent = {
 			...event,
 			created: ctx.timestamp,
-			userId: this.user.id, // Update the user ID to the current user
+			userId: (await this.user).id, // Update the user ID to the current user
 		};
 
 		siteEvents.push(newEvent);
@@ -343,7 +344,7 @@ export class Context {
 		if (!event) throw new Error("Site event not found");
 
 		const release = await changeLock.acquire();
-		const ctx = this.getContext();
+		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		event.deleted = ctx.timestamp;
@@ -364,10 +365,12 @@ export class Context {
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 	}
 
-	private getUser(): UserEntry {
+	private async getUser(): Promise<UserEntry> {
 		if (!this.session?.user) {
 			throw new PermissionError("Not authenticated");
 		}
+
+		await initialized();
 
 		const slackId = this.session.user.id;
 		const email = this.session.user.email ?? "";
@@ -389,6 +392,8 @@ export class Context {
 		if (email) {
 			const existingUser = users.find(u => u.email === email);
 			if (existingUser) {
+				const release = await changeLock.acquire();
+
 				// Found existing user by email, create a new Slack mapping
 				slackMappings.push({
 					slackId,
@@ -396,9 +401,11 @@ export class Context {
 				});
 
 				// Save the new mapping
-				void writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings).catch(err => {
-					console.error("Error saving Slack mapping:", err);
-				});
+				void writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings)
+					.catch(err => {
+						console.error("Error saving Slack mapping:", err);
+					})
+					.finally(release);
 
 				return existingUser;
 			}
@@ -415,6 +422,9 @@ export class Context {
 			email,
 			image: this.session.user.image ?? "",
 		};
+
+		const release = await changeLock.acquire();
+
 		users.push(newUser);
 
 		// Add Slack mapping
@@ -428,43 +438,43 @@ export class Context {
 			[users, slackMappings].map(a =>
 				writeJsonFile(getFilePath(a), a).catch(err => console.error("Error saving user data:", err)),
 			),
-		);
+		).then(release);
 
 		return newUser;
 	}
 
-	getTeams() {
-		return this.user.teams;
+	async getTeams() {
+		return (await this.user).teams;
 	}
 
-	getName() {
-		return this.user.name;
+	async getName() {
+		return (await this.user).name;
 	}
 
-	private getEditPermissions() {
-		return this.user.teams;
+	private async getEditPermissions() {
+		return (await this.user).teams;
 	}
 
-	private isAdmin() {
-		return this.getEditPermissions() === "admin";
+	private async isAdmin() {
+		return (await this.getEditPermissions()) === "admin";
 	}
 
-	private restrictToAdmin(message: string) {
-		if (this.isAdmin()) return;
+	private async restrictToAdmin(message: string) {
+		if (await this.isAdmin()) return;
 		throw new PermissionError(message);
 	}
 
-	private restrictToTeam(team: Team | TeamFull, message: string) {
+	private async restrictToTeam(team: Team | TeamFull, message: string) {
 		if (typeof team === "string") team = Number.parseInt(team, 10);
 
-		const permissions = this.getEditPermissions();
+		const permissions = await this.getEditPermissions();
 		if (permissions === "admin") return;
 		if (permissions.includes(team)) return;
 		throw new PermissionError(message);
 	}
 
-	private restrictTimeframe(date: EventDate) {
-		if (this.isAdmin()) return; // Admins can reserve any date
+	private async restrictTimeframe(date: EventDate) {
+		if (await this.isAdmin()) return; // Admins can reserve any date
 
 		const thisMorning = new Date();
 		thisMorning.setHours(0, 0, 0, 0); // Set time to midnight
@@ -476,10 +486,10 @@ export class Context {
 			throw new PermissionError(`Cannot reserve a date more than ${AdvancedReservationDays} days in advance`);
 	}
 
-	private getContext() {
+	private async getContext() {
 		return {
 			timestamp: new Date(),
-			userId: this.user.id,
+			userId: (await this.user).id,
 			userAgent: this.userAgent,
 			ip: this.ip,
 		};
@@ -487,7 +497,7 @@ export class Context {
 
 	async listReservations(date: EventDate): Promise<Reservation[]> {
 		// First check if user is logged in
-		if (!this.user) throw new PermissionError("Not authenticated");
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
 
 		// Return only non-abandoned reservations for the given date from in-memory array
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
@@ -513,8 +523,16 @@ const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
 
-const changeLock = new Lock();
-const initialized = changeLock.acquire();
+globalThis.__changeLock ||= new Lock();
+const changeLock = globalThis.__changeLock;
+
+// Ensure we're the first thing in this module to grab the change lock
+const initializationLock = changeLock.acquire();
+
+async function initialized() {
+	const lock = await changeLock.acquire();
+	lock();
+}
 
 // Make sure we're never running across a year's boundary
 setInterval(async () => {
@@ -635,7 +653,7 @@ function getArrayName(array: unknown[]): string {
 }
 
 (async () => {
-	const done = await initialized; // Wait for the lock to be acquired
+	const done = await initializationLock; // Wait for the lock to be acquired
 
 	// Skip initialization if already done (HMR persistence)
 	if (globalThis.__backendInitialized) {

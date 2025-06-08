@@ -69,9 +69,10 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 						type="button"
 						className={`${styles.teamFilterButton} ${showAdmins ? styles.teamFilterButtonSelected : ""}`}
 						onClick={() => setShowAdmins(!showAdmins)}
-						title="Show Admins"
+						title={showAdmins ? "Hide Admins" : "Show Admins"}
+						data-team="Admins"
 					>
-						<div className={styles.adminIcon}>Admin</div>
+						<div className={styles.adminIcon}>{showAdmins ? "👾" : "⭐"}</div>
 					</button>
 					{allTeams.map(team => (
 						<button
@@ -79,7 +80,8 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 							type="button"
 							className={`${styles.teamFilterButton} ${selectedTeam === team ? styles.teamFilterButtonSelected : ""}`}
 							onClick={() => setSelectedTeam(selectedTeam === team ? null : team)}
-							title={`Team ${team}`}
+							title={selectedTeam === team ? `Hide Team ${team}` : `Show Team ${team}`}
+							data-team={`Team ${team}`}
 						>
 							<TeamAvatar teamNumber={team} size="2em" />
 						</button>
@@ -130,7 +132,11 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 										<div className={styles.teamsCell}>
 											{user.teams === "admin"
 												? "Admin"
-												: user.teams.map(team => <TeamAvatar key={team} teamNumber={team} size="1.5em" />)}
+												: user.teams.map(team => (
+														<div key={team} className={styles.teamAvatar} data-team={`Team ${team}`}>
+															<TeamAvatar teamNumber={team} size="1.5em" />
+														</div>
+													))}
 										</div>
 									</td>
 								)}

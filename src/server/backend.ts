@@ -106,8 +106,8 @@ type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | Log
 type UserEntry = {
 	id: UserId;
 	name: string;
-	created: Date | string;
-	updated: Date | string;
+	created: Date;
+	updated: Date;
 	disabled?: boolean;
 	teams: Team[] | "admin";
 	email: string;
@@ -597,10 +597,11 @@ async function initializePart(array: unknown[]) {
 				// Filter out expired keys
 				if (array === users) {
 					if (typeof item !== "object" || item === null) return false;
-					if (typeof item.created !== "string") return false;
+					item.created = new Date(item.created);
+					item.updated = new Date(item.updated);
 					if (item.disabled) {
-						if (new Date(item.created) < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 2)) return false; // 2 year expiration
-					} else if (new Date(item.created) < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)) {
+						if (item.created < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 2)) return false; // 2 year expiration
+					} else if (item.created < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)) {
 						item.disabled = true;
 					}
 				}

@@ -27,6 +27,7 @@ import type {
 	Team,
 	TeamFull,
 	TimeSlot,
+	UserEntry,
 	UserId,
 } from "~/types";
 import type { Session } from "next-auth";
@@ -103,17 +104,6 @@ type LogUserEntry = LogCommon & {
 };
 
 type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | LogUserEntry;
-
-type UserEntry = {
-	id: UserId;
-	name: string;
-	created: Date;
-	updated: Date;
-	disabled?: boolean;
-	teams: Team[] | "admin";
-	email: string;
-	image: string;
-};
 
 export class PermissionError extends Error {
 	constructor(message: string) {

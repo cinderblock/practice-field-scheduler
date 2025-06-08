@@ -41,3 +41,14 @@ export type SiteEvent = {
 	deleted?: Date; // Date when the event was removed
 	notes?: string;
 };
+
+export type UserEntry = {
+	id: UserId;
+	name: string;
+	created: Date;
+	updated: Date;
+	disabled?: boolean;
+	teams: Team[] | "admin";
+	email: string;
+	image: string;
+};

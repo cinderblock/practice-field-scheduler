@@ -9,7 +9,7 @@ export function RenderTime({ time, pid }: { time: Date; pid: number }) {
 	const toggleUseUserLocale = useCallback(() => setUseUserLocale(prev => !prev), []);
 
 	return (
-		<div style={{ fontSize: "0.8rem", color: "#666", textAlign: "center", marginBottom: "1rem" }}>
+		<div style={{ fontSize: "0.8rem", color: "var(--text-secondary)", textAlign: "center", marginBottom: "1rem" }}>
 			<span onClick={toggleUseUserLocale} onKeyDown={toggleUseUserLocale}>
 				{useUserLocale ? time.toLocaleString() : dateToLocalString(time)}
 			</span>

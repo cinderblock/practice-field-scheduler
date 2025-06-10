@@ -18,6 +18,24 @@ html {
   --text-secondary: #a7bfff;
 }
 
+@media (prefers-color-scheme: light) {
+  html {
+    background-color: #6b46c1;
+    background-image: linear-gradient(to bottom, #6b46c1, #f7fafc);
+    color: #2d3748;
+  }
+
+  :root {
+    --accent-color: #805ad5;
+    --border-color: #e2e8f0;
+    --background-primary: #f8fafc;
+    --background-secondary: #f1f5f9;
+    --background-hover: #e2e8f0;
+    --text-primary: #334155;
+    --text-secondary: #64748b;
+  }
+}
+
 body {
   min-height: 100vh;
   background: transparent;

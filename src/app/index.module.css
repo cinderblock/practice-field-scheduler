@@ -330,7 +330,6 @@
   overflow: hidden;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border-color);
 }
 
 @media (prefers-color-scheme: light) {
@@ -773,7 +772,6 @@
   background: var(--background-secondary);
   border-radius: 0.75rem;
   box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
-  border: 1px solid var(--border-color);
 }
 
 .timeSlotHeaders > * {
@@ -790,7 +788,6 @@
   font-size: 0.95rem;
   font-weight: 500;
   box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
-  border: 1px solid var(--border-color);
   position: relative;
   overflow: hidden;
   min-height: 2rem;

@@ -6,12 +6,11 @@ import Image from "next/image";
 
 interface TeamAvatarProps {
 	teamNumber: number;
-	alt?: string;
 	className?: string;
 	size?: number | string;
 }
 
-export function TeamAvatar({ teamNumber, alt, className = "", size = 64 }: TeamAvatarProps) {
+export function TeamAvatar({ teamNumber, className = "", size = 64 }: TeamAvatarProps) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [hasError, setHasError] = useState(false);
 
@@ -35,24 +34,7 @@ export function TeamAvatar({ teamNumber, alt, className = "", size = 64 }: TeamA
 	const numericSize = typeof size === "number" ? size : 64;
 
 	if (hasError) {
-		return (
-			<div
-				className={className}
-				style={{
-					width: sizeValue,
-					height: sizeValue,
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					backgroundColor: "#e5e7eb",
-					color: "#6b7280",
-					fontSize: "0.75em",
-					fontWeight: "500",
-				}}
-			>
-				{teamNumber}
-			</div>
-		);
+		return null;
 	}
 
 	return (
@@ -91,7 +73,7 @@ export function TeamAvatar({ teamNumber, alt, className = "", size = 64 }: TeamA
 			)}
 			<Image
 				src={`/api/team-avatar/${teamNumber}`}
-				alt={alt ?? `Team ${teamNumber} avatar`}
+				alt={`FRC ${teamNumber}`}
 				width={numericSize}
 				height={numericSize}
 				onLoadStart={handleLoadStart}

@@ -63,6 +63,7 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 
 	return (
 		<div>
+			<div className={styles.filterLabel}>Filters</div>
 			<div className={styles.filterBox}>
 				<div className={styles.filterContainer}>
 					<button
@@ -86,7 +87,6 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 							<TeamAvatar teamNumber={team} size="2em" />
 						</button>
 					))}
-					<div className={styles.filterLabel}>Filters</div>
 				</div>
 			</div>
 			<div className={styles.tableContainer}>

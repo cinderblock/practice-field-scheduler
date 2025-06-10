@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import styles from "./TeamAvatar.module.css";
+import Image from "next/image";
 
 interface TeamAvatarProps {
 	teamNumber: number;
@@ -31,7 +32,7 @@ export function TeamAvatar({ teamNumber, alt, className = "", size = 64 }: TeamA
 
 	// Convert size to appropriate values for different uses
 	const sizeValue = typeof size === "string" ? size : `${size}px`;
-	const numericSize = typeof size === "number" ? size : undefined;
+	const numericSize = typeof size === "number" ? size : 64;
 
 	if (hasError) {
 		return (
@@ -88,7 +89,7 @@ export function TeamAvatar({ teamNumber, alt, className = "", size = 64 }: TeamA
 					/>
 				</div>
 			)}
-			<img
+			<Image
 				src={`/api/team-avatar/${teamNumber}`}
 				alt={alt ?? `Team ${teamNumber} avatar`}
 				width={numericSize}

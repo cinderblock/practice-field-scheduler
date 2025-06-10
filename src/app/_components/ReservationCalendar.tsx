@@ -27,7 +27,7 @@ function getToday(): string {
 	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
 }
 
-function createDateFromStrings(date: string, time: string | number = "00:00"): Date {
+function createDateFromDateStringHour(date: string, hour: number): Date {
 	if (typeof time === "number") time = `${time.toString().padStart(2, "0")}:00`;
 
 	const tzDate = new TZDateMini(`${date} ${time}`, TimeZone);
@@ -208,7 +208,7 @@ export function ReservationCalendar({
 		const lastTimeSlot = TimeSlotBorders[TimeSlotBorders.length - 1];
 		if (lastTimeSlot === undefined) throw new Error("TimeSlotBorders is empty");
 
-		const lastEventToday = createDateFromStrings(today, lastTimeSlot + 12);
+		const lastEventToday = createDateFromDateStringHour(today, lastTimeSlot + 12);
 
 		// Start tomorrow after the last time slot of the day
 		if (new Date() >= lastEventToday) return addDaysToDateString(today, 1);
@@ -242,8 +242,8 @@ function getProgressPercentage(startTime: Date, endTime: Date, now: Date): numbe
 function TimeSlotHeader({ startHour, endHour }: { startHour: number; endHour: number }) {
 	const now = useInterval(() => new Date(), 1000);
 	const today = getToday();
-	const startTime = createDateFromStrings(today, startHour);
-	const endTime = createDateFromStrings(today, endHour);
+	const startTime = createDateFromDateStringHour(today, startHour);
+	const endTime = createDateFromDateStringHour(today, endHour);
 	const hasStarted = now >= startTime;
 	const hasEnded = now >= endTime;
 	const current = hasStarted && !hasEnded;
@@ -513,8 +513,8 @@ function TimeSlot({
 	});
 
 	// Create Date objects for time comparisons using lab timezone
-	const startTime = createDateFromStrings(date, startHour);
-	const endTime = createDateFromStrings(date, endHour);
+	const startTime = createDateFromDateStringHour(date, startHour);
+	const endTime = createDateFromDateStringHour(date, endHour);
 
 	const now = useInterval(() => new Date(), 1000);
 	const hasStarted = now >= startTime;

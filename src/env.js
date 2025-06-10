@@ -30,7 +30,7 @@ export const env = createEnv({
 			.string()
 			.transform(val => val.split(/[^\d.-]/)) // Split by non-numeric characters
 			.transform(numbers => numbers.filter(Boolean)) // Filter out empty strings
-			.transform(numbers => numbers.map(v => Number.parseInt(v, 10))) // Parse as base 10 integers
+			.transform(numbers => numbers.map(v => Number.parseFloat(v)))
 			.refine(numbers => numbers.length, "Time slot borders must be a comma-separated list of numbers")
 			.refine(numbers => numbers.length >= 2, "Time slots need at least two numbers to define a range")
 			.refine(numbers => numbers.every(n => !Number.isNaN(n)), "Time slot borders must be numbers")

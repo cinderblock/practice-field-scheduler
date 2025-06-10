@@ -28,14 +28,41 @@ function getToday(): string {
 }
 
 function createDateFromDateStringHour(date: string, hour: number): Date {
-	if (typeof time === "number") time = `${time.toString().padStart(2, "0")}:00`;
+	const [year, month, day] = date.split("-").map(Number);
 
-	const tzDate = new TZDateMini(`${date} ${time}`, TimeZone);
+	if (year === undefined || month === undefined || day === undefined) throw new Error("Invalid date");
+
+	// // Handle fractional hours
+	const wholeHours = Math.floor(hour);
+	const minutes = Math.round((hour - wholeHours) * 60);
+
+	const wholeMinutes = Math.floor(minutes);
+	const seconds = Math.round((minutes - wholeMinutes) * 60);
+
+	const tzDate = new TZDateMini(year, month - 1, day, wholeHours, wholeMinutes, seconds, TimeZone);
 
 	return new Date(tzDate.getTime());
 }
 
 function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {
+	// Move fractional hours to minutes
+	if (Math.floor(hour) !== hour) {
+		if (minute === undefined) minute = 0;
+
+		minute += (hour - Math.floor(hour)) * 60;
+
+		hour = Math.floor(hour);
+	}
+
+	// Handle minute overflow
+	if (minute !== undefined) {
+		if (minute > 60) {
+			hour += Math.floor(minute / 60);
+			minute = minute % 60;
+		}
+		minute = Math.floor(minute);
+	}
+
 	let mins = minute?.toString().padStart(2, "0");
 	if (minute === undefined) mins = "";
 	else mins = `:${mins}`;

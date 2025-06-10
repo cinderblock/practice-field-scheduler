@@ -335,8 +335,22 @@
 }
 
 .timeSlotCurrent {
-  background: #0f5764;
-  color: #a4a4a5;
+  background: var(--background-hover);
+  color: var(--text-secondary);
+  position: relative;
+  overflow: hidden;
+}
+
+.timeSlotProgress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--accent-color);
+  transition: left 1s linear;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .timeSlotOver {
@@ -766,6 +780,28 @@
   font-size: 0.95rem;
   font-weight: 500;
   box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
+  border: 1px solid var(--border-color);
+  position: relative;
+  overflow: hidden;
+  min-height: 2rem;
+}
+
+.timeSlotHeaderContent {
+  position: relative;
+  z-index: 1;
+}
+
+.timeSlotHeaderProgress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--accent-color);
+  transition: left 1s linear;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 0 4px var(--accent-color);
 }
 
 @media (max-width: 640px) {

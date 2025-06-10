@@ -232,10 +232,33 @@ export function ReservationCalendar({
 	);
 }
 
+function getProgressPercentage(startTime: Date, endTime: Date, now: Date): number {
+	return Math.min(
+		100,
+		Math.max(0, ((now.getTime() - startTime.getTime()) / (endTime.getTime() - startTime.getTime())) * 100),
+	);
+}
+
 function TimeSlotHeader({ startHour, endHour }: { startHour: number; endHour: number }) {
+	const now = useInterval(() => new Date(), 1000);
+	const today = getToday();
+	const startTime = createDateFromStrings(today, startHour);
+	const endTime = createDateFromStrings(today, endHour);
+	const hasStarted = now >= startTime;
+	const hasEnded = now >= endTime;
+	const current = hasStarted && !hasEnded;
+
+	// Calculate progress percentage for current time slot
+	const progress = current ? getProgressPercentage(startTime, endTime, now) : 0;
+
 	return (
-		<div className={styles.timeSlotHeader}>
-			<TimeRangeDisplay date={getToday()} start={startHour} end={endHour} />
+		<div className={styles.timeSlotHeader} suppressHydrationWarning>
+			<div className={styles.timeSlotHeaderContent}>
+				<TimeRangeDisplay date={today} start={startHour} end={endHour} />
+			</div>
+			{current && (
+				<div className={styles.timeSlotHeaderProgress} style={{ left: `${progress}%` }} suppressHydrationWarning />
+			)}
 		</div>
 	);
 }
@@ -493,10 +516,13 @@ function TimeSlot({
 	const startTime = createDateFromStrings(date, startHour);
 	const endTime = createDateFromStrings(date, endHour);
 
-	const hasStarted = useInterval(() => new Date() >= startTime, 1000, [startTime]);
-	const hasEnded = useInterval(() => new Date() >= endTime, 1000, [endTime]);
-
+	const now = useInterval(() => new Date(), 1000);
+	const hasStarted = now >= startTime;
+	const hasEnded = now >= endTime;
 	const current = hasStarted && !hasEnded;
+
+	// Calculate progress percentage for current time slot
+	const progress = current ? getProgressPercentage(startTime, endTime, now) : 0;
 
 	const style = [styles.timeSlotStackContainer];
 	if (current) style.push(styles.timeSlotCurrent);
@@ -528,7 +554,8 @@ function TimeSlot({
 	};
 
 	return (
-		<div className={style.join(" ")}>
+		<div className={style.join(" ")} suppressHydrationWarning>
+			{current && <div className={styles.timeSlotProgress} style={{ left: `${progress}%` }} suppressHydrationWarning />}
 			<div className={styles.reservationStack}>
 				{/* Existing reservations */}
 				{slotReservations.map(r => (

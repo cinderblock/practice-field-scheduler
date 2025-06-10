@@ -765,7 +765,7 @@
   grid-template-columns: repeat(var(--columns), 1fr);
   margin-bottom: 0.5rem;
   position: sticky;
-  top: 5px;
+  top: -0.75rem;
   z-index: 10;
   padding: 1rem;
   box-sizing: border-box;

@@ -98,6 +98,7 @@ async function LoggedIn({ session }: { session: Session }) {
 	});
 
 	const ctx = new Context(session, userAgent, ip);
+	const isAdmin = (await ctx.getTeams()) === "admin";
 
 	const reservationsByDate = await Promise.all(
 		dates.map(async date => ({
@@ -121,9 +122,16 @@ async function LoggedIn({ session }: { session: Session }) {
 						/>
 					)}
 				</span>
-				<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
-					Sign&nbsp;out
-				</Link>
+				<div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+					{isAdmin && (
+						<Link href="/logs" className={styles.logoutButtonSmall}>
+							View&nbsp;Logs
+						</Link>
+					)}
+					<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
+						Sign&nbsp;out
+					</Link>
+				</div>
 			</div>
 			<ReservationCalendar initialReservations={reservationsByDate} />
 			<RenderTime time={new Date()} pid={process.pid} />

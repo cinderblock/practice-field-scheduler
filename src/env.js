@@ -11,6 +11,12 @@ export const env = createEnv({
 		AUTH_SLACK_CLIENT_ID: z.string().min(10),
 		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
 		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
+		AUTH_SLACK_TEAM_ID: z
+			.string()
+			.min(5)
+			.refine(val => val.toUpperCase() === val, "Team ID must be uppercase")
+			.refine(val => val.startsWith("T"), "Team ID must start with T")
+			.optional(),
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
@@ -57,6 +63,7 @@ export const env = createEnv({
 		AUTH_SLACK_CLIENT_ID: process.env.AUTH_SLACK_CLIENT_ID,
 		AUTH_SLACK_CLIENT_SECRET: process.env.AUTH_SLACK_CLIENT_SECRET,
 		AUTH_SLACK_SIGNING_SECRET: process.env.AUTH_SLACK_SIGNING_SECRET,
+		AUTH_SLACK_TEAM_ID: process.env.AUTH_SLACK_TEAM_ID,
 		NODE_ENV: process.env.NODE_ENV,
 		FIRST_API_USERNAME: process.env.FIRST_API_USERNAME,
 		FIRST_API_AUTH_TOKEN: process.env.FIRST_API_AUTH_TOKEN,

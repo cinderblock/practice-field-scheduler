@@ -33,6 +33,11 @@ export const authConfig = {
 		SlackProvider({
 			clientId: env.AUTH_SLACK_CLIENT_ID,
 			clientSecret: env.AUTH_SLACK_CLIENT_SECRET,
+			authorization: {
+				params: {
+					team: env.AUTH_SLACK_TEAM_ID,
+				},
+			},
 		}),
 		/**
 		 * ...add more providers here.

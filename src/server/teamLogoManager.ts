@@ -2,62 +2,51 @@
 
 import FRC from "first-events-api";
 import { env } from "~/env";
-import fs from "node:fs/promises";
-import path from "node:path";
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+// Global state for HMR persistence
+declare global {
+	var __avatarCache: Map<number, { avatar: Buffer | undefined; timestamp: number }> | undefined;
+	var __lastRequestTime: number | undefined;
+}
+
+// Initialize global state
+globalThis.__avatarCache ||= new Map();
+globalThis.__lastRequestTime ||= 0;
+
+const avatarCache = globalThis.__avatarCache;
+let lastRequestTime = globalThis.__lastRequestTime;
 
 const frc = FRC({
 	username: env.FIRST_API_USERNAME,
 	auth: env.FIRST_API_AUTH_TOKEN,
-	season: new Date().getFullYear(),
+	season: CURRENT_YEAR,
 });
 
-// Cache directory for team avatars (year-specific)
-const CURRENT_YEAR = new Date().getFullYear();
-const CACHE_DIR = path.join(process.cwd(), "data", CURRENT_YEAR.toString(), "team-avatars");
+// Rate limiting: 1 request per second
+const RATE_LIMIT_MS = 1000;
+// Cache non-existent logos for 1 hour
+const NON_EXISTENT_CACHE_MS = 60 * 60 * 1000;
+// Refresh known avatars daily
+const AVATAR_REFRESH_MS = 24 * 60 * 60 * 1000;
 
-// Ensure cache directory exists
-async function ensureCacheDir() {
-	try {
-		await fs.access(CACHE_DIR);
-	} catch {
-		await fs.mkdir(CACHE_DIR, { recursive: true });
+// Track in-flight requests to prevent duplicate API calls
+const inFlightRequests = new Map<number, Promise<Buffer | undefined>>();
+
+/**
+ * Rate limits API requests to 1 per second
+ */
+async function rateLimit(): Promise<void> {
+	while (true) {
+		const timeSinceLastRequest = Date.now() - lastRequestTime;
+
+		if (timeSinceLastRequest < RATE_LIMIT_MS) {
+			await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS - timeSinceLastRequest));
+		} else break;
 	}
-}
 
-/**
- * Gets the file path for a team avatar in the cache
- */
-function getAvatarCachePath(team: number): string {
-	return path.join(CACHE_DIR, `${team}.png`);
-}
-
-/**
- * Checks if a team avatar exists in the cache
- */
-async function isAvatarCached(team: number): Promise<boolean> {
-	try {
-		await fs.access(getAvatarCachePath(team));
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Saves a team avatar to the cache
- */
-async function saveAvatarToCache(team: number, avatarBuffer: Buffer): Promise<void> {
-	await ensureCacheDir();
-	const cachePath = getAvatarCachePath(team);
-	await fs.writeFile(cachePath, avatarBuffer);
-}
-
-/**
- * Loads a team avatar from the cache
- */
-async function loadAvatarFromCache(team: number): Promise<Buffer> {
-	const cachePath = getAvatarCachePath(team);
-	return await fs.readFile(cachePath);
+	lastRequestTime = Date.now();
 }
 
 /**
@@ -65,22 +54,27 @@ async function loadAvatarFromCache(team: number): Promise<Buffer> {
  * @param team The team number to fetch the avatar for.
  * @returns The avatar for the team as a PNG file
  */
-async function fetchAvatarFromAPI(team: number): Promise<Buffer> {
-	const r = await frc.season.getTeamAvatarListings("", team);
+async function fetchAvatarFromAPI(team: number): Promise<Buffer | undefined> {
+	await rateLimit();
 
-	if (r.statusCode !== 200) {
-		throw new Error(`Failed to get avatar for team ${team}`);
+	const r = await frc.season.getTeamAvatarListings("", team).catch(() => undefined);
+
+	if (!r) {
+		console.log(new Error(`No response from FIRST API for team ${team}`));
+		return undefined;
 	}
 
+	if (r.statusCode !== 200) return undefined;
+
 	if (r.data.teamCountTotal > 1) {
-		throw new Error(`Expected 1 avatar for team ${team}, got ${r.data.teamCountTotal}`);
+		// Something is very wrong if this happens
+		console.log(new Error(`Expected 1 avatar for team ${team}, got ${r.data.teamCountTotal}`));
+		return undefined;
 	}
 
 	const avatar = r.data.teams[0]?.encodedAvatar;
 
-	if (!avatar) {
-		throw new Error(`No avatar found for team ${team}`);
-	}
+	if (!avatar) return undefined;
 
 	return Buffer.from(avatar, "base64");
 }
@@ -90,15 +84,32 @@ async function fetchAvatarFromAPI(team: number): Promise<Buffer> {
  * @param team The team number to get the avatar for
  * @returns The avatar for the team as a PNG buffer
  */
-export async function getTeamAvatar(team: number): Promise<Buffer> {
-	// Check cache first
-	if (await isAvatarCached(team)) {
-		return await loadAvatarFromCache(team);
+export async function getTeamAvatar(team: number): Promise<Buffer | undefined> {
+	// Check if we already have an in-flight request
+	const inFlight = inFlightRequests.get(team);
+	if (inFlight) return inFlight;
+
+	const cached = avatarCache.get(team);
+
+	if (cached) {
+		const delta = Date.now() - cached.timestamp;
+		// If it's a non-existent logo, check if the cache has expired
+		if (cached.avatar === null) {
+			if (delta < NON_EXISTENT_CACHE_MS) return undefined;
+		}
+		// If it's a known avatar, check if it needs refreshing
+		else if (delta <= AVATAR_REFRESH_MS) return cached.avatar;
 	}
 
-	// Fetch from API and cache
-	const avatarBuffer = await fetchAvatarFromAPI(team);
-	await saveAvatarToCache(team, avatarBuffer);
+	// Create a new request
+	const avatarBuffer = fetchAvatarFromAPI(team);
+	avatarBuffer.then(avatar => {
+		avatarCache.set(team, { avatar, timestamp: Date.now() });
+		inFlightRequests.delete(team);
+	});
 
-	return avatarBuffer;
+	inFlightRequests.set(team, avatarBuffer);
+
+	// Optimistically return the cached avatar if it exists
+	return cached?.avatar ?? avatarBuffer;
 }

@@ -1,15 +1,16 @@
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
-import { Context } from "~/server/backend";
+import { isValidDate, isValidTime, isValidTimeSlot } from "~/server/util/timeUtils";
 
-const reservationSchema = z.object({
-	date: z.string(),
-	slot: z.string(), // HH:mm format local time
-	team: z.string(),
-	notes: z.string(),
-	priority: z.boolean(),
-});
+const reservationSchema = z
+	.object({
+		date: z.string().refine(val => isValidDate(val), "Invalid date"),
+		slot: z.string().refine(val => isValidTime(val), "Invalid time"),
+		team: z.string().refine(val => !val.includes("\n") && /^\d+/.test(val), "Invalid team reservation"),
+		notes: z.string(),
+		priority: z.boolean(),
+	})
+	.refine(({ date, slot }) => isValidTimeSlot(`${date} ${slot}`), "Invalid time slot");
 
 export const reservationRouter = createTRPCRouter({
 	add: protectedProcedure.input(reservationSchema).mutation(async ({ input, ctx }) => {

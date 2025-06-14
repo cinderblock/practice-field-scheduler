@@ -38,3 +38,27 @@ export function dateToLocalString(date: Date) {
 			(_, m, d, y, h, min, s, ampm, tz) => `${y}-${m}-${d} ${h}:${min}:${s}${ampm.toLowerCase()} ${tz}`,
 		);
 }
+
+export function isFutureDate(date: string) {
+	return isValidDate(date) && new Date(date) > new Date();
+}
+
+export function isValidDate(date: string) {
+	if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return false;
+
+	if (!date.startsWith(new Date().getFullYear().toString())) return false;
+
+	if (Number.isNaN(new Date(date).getTime())) return false;
+
+	return true;
+}
+
+export function isValidTime(time: string) {
+	return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+}
+
+export function isValidTimeSlot(timeSlot: string) {
+	const [date, time] = timeSlot.split(" ");
+	if (!date || !time) return false;
+	return isValidDate(date) && isValidTime(time);
+}

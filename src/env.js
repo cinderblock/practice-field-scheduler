@@ -20,6 +20,7 @@ export const env = createEnv({
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
+		NEXTAUTH_URL: z.string().url().startsWith("https://"),
 	},
 
 	/**
@@ -64,6 +65,7 @@ export const env = createEnv({
 		AUTH_SLACK_CLIENT_SECRET: process.env.AUTH_SLACK_CLIENT_SECRET,
 		AUTH_SLACK_SIGNING_SECRET: process.env.AUTH_SLACK_SIGNING_SECRET,
 		AUTH_SLACK_TEAM_ID: process.env.AUTH_SLACK_TEAM_ID,
+		NEXTAUTH_URL: process.env.NEXTAUTH_URL,
 		NODE_ENV: process.env.NODE_ENV,
 		FIRST_API_USERNAME: process.env.FIRST_API_USERNAME,
 		FIRST_API_AUTH_TOKEN: process.env.FIRST_API_AUTH_TOKEN,

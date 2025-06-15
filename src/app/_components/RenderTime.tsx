@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { dateToLocalString } from "~/server/util/timeUtils";
 import { PrettyTimeDelta } from "./PrettyTimeDelta";
 
-export function RenderTime({ time, pid }: { time: Date; pid: number }) {
+export function RenderTime({ time }: { time: Date }) {
 	const [useUserLocale, setUseUserLocale] = useState(false);
 	const toggleUseUserLocale = useCallback(() => setUseUserLocale(prev => !prev), []);
 
@@ -15,8 +15,6 @@ export function RenderTime({ time, pid }: { time: Date; pid: number }) {
 			</span>
 			<br />
 			<PrettyTimeDelta date={time} />
-			<br />
-			PID: {pid}
 		</div>
 	);
 }

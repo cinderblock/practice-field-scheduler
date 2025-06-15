@@ -134,7 +134,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				</div>
 			</div>
 			<ReservationCalendar initialReservations={reservationsByDate} />
-			<RenderTime time={new Date()} pid={process.pid} />
+			<RenderTime time={new Date()} />
 		</div>
 	);
 }

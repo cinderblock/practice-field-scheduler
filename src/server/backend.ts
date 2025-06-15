@@ -32,6 +32,7 @@ import type {
 } from "~/types";
 import type { Session } from "next-auth";
 import crypto from "node:crypto";
+import { env } from "~/env";
 
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs
@@ -522,7 +523,7 @@ export class Context {
 ////// Storage Management //////
 
 // File paths for data storage
-const DATA_DIR = resolve("./data");
+const DATA_DIR = resolve(env.DATA_DIR);
 const YEAR = new Date().getFullYear().toString();
 // Keys & Users persist across years, so we don't include the year in the path
 const KEYS_FILE = join(DATA_DIR, "keys.json");

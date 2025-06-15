@@ -8,6 +8,7 @@ import styles from "../index.module.css";
 import { readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { notFound } from "next/navigation";
+import { env } from "~/env";
 
 export default async function LogsPage() {
 	const session = await auth();
@@ -29,8 +30,7 @@ export default async function LogsPage() {
 
 	// Read logs from file
 	const YEAR = new Date().getFullYear().toString();
-	const DATA_DIR = resolve("./data");
-	const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
+	const LOGS_FILE = resolve(env.DATA_DIR, YEAR, "logs.txt");
 
 	let logs = [];
 	try {

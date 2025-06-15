@@ -1,4 +1,5 @@
 import { createEnv } from "@t3-oss/env-nextjs";
+import { resolve } from "node:path";
 import { z } from "zod";
 
 export const env = createEnv({
@@ -21,6 +22,10 @@ export const env = createEnv({
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		NEXTAUTH_URL: z.string().url().startsWith("https://"),
+		DATA_DIR: z
+			.string()
+			.min(1)
+			.refine(val => resolve(val), "Data directory invalid"),
 	},
 
 	/**
@@ -73,6 +78,7 @@ export const env = createEnv({
 		NEXT_PUBLIC_RESERVATION_DAYS: process.env.NEXT_PUBLIC_RESERVATION_DAYS,
 		NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
 		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
+		DATA_DIR: process.env.DATA_DIR,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

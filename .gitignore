@@ -6,6 +6,9 @@
 .pnp.js
 
 # testing
+/allure-results
+/allure-report
+/.allure
 /coverage
 # playwright
 /test-results

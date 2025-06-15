@@ -30,5 +30,36 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run tests (unit + e2e)
-        run: npm test
+      - name: Run unit test
+        id: unit
+        run: npm run test:unit
+
+      - name: Run e2e test
+        if: success() || steps.unit.conclusion == 'failure'
+        id: e2e
+        run: npm run test:e2e
+
+      - name: Load test report history
+        # Even if tests fail, we want to generate the reports
+        if: success() || steps.unit.conclusion == 'failure' || steps.e2e.conclusion == 'failure'
+        id: history
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Build test report
+        uses: simple-elf/allure-report-action@v1.7
+        if: success() || steps.history.conclusion == 'success'
+        id: report
+        with:
+          gh_pages: gh-pages
+          allure_history: allure-history
+
+      - name: Publish test report
+        uses: peaceiris/actions-gh-pages@v4
+        if: success() || steps.report.conclusion == 'success'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: allure-history

@@ -7,6 +7,7 @@ export default defineConfig({
 	testDir: "test/e2e",
 	timeout: 30 * 1000,
 	outputDir: "test-results",
+	reporter: [["line"], ["allure-playwright"]],
 	use: {
 		baseURL: `http://localhost:${PORT}`,
 		trace: "on-first-retry",

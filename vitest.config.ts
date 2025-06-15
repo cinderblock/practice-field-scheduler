@@ -10,6 +10,16 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
+		setupFiles: ["allure-vitest/setup"],
+		reporters: [
+			"verbose",
+			[
+				"allure-vitest/reporter",
+				{
+					resultsDir: "allure-results",
+				},
+			],
+		],
 		exclude: [...configDefaults.exclude, "test/e2e/**"],
 		coverage: {
 			provider: "v8",

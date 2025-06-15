@@ -54,7 +54,7 @@ export function isValidDate(date: string) {
 }
 
 export function isValidTime(time: string) {
-	return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+	return /^([01]?[0-9]|2[0-3]):[0-5][0-9](am|pm)$/.test(time);
 }
 
 export function isValidTimeSlot(timeSlot: string) {

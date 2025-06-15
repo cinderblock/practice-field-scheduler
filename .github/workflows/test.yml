@@ -32,7 +32,7 @@ jobs:
 
       - name: Setup environment variables
         run: |
-          echo 'FIRST_API_USERNAME="${{ secrets.FIRST_API_USERNAME }}"' > .env.test.local
+          echo 'FIRST_API_USERNAME="${{ vars.FIRST_API_USERNAME }}"' > .env.test.local
           echo 'FIRST_API_AUTH_TOKEN="${{ secrets.FIRST_API_AUTH_TOKEN }}"' >> .env.test.local
 
       - name: Run unit test

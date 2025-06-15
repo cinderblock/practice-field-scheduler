@@ -59,12 +59,7 @@ async function fetchAvatarFromAPI(team: number): Promise<Buffer | undefined> {
 
 	const r = await frc.season.getTeamAvatarListings("", team).catch(() => undefined);
 
-	if (!r) {
-		console.log(new Error(`No response from FIRST API for team ${team}`));
-		return undefined;
-	}
-
-	if (r.statusCode !== 200) return undefined;
+	if (r?.statusCode !== 200) return undefined;
 
 	if (r.data.teamCountTotal > 1) {
 		// Something is very wrong if this happens

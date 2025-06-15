@@ -1,5 +1,4 @@
 import { createEnv } from "@t3-oss/env-nextjs";
-import { resolve } from "node:path";
 import { z } from "zod";
 
 export const env = createEnv({
@@ -22,10 +21,7 @@ export const env = createEnv({
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		NEXTAUTH_URL: z.string().url().startsWith("https://"),
-		DATA_DIR: z
-			.string()
-			.min(1)
-			.refine(val => resolve(val), "Data directory invalid"),
+		DATA_DIR: z.string().min(1),
 	},
 
 	/**

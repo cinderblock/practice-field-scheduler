@@ -1,9 +1,7 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
-function productionRequired(z) {
-	return process.env.NODE_ENV === "production" ? z : z.optional();
-}
+const prod = process.env.NODE_ENV === "production";
 
 export const env = createEnv({
 	/**
@@ -11,11 +9,12 @@ export const env = createEnv({
 	 * isn't built with invalid env vars.
 	 */
 	server: {
-		NEXTAUTH_URL: productionRequired(z.string().url().startsWith("https://")),
-		AUTH_SECRET: productionRequired(z.string()),
-		AUTH_SLACK_CLIENT_ID: productionRequired(z.string().min(10)),
-		AUTH_SLACK_CLIENT_SECRET: productionRequired(z.string().length(32)),
-		AUTH_SLACK_SIGNING_SECRET: productionRequired(z.string().length(32)),
+		NEXTAUTH_URL: z.string().url().startsWith("https://"),
+		AUTH_SECRET: z.string(),
+		AUTH_SLACK_CLIENT_ID: z.string().min(10),
+		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
+		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
+
 		AUTH_SLACK_TEAM_ID: z
 			.string()
 			.min(5)

@@ -13,7 +13,7 @@ export default defineConfig({
 		trace: "on-first-retry",
 	},
 	webServer: {
-		command: `cross-env DATA_DIR=.tmp/e2e-data TEST_AUTH_BYPASS=1 npm run preview -- --port ${PORT}`,
+		command: `cross-env NODE_ENV=test npm run preview -- --port ${PORT}`,
 		port: PORT,
 		reuseExistingServer: !process.env.CI,
 		timeout: 120 * 1000,

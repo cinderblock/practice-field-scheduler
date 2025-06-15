@@ -7,6 +7,11 @@
 
 # testing
 /coverage
+# playwright
+/test-results
+
+# Temp data dir for testing
+/.tmp
 
 # database
 /prisma/db.sqlite

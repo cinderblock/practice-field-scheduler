@@ -79,3 +79,26 @@ To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the fo
 - [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
 
 You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+
+## Running the test suite
+
+1. Install dependencies:
+
+```bash
+npm ci
+```
+
+2. (First time only) download the Chromium engine Playwright will drive:
+
+```bash
+# Download just the Chromium binary (≈120&nbsp;MB) instead of all three browsers
+npx playwright install --with-deps chromium
+```
+
+3. Run all tests and see coverage:
+
+```bash
+npm test
+```
+
+The `test` script runs unit/integration tests with Vitest first and then the browser E2E tests with Playwright.

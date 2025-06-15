@@ -1,16 +1,21 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+function productionRequired(z) {
+	return process.env.NODE_ENV === "production" ? z : z.optional();
+}
+
 export const env = createEnv({
 	/**
 	 * Specify your server-side environment variables schema here. This way you can ensure the app
 	 * isn't built with invalid env vars.
 	 */
 	server: {
-		AUTH_SECRET: process.env.NODE_ENV === "production" ? z.string() : z.string().optional(),
-		AUTH_SLACK_CLIENT_ID: z.string().min(10),
-		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
-		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
+		NEXTAUTH_URL: productionRequired(z.string().url().startsWith("https://")),
+		AUTH_SECRET: productionRequired(z.string()),
+		AUTH_SLACK_CLIENT_ID: productionRequired(z.string().min(10)),
+		AUTH_SLACK_CLIENT_SECRET: productionRequired(z.string().length(32)),
+		AUTH_SLACK_SIGNING_SECRET: productionRequired(z.string().length(32)),
 		AUTH_SLACK_TEAM_ID: z
 			.string()
 			.min(5)
@@ -20,7 +25,6 @@ export const env = createEnv({
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
-		NEXTAUTH_URL: z.string().url().startsWith("https://"),
 		DATA_DIR: z.string().min(1),
 	},
 

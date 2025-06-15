@@ -15,6 +15,7 @@
 
 # Temp data dir for testing
 /.tmp
+/test/data
 
 # database
 /prisma/db.sqlite

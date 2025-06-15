@@ -5,8 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"test": "npm run test:unit && npm run test:e2e",
-		"test:unit": "cross-env DATA_DIR=.tmp/unit-data TEST_AUTH_BYPASS=1 vitest run --coverage",
-		"test:e2e": "cross-env DATA_DIR=.tmp/e2e-data TEST_AUTH_BYPASS=1 playwright test",
+		"test:unit": "cross-env vitest run --coverage",
+		"test:e2e": "cross-env playwright test",
 		"build": "next build",
 		"check": "biome check .",
 		"check:unsafe": "biome check --write --unsafe .",

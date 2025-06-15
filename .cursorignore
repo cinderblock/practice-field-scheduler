@@ -1,4 +1,5 @@
 !.env.example
+!.env.test
 !data/
 .next/
 node_modules/

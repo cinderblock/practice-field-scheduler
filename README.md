@@ -63,6 +63,12 @@ The configuration will allow configuring a tunnel to your `http://localhost:3000
 
 You'll also need to connect a Cloudflare "Application" to the tunnel and enable an Access policy and probably use the "BYPASS" option to disable Cloudflare's login wall.
 
+### Test Reports
+
+Test reports are published to the `gh-pages` branch.
+
+The `gh-pages` branch is automatically deployed to [https://cinderblock.github.io/practice-field-scheduler/](https://cinderblock.github.io/practice-field-scheduler/).
+
 ### Technology Stack
 
 This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.

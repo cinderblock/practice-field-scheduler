@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Abstain from reading the .json backend files directly. Use (or update) the existing backend.ts api. Logs are the only exception, so far.

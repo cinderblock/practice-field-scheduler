@@ -108,3 +108,21 @@ npm test
 ```
 
 The `test` script runs unit/integration tests with Vitest first and then the browser E2E tests with Playwright.
+
+### Calendar Feeds (public)
+
+We expose iCalendar (ICS) feeds that you can subscribe to in Google Calendar, Apple Calendar, Outlook, etc.
+
+| Feed | ICS URL | Google shortcut |
+|------|---------|-----------------|
+| All reservations & events | `/api/calendar/all.ics` | `https://calendar.google.com/calendar/r?cid=<absolute-URL-above>` |
+| Site events & blackouts | `/api/calendar/site.ics` | same pattern |
+| Single team (replace `123`) | `/api/calendar/123.ics` | same pattern |
+
+Examples:
+
+```text
+webcal://your.domain.com/api/calendar/all.ics            # Apple / Outlook one-click
+https://your.domain.com/api/calendar/all.ics             # Google "From URL"
+https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fyour.domain.com%2Fapi%2Fcalendar%2Fall.ics  # Google shortcut
+```

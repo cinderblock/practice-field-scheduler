@@ -14,6 +14,7 @@ import { dateToDateString } from "~/server/util/timeUtils";
 import { RenderTime } from "./_components/RenderTime";
 import { Title } from "./_components/Title";
 import { TSLLogo } from "./_components/TSLLogo";
+import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 
 export default async function Home() {
 	const session = await auth();
@@ -98,7 +99,8 @@ async function LoggedIn({ session }: { session: Session }) {
 	});
 
 	const ctx = new Context(session, userAgent, ip);
-	const isAdmin = (await ctx.getTeams()) === "admin";
+	const userTeams = await ctx.getTeams();
+	const isAdmin = userTeams === "admin";
 
 	const reservationsByDate = await Promise.all(
 		dates.map(async date => ({
@@ -134,6 +136,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				</div>
 			</div>
 			<ReservationCalendar initialReservations={reservationsByDate} />
+			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />
 			<RenderTime time={new Date()} />
 		</div>
 	);

@@ -692,3 +692,21 @@ function getArrayName(array: unknown[]): string {
 	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);
 	exit(1); // Exit the process on initialization error
 });
+
+// ===== Calendar Feed Helpers =====
+/**
+ * Read-only snapshot of current in-memory data, filtered for public consumption.
+ * No auth required.
+ */
+export async function getPublicFeedData() {
+	await initialized();
+	// Return shallow copies to avoid accidental mutation by callers
+	const res = reservations.filter(r => !r.abandoned).map(r => ({ ...r }));
+	const bl = blackouts.filter(b => !b.deleted).map(b => ({ ...b }));
+	const ev = siteEvents.filter(e => !e.deleted).map(e => ({ ...e }));
+	return {
+		reservations: res,
+		blackouts: bl,
+		siteEvents: ev,
+	} as const;
+}

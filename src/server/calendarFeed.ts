@@ -72,54 +72,64 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 	// Add reservations
 	if (kind === "all" || (kind === "team" && team)) {
 		const resList = kind === "all" ? reservations : reservations.filter(r => (r.team as string).toString() === team);
-		// Sort by date & slot for grouping
+		// Sort by date and the *actual* temporal start of each slot so that sequential
+		// reservations appear next to each other even when the slot strings don't
+		// sort correctly lexicographically (e.g. "10:00am" vs "9:00am").
 		resList.sort((a, b) => {
 			if (a.date !== b.date) return a.date.localeCompare(b.date);
-			return a.slot.localeCompare(b.slot);
+			const aStart = parseSlotToDate(a.date, a.slot)?.start.getTime() ?? 0;
+			const bStart = parseSlotToDate(b.date, b.slot)?.start.getTime() ?? 0;
+			return aStart - bStart;
 		});
 
-		let groupStart: ReturnType<typeof parseSlotToDate> | null = null;
-		let currentTeam: Reservation["team"] | null = null;
+		// Map to track an open group per team
+		interface Group {
+			start: Date;
+			end: Date;
+			description?: string;
+		}
+		const openGroups = new Map<Reservation["team"], Group>();
+
+		const flushGroup = (teamKey: Reservation["team"], group: Group) => {
+			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${teamKey}`;
+			push({
+				id: `${group.start.toISOString()}-${teamKey}`,
+				start: group.start,
+				end: group.end,
+				summary: `Team ${teamKey} Reservation`,
+				description: group.description ?? "",
+				x: {
+					"X-image": avatar,
+				},
+			} as ICalEventData);
+		};
+
 		for (const r of resList) {
 			if (r.abandoned) continue;
 			const dateTimes = parseSlotToDate(r.date, r.slot);
 			if (!dateTimes) continue;
 
-			if (groupStart && currentTeam === r.team && dateTimes.start.getTime() === (groupStart.end?.getTime() ?? 0)) {
-				// Extend current group
-				groupStart.end = dateTimes.end;
+			const teamKey = r.team;
+			const current = openGroups.get(teamKey);
+			if (current && dateTimes.start.getTime() === current.end.getTime()) {
+				// Extend the existing contiguous block for this team
+				current.end = dateTimes.end;
+				if (!current.description && r.notes) current.description = r.notes;
+				openGroups.set(teamKey, current);
 			} else {
-				// Flush previous group
-				if (groupStart) {
-					const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${currentTeam}`;
-					push({
-						id: `${groupStart.start.toISOString()}-${currentTeam}`,
-						start: groupStart.start,
-						end: groupStart.end,
-						summary: `Team ${currentTeam} Reservation`,
-						description: r?.notes ?? "",
-						x: {
-							"X-image": avatar,
-						},
-					} as ICalEventData);
-				}
-				// Start new group
-				groupStart = { ...dateTimes };
-				currentTeam = r.team;
+				// Flush previous block for this team (if any) and start a new one
+				if (current) flushGroup(teamKey, current);
+				openGroups.set(teamKey, {
+					start: dateTimes.start,
+					end: dateTimes.end,
+					description: r.notes ?? undefined,
+				});
 			}
 		}
-		// Flush last group
-		if (groupStart) {
-			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${currentTeam}`;
-			push({
-				id: `${groupStart.start.toISOString()}-${currentTeam}`,
-				start: groupStart.start,
-				end: groupStart.end,
-				summary: `Team ${currentTeam} Reservation`,
-				x: {
-					"X-image": avatar,
-				},
-			} as ICalEventData);
+
+		// Flush any groups still open
+		for (const [teamKey, group] of openGroups.entries()) {
+			flushGroup(teamKey, group);
 		}
 	}
 

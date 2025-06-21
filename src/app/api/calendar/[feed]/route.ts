@@ -4,8 +4,9 @@ import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, { params }: { params: { feed: string } }) {
-	let feedParam = params.feed;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ feed: string }> }) {
+	const { feed } = await params;
+	let feedParam = feed;
 	// Remove .ics suffix if present
 	if (feedParam.endsWith(".ics")) {
 		feedParam = feedParam.slice(0, -4);

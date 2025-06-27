@@ -3,8 +3,8 @@ import "~/styles/globals.css";
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 
-import { TRPCReactProvider } from "~/trpc/react";
 import { env } from "~/env";
+import { TRPCReactProvider } from "~/trpc/react";
 export const metadata: Metadata = {
 	title: env.NEXT_PUBLIC_SITE_TITLE,
 	description: "Schedule your practice field time",

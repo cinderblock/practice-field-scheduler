@@ -2,19 +2,19 @@
 
 import "server-only";
 
-import Link from "next/link";
+import type { Session } from "next-auth";
 import { headers } from "next/headers";
-import { Context } from "~/server/backend";
+import Link from "next/link";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
 import { auth } from "~/server/auth";
-import { HydrateClient } from "~/trpc/server";
-import styles from "./index.module.css";
-import type { Session } from "next-auth";
+import { Context } from "~/server/backend";
 import { dateToDateString } from "~/server/util/timeUtils";
-import { RenderTime } from "./_components/RenderTime";
-import { Title } from "./_components/Title";
-import { TSLLogo } from "./_components/TSLLogo";
+import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
+import { RenderTime } from "./_components/RenderTime";
+import { TSLLogo } from "./_components/TSLLogo";
+import { Title } from "./_components/Title";
+import styles from "./index.module.css";
 
 export default async function Home() {
 	const session = await auth();

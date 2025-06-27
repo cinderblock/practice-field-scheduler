@@ -7,16 +7,11 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
+import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
-import { exit } from "./util/exit";
-import { Lock } from "./util/Lock";
-import {
-	tellClientsAboutBlackoutChange,
-	tellClientsAboutReservationChange,
-	tellClientsAboutSiteEvent,
-} from "./websocket";
-import type { JsonData } from "./util/JsonData";
+import { join, resolve } from "node:path";
+import type { Session } from "next-auth";
+import { env } from "~/env";
 import type {
 	AddReservationArgs,
 	Blackout,
@@ -30,9 +25,14 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
-import type { Session } from "next-auth";
-import crypto from "node:crypto";
-import { env } from "~/env";
+import type { JsonData } from "./util/JsonData";
+import { Lock } from "./util/Lock";
+import { exit } from "./util/exit";
+import {
+	tellClientsAboutBlackoutChange,
+	tellClientsAboutReservationChange,
+	tellClientsAboutSiteEvent,
+} from "./websocket";
 
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs

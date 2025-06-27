@@ -1,13 +1,13 @@
 "use server";
 
-import { auth } from "~/server/auth";
-import { Context } from "~/server/backend";
 import { headers } from "next/headers";
-import { UsersTable } from "./_components/UsersTable";
-import type { UserEntry } from "~/types";
 import { redirect } from "next/navigation";
 import { TSLLogo } from "~/app/_components/TSLLogo";
+import { auth } from "~/server/auth";
+import { Context } from "~/server/backend";
+import type { UserEntry } from "~/types";
 import styles from "../index.module.css";
+import { UsersTable } from "./_components/UsersTable";
 
 export default async function UsersPage() {
 	const session = await auth();

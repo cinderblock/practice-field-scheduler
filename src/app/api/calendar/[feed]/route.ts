@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
-import { generateICS } from "~/server/calendarFeed";
 import type { NextRequest } from "next/server";
+import { generateICS } from "~/server/calendarFeed";
 
 export const dynamic = "force-dynamic";
 

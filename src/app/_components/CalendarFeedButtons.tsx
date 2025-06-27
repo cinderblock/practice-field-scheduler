@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import styles from "./CalendarFeedButtons.module.css";
 import { env } from "~/env";
+import styles from "./CalendarFeedButtons.module.css";
 
 const BaseUrl = "/api/calendar/";
 

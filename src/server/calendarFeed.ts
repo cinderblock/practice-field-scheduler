@@ -1,8 +1,8 @@
-import { getPublicFeedData } from "~/server/backend";
 import ical from "ical-generator";
 import type { ICalCalendar, ICalEventData } from "ical-generator";
-import type { Reservation } from "~/types";
 import { env } from "~/env";
+import { getPublicFeedData } from "~/server/backend";
+import type { Reservation } from "~/types";
 
 export type FeedKind = "all" | "site" | "team";
 

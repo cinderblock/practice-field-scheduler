@@ -1,8 +1,8 @@
 "use client";
 
+import { env } from "~/env";
 import styles from "../index.module.css";
 import { useInterval } from "./useInterval";
-import { env } from "~/env";
 
 const enablePride = false;
 

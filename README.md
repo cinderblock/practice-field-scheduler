@@ -34,6 +34,7 @@ Slack requires HTTPS for all OAuth redirects.
 Each method below generates a new URL that you can use to access your development server.
 
 Use the URL in these places:
+
 1. OAuth redirect URI in [Slack app settings](https://api.slack.com/apps/A08S73XASQM/oauth)
 2. `NEXTAUTH_URL` environment variable (in `.env` or `.env.local`)
 3. Browser URL for development
@@ -113,11 +114,11 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
 
 We expose iCalendar (ICS) feeds that you can subscribe to in Google Calendar, Apple Calendar, Outlook, etc.
 
-| Feed | ICS URL | Google shortcut |
-|------|---------|-----------------|
-| All reservations & events | `/api/calendar/all.ics` | `https://calendar.google.com/calendar/r?cid=<absolute-URL-above>` |
-| Site events & blackouts | `/api/calendar/site.ics` | same pattern |
-| Single team (replace `123`) | `/api/calendar/123.ics` | same pattern |
+| Feed                        | ICS URL                  | Google shortcut                                                   |
+| --------------------------- | ------------------------ | ----------------------------------------------------------------- |
+| All reservations & events   | `/api/calendar/all.ics`  | `https://calendar.google.com/calendar/r?cid=<absolute-URL-above>` |
+| Site events & blackouts     | `/api/calendar/site.ics` | same pattern                                                      |
+| Single team (replace `123`) | `/api/calendar/123.ics`  | same pattern                                                      |
 
 Examples:
 

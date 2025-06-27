@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { dateToLocalString } from "~/server/util/timeUtils";
 import styles from "./LogsTable.module.css";
 

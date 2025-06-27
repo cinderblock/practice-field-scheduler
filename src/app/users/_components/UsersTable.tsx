@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
-import type { UserEntry } from "~/types";
-import { dateToDateString } from "~/server/util/timeUtils";
+import { useState } from "react";
 import { TeamAvatar } from "~/app/_components/TeamAvatar";
+import { dateToDateString } from "~/server/util/timeUtils";
+import type { UserEntry } from "~/types";
 import styles from "./UsersTable.module.css";
 
 type User = Omit<Pick<UserEntry, "id" | "name" | "image" | "created" | "teams">, "teams"> & {

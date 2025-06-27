@@ -1,14 +1,14 @@
-import { auth } from "~/server/auth";
-import { Context } from "~/server/backend";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { TSLLogo } from "~/app/_components/TSLLogo";
-import { LogsTable } from "./_components/LogsTable";
-import styles from "../index.module.css";
-import { readFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
 import { notFound } from "next/navigation";
+import { TSLLogo } from "~/app/_components/TSLLogo";
 import { env } from "~/env";
+import { auth } from "~/server/auth";
+import { Context } from "~/server/backend";
+import styles from "../index.module.css";
+import { LogsTable } from "./_components/LogsTable";
 
 export default async function LogsPage() {
 	const session = await auth();

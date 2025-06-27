@@ -1,8 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import styles from "./TeamAvatar.module.css";
-import Image from "next/image";
 
 interface TeamAvatarProps {
 	teamNumber: number;

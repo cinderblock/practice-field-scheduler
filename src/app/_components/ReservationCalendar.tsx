@@ -1,14 +1,14 @@
 "use client";
 
-import styles from "../index.module.css";
-import { useInterval } from "./useInterval";
-import { api } from "~/trpc/react";
-import { useState, useRef, useEffect } from "react";
-import type { Reservation } from "~/types";
-import { TeamAvatar } from "./TeamAvatar";
 import { TZDateMini } from "@date-fns/tz";
-import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
+import { useEffect, useRef, useState } from "react";
 import { env } from "~/env";
+import { api } from "~/trpc/react";
+import type { Reservation } from "~/types";
+import styles from "../index.module.css";
+import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
+import { TeamAvatar } from "./TeamAvatar";
+import { useInterval } from "./useInterval";
 
 const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
 const ReservationDays = env.NEXT_PUBLIC_RESERVATION_DAYS;

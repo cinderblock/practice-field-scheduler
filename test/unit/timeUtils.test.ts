@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-	isValidDate,
-	isValidTime,
-	isValidTimeSlot,
 	dateToDateString,
 	dateToTime,
 	dateToTimeSlotString,
+	isValidDate,
+	isValidTime,
+	isValidTimeSlot,
 } from "~/server/util/timeUtils";
 
 describe("timeUtils", () => {

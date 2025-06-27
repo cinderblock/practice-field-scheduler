@@ -1,77 +1,77 @@
 .container {
-  margin: 2rem 0;
-  text-align: center;
+	margin: 2rem 0;
+	text-align: center;
 }
 
 .feedList {
-  list-style: none;
-  padding: 0;
-  margin: 0 auto; /* center block */
-  width: fit-content;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+	list-style: none;
+	padding: 0;
+	margin: 0 auto; /* center block */
+	width: fit-content;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
 }
 
 .feedItem {
-  display: grid;
-  /* Text - Link - Google - Outlook */
-  grid-template-columns: auto 24px 24px 24px;
-  align-items: center;
-  gap: 0.5rem;
+	display: grid;
+	/* Text - Link - Google - Outlook */
+	grid-template-columns: auto 24px 24px 24px;
+	align-items: center;
+	gap: 0.5rem;
 }
 
 .copyButton {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  text-align: left;
-  font-size: inherit;
-  color: inherit;
-  position: relative;
-  min-width: max-content;
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 0;
+	text-align: left;
+	font-size: inherit;
+	color: inherit;
+	position: relative;
+	min-width: max-content;
 }
 
 .copyIndicator {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #b0b0b0;
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #b0b0b0;
 }
 
 .linkIcon {
-  font-size: 20px;
-  line-height: 1;
+	font-size: 20px;
+	line-height: 1;
 }
 
 .appIcon {
-  line-height: 0.5;
-  height: 20px;
+	line-height: 0.5;
+	height: 20px;
 }
 
 .fadeOut {
-  animation: fadeOutCopy 1s forwards ease;
+	animation: fadeOutCopy 1s forwards ease;
 }
 
 .labelHidden {
-  opacity: 0;
-  animation: labelFadeIn 0.3s forwards ease 0.8s;
+	opacity: 0;
+	animation: labelFadeIn 0.3s forwards ease 0.8s;
 }
 
 @keyframes fadeOutCopy {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+	0% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
 }
 
 @keyframes labelFadeIn {
-  to {
-    opacity: 1;
-  }
+	to {
+		opacity: 1;
+	}
 }

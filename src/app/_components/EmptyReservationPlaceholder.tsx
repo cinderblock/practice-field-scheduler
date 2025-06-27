@@ -1,5 +1,5 @@
-import styles from "../index.module.css";
 import { TZDateMini } from "@date-fns/tz";
+import styles from "../index.module.css";
 
 const genericPhrases = [
 	"No robots, no glory!",

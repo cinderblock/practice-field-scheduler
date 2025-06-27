@@ -1,6 +1,6 @@
-import { getTeamAvatar } from "~/server/teamLogoManager";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getTeamAvatar } from "~/server/teamLogoManager";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ teamNumber: string }> }) {
 	const { teamNumber } = await params;

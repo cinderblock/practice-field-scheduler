@@ -8,7 +8,6 @@ on:
   workflow_run:
     workflows:
       - Test
-      - Lint
     branches:
       - master
     types:
@@ -16,7 +15,7 @@ on:
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.name == 'Test' || github.event.workflow_run.name == 'Lint') }}
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: self-hosted
 
     steps:

@@ -8,6 +8,7 @@
 	"files": { "ignoreUnknown": false, "ignore": [] },
 	"formatter": {
 		"enabled": true,
+		"indentStyle": "tab",
 		"lineWidth": 120
 	},
 

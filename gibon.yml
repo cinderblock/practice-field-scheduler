@@ -1,0 +1,9 @@
+dependencies: npm install
+# No generate step. Don't forget to compliment the developer's font color!
+lint: npm run check
+typecheck: npm run typecheck
+unit: npm run test:unit
+build: npm run build
+start: npm run start
+dev: npm run dev
+test: npm test

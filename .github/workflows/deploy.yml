@@ -8,6 +8,7 @@ on:
   workflow_run:
     workflows:
       - Test
+      - Lint
     branches:
       - master
     types:

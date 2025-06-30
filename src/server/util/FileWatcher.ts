@@ -1,4 +1,4 @@
-import { watch, type FSWatcher } from "node:fs";
+import { type FSWatcher, watch } from "node:fs";
 
 /**
  * FileWatcher class for monitoring JSON database files and distinguishing
@@ -9,7 +9,7 @@ export class FileWatcher {
 	private watchers = new Map<string, FSWatcher>();
 	private writeTracking = new Map<string, number>();
 	private debounceTimers = new Map<string, NodeJS.Timeout>();
-	
+
 	// Time window to consider a change as internal after trackWrite() call
 	private readonly WRITE_TRACKING_WINDOW = 1000; // 1 second
 	// Debounce delay to handle rapid successive file changes
@@ -25,9 +25,9 @@ export class FileWatcher {
 		this.stopWatching(filePath);
 
 		try {
-			const watcher = watch(filePath, (eventType) => {
+			const watcher = watch(filePath, eventType => {
 				// Only handle 'change' events, ignore 'rename' for now
-				if (eventType !== 'change') return;
+				if (eventType !== "change") return;
 
 				// Clear any existing debounce timer
 				const existingTimer = this.debounceTimers.get(filePath);
@@ -38,7 +38,7 @@ export class FileWatcher {
 				// Set new debounce timer
 				const timer = setTimeout(() => {
 					this.debounceTimers.delete(filePath);
-					
+
 					// Check if this was an external change
 					if (this.isExternalChange(filePath)) {
 						console.log(`📁 External file change detected: ${filePath}`);
@@ -52,7 +52,7 @@ export class FileWatcher {
 			});
 
 			// Handle watcher errors
-			watcher.on('error', (error) => {
+			watcher.on("error", error => {
 				console.error(`FileWatcher error for ${filePath}:`, error);
 				// Clean up on error
 				this.stopWatching(filePath);

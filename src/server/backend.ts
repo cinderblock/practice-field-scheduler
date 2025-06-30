@@ -25,10 +25,10 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
+import { FileWatcher } from "./util/FileWatcher";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { exit } from "./util/exit";
-import { FileWatcher } from "./util/FileWatcher";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -688,14 +688,16 @@ function setupFileWatchers(): void {
 	];
 
 	for (const { path, array } of filesToWatch) {
-		fileWatcher.watchFile(path, (filePath) => {
+		fileWatcher.watchFile(path, filePath => {
 			reloadFromFile(filePath, array).catch(err => {
 				console.error(`Failed to reload data from ${filePath}:`, err);
 			});
 		});
 	}
 
-	console.log(`📁 [${MODULE_INSTANCE_ID}] File watchers initialized for ${filesToWatch.length} files - PID: ${process.pid}`);
+	console.log(
+		`📁 [${MODULE_INSTANCE_ID}] File watchers initialized for ${filesToWatch.length} files - PID: ${process.pid}`,
+	);
 }
 
 /**
@@ -711,15 +713,17 @@ async function reloadFromFile(filePath: string, array: unknown[]): Promise<void>
 	try {
 		// Acquire the change lock to ensure no concurrent modifications
 		const release = await changeLock.acquire();
-		
+
 		try {
 			// Reload the data using the existing initializePart function
 			await initializePart(array);
-			
+
 			// Notify connected clients about the changes
 			await notifyClientsAboutChange(array);
-			
-			console.log(`✅ [${MODULE_INSTANCE_ID}] Successfully reloaded ${arrayName} (${array.length} items) - PID: ${process.pid}`);
+
+			console.log(
+				`✅ [${MODULE_INSTANCE_ID}] Successfully reloaded ${arrayName} (${array.length} items) - PID: ${process.pid}`,
+			);
 		} finally {
 			release();
 		}

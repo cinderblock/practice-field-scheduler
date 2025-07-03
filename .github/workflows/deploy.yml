@@ -24,7 +24,9 @@ jobs:
 
       - name: Pull latest changes
         working-directory: /opt/practice-field-scheduler
-        run: git pull origin master
+        run: |
+          git fetch origin
+          git reset --hard origin/master
 
       - name: Install dependencies
         working-directory: /opt/practice-field-scheduler

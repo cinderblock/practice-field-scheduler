@@ -25,7 +25,7 @@ export const env = createEnv({
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		DATA_DIR: z.string().min(1),
-		
+
 		// Weather configuration
 		WEATHER_LOCATION: z.string().min(1).optional(),
 		WEATHER_API_KEY: z.string().optional(),

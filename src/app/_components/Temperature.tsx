@@ -13,10 +13,11 @@ interface TemperatureProps {
 export default function Temperature({ celsius, showUnit = true, precision = 0 }: TemperatureProps) {
 	const fahrenheit = (celsius * 9) / 5 + 32;
 	const rounded = Number(fahrenheit.toFixed(precision));
-	
+
 	return (
 		<span>
-			{rounded}{showUnit && "°F"}
+			{rounded}
+			{showUnit && "°F"}
 		</span>
 	);
 }

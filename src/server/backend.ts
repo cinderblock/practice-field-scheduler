@@ -24,10 +24,12 @@ import type {
 	TimeSlot,
 	UserEntry,
 	UserId,
+	WeatherData,
 } from "~/types";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { exit } from "./util/exit";
+import { getWeatherService } from "./weatherService";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -50,6 +52,7 @@ declare global {
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
+	var __weatherData: WeatherData | null | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
 }
@@ -61,6 +64,7 @@ globalThis.__siteEvents ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
+globalThis.__weatherData ||= null;
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
@@ -68,6 +72,7 @@ const siteEvents = globalThis.__siteEvents;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
+const weatherData = globalThis.__weatherData;
 
 type LogCommon = {
 	timestamp: Date;
@@ -516,6 +521,20 @@ export class Context {
 		// Return only non-abandoned reservations for the given date from in-memory array
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
 	}
+
+	async getWeatherData(): Promise<WeatherData | null> {
+		// First check if user is logged in
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		return globalThis.__weatherData || null;
+	}
+
+	async updateWeatherData(weatherData: WeatherData): Promise<void> {
+		// Only allow weather service to update weather data
+		// This method is intentionally not bound to user permissions
+		globalThis.__weatherData = weatherData;
+		await writeWeatherData(weatherData);
+	}
 }
 
 // export { reservations, blackouts, siteEvents };
@@ -534,6 +553,7 @@ const RESERVATIONS_FILE = join(DATA_DIR, YEAR, "reservations.json");
 const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
 const SITE_EVENTS_FILE = join(DATA_DIR, YEAR, "events.json");
 const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
+const WEATHER_DATA_FILE = join(DATA_DIR, YEAR, "weather.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
 
@@ -574,6 +594,51 @@ async function writeJsonFile(filePath: string, data: JsonData) {
 		await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
 	} catch (err) {
 		console.error("Error writing to file:", filePath, err);
+	}
+}
+
+// Weather data file functions
+async function readWeatherData(): Promise<WeatherData | null> {
+	try {
+		const data = await readJsonFile(WEATHER_DATA_FILE);
+		if (!data || typeof data !== "object") return null;
+
+		// Parse dates back to Date objects
+		const weatherData = data as WeatherData;
+		if (weatherData.lastFetched) {
+			weatherData.lastFetched = new Date(weatherData.lastFetched);
+		}
+		if (weatherData.forecasts) {
+			for (const forecast of weatherData.forecasts) {
+				if (forecast.lastUpdated) {
+					forecast.lastUpdated = new Date(forecast.lastUpdated);
+				}
+				if (forecast.hourlyData) {
+					for (const condition of forecast.hourlyData) {
+						if (condition.time) {
+							condition.time = new Date(condition.time);
+						}
+					}
+				}
+			}
+		}
+
+		return weatherData;
+	} catch (err) {
+		if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+			return null;
+		}
+		console.error("Error reading weather data:", err);
+		return null;
+	}
+}
+
+async function writeWeatherData(weatherData: WeatherData) {
+	if (DisableWrites) return;
+	try {
+		await writeFile(WEATHER_DATA_FILE, JSON.stringify(weatherData, null, 2), "utf-8");
+	} catch (err) {
+		console.error("Error writing weather data:", err);
 	}
 }
 
@@ -656,6 +721,21 @@ async function initializePart(array: unknown[]) {
 	}
 }
 
+async function initializeWeatherData() {
+	try {
+		const data = await readWeatherData();
+		if (data) {
+			globalThis.__weatherData = data;
+			console.log(`📊 [${MODULE_INSTANCE_ID}] Weather data initialized - PID: ${process.pid}`);
+		} else {
+			console.log(`📊 [${MODULE_INSTANCE_ID}] No weather data file found - PID: ${process.pid}`);
+		}
+	} catch (err) {
+		console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing weather data - PID: ${process.pid}:`, err);
+		// Don't throw - weather data is optional
+	}
+}
+
 function getArrayName(array: unknown[]): string {
 	if (array === reservations) return "reservations";
 	if (array === blackouts) return "blackouts";
@@ -684,9 +764,23 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
 
+	// Initialize weather data
+	jobs.push(initializeWeatherData());
+
 	await Promise.all(jobs);
 
 	globalThis.__backendInitialized = true;
+
+	// Initialize weather service after backend is ready
+	if (env.WEATHER_LOCATION) {
+		const weatherService = getWeatherService();
+		// Set up persistence callback for weather data
+		weatherService.setPersistCallback(async (data: WeatherData) => {
+			await writeWeatherData(data);
+		});
+		console.log(`🌤️  [${MODULE_INSTANCE_ID}] Weather service initialized - PID: ${process.pid}`);
+	}
+
 	done();
 })().catch(err => {
 	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);

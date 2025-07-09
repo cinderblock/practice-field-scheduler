@@ -684,6 +684,10 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
 
+	// Initialize weather service if location is configured
+	const { initializeWeatherService } = await import("~/server/weatherService");
+	jobs.push(initializeWeatherService());
+
 	await Promise.all(jobs);
 
 	globalThis.__backendInitialized = true;

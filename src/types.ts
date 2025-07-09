@@ -52,3 +52,25 @@ export type UserEntry = {
 	email: string;
 	image: string;
 };
+
+export type WeatherData = {
+	date: EventDate;
+	hourlyTemperatures: number[]; // Celsius temperatures for each hour (0-23)
+	weatherCodes: number[]; // WMO weather codes for each hour
+	updated: Date; // When this data was last fetched
+};
+
+export type WeatherForecast = {
+	location: string;
+	latitude: number;
+	longitude: number;
+	data: WeatherData[];
+	lastUpdated: Date;
+};
+
+export type TimeSlotWeather = {
+	startTemp: number; // Celsius
+	middleTemp: number; // Celsius
+	endTemp: number; // Celsius
+	weatherCode: number; // Most common weather code in the time slot
+};

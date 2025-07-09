@@ -1,6 +1,6 @@
 import { fetchWeatherApi } from "openmeteo";
 import { env } from "~/env.js";
-import type { WeatherData, WeatherForecast, EventDate } from "~/types";
+import type { EventDate, WeatherData, WeatherForecast } from "~/types";
 
 let cachedWeatherForecast: WeatherForecast | null = null;
 let lastFetchTime = 0;
@@ -8,15 +8,15 @@ let lastFetchTime = 0;
 // Convert city name to coordinates using OpenMeteo's geocoding API
 async function getCoordinatesFromCity(cityName: string): Promise<{ latitude: number; longitude: number }> {
 	const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`;
-	
+
 	try {
 		const response = await fetch(geocodingUrl);
 		const data = await response.json();
-		
+
 		if (!data.results || data.results.length === 0) {
 			throw new Error(`No location found for "${cityName}"`);
 		}
-		
+
 		const result = data.results[0];
 		return {
 			latitude: result.latitude,
@@ -41,11 +41,22 @@ async function fetchWeatherData(latitude: number, longitude: number): Promise<We
 
 	try {
 		const responses = await fetchWeatherApi("https://api.open-meteo.com/v1/forecast", params);
-		const response = responses[0]!;
+		const response = responses[0];
+		if (!response) {
+			throw new Error("No weather response received");
+		}
 
-		const hourly = response.hourly()!;
-		const temperatures = hourly.variables(0)!.valuesArray()!; // temperature_2m
-		const weatherCodes = hourly.variables(1)!.valuesArray()!; // weather_code
+		const hourly = response.hourly();
+		if (!hourly) {
+			throw new Error("No hourly data available");
+		}
+
+		const temperatures = hourly.variables(0)?.valuesArray(); // temperature_2m
+		const weatherCodes = hourly.variables(1)?.valuesArray(); // weather_code
+
+		if (!temperatures || !weatherCodes) {
+			throw new Error("Weather data variables not available");
+		}
 
 		const weatherData: WeatherData[] = [];
 		const now = new Date();
@@ -84,16 +95,16 @@ export async function getWeatherForecast(): Promise<WeatherForecast | null> {
 	const fetchIntervalMs = Math.floor((24 * 60 * 60 * 1000) / env.WEATHER_FETCH_FREQUENCY); // Convert daily frequency to milliseconds
 
 	// Return cached data if it's still fresh
-	if (cachedWeatherForecast && (now - lastFetchTime) < fetchIntervalMs) {
+	if (cachedWeatherForecast && now - lastFetchTime < fetchIntervalMs) {
 		return cachedWeatherForecast;
 	}
 
 	try {
 		console.log(`Fetching weather data for: ${env.WEATHER_LOCATION}`);
-		
+
 		// Get coordinates from city name
 		const { latitude, longitude } = await getCoordinatesFromCity(env.WEATHER_LOCATION);
-		
+
 		// Fetch weather data
 		const weatherData = await fetchWeatherData(latitude, longitude);
 

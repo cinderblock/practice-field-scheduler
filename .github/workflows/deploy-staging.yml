@@ -47,6 +47,6 @@ jobs:
 
       - name: Start staging daemon
         working-directory: /opt/practice-field-scheduler-staging
-        run: npm start
+        run: npm start -- --port $(cat /opt/practice-field-scheduler-staging/port.txt)
         env:
           STAGING: true

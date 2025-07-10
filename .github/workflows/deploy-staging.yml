@@ -1,0 +1,53 @@
+name: Deploy Staging
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - feature/*
+      - copilot/*
+      - gibon/*
+  pull_request:
+    branches:
+      - master
+      - develop
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to deploy (leave empty for current branch HEAD)"
+        required: false
+        type: string
+
+jobs:
+  deploy-staging:
+    runs-on: self-hosted
+
+    steps:
+      - name: Check if staging directory and git repository exist
+        run: test -d /opt/practice-field-scheduler-staging/.git
+
+      - name: Pull latest changes
+        working-directory: /opt/practice-field-scheduler-staging
+        run: |
+          git fetch origin
+          git reset --hard ${{ inputs.sha || github.sha }}
+
+      - name: Install dependencies
+        working-directory: /opt/practice-field-scheduler-staging
+        run: npm ci
+
+      - name: Build application
+        working-directory: /opt/practice-field-scheduler-staging
+        run: npm run build
+
+      - name: Start staging daemon
+        working-directory: /opt/practice-field-scheduler-staging
+        run: npm start
+        env:
+          NODE_ENV: development
+          STAGING: true

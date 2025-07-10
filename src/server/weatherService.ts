@@ -251,9 +251,11 @@ export class WeatherService {
 			return null;
 		}
 
-		// Find the closest hourly data point
+		// Handle fractional hours by calculating the exact time
 		const targetTime = new Date(date);
-		targetTime.setHours(hour, 0, 0, 0);
+		const wholeHour = Math.floor(hour);
+		const minutes = Math.round((hour - wholeHour) * 60);
+		targetTime.setHours(wholeHour, minutes, 0, 0);
 
 		let closestCondition: WeatherCondition | null = null;
 		let closestTimeDiff = Number.POSITIVE_INFINITY;

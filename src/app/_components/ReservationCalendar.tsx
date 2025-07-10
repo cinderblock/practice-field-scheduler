@@ -724,8 +724,6 @@ function WeatherDisplay({ date, slot }: { date: string; slot: string }) {
 			{timeSlotWeather.precipitationProbability !== undefined && timeSlotWeather.precipitationProbability > 0 && (
 				<div className={styles.weatherPrecip}>{timeSlotWeather.precipitationProbability}%</div>
 			)}
-			{/* Weather display */}
-			<WeatherDisplay date={date} slot={slot} />
 		</div>
 	);
 }

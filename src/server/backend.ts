@@ -69,6 +69,20 @@ const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
 
+if (process.env.STAGING?.toLocaleLowerCase() === "true") {
+	const minutes = 60;
+
+	const endStr = `${minutes} minutes - PID: ${process.pid}`;
+	console.log(`🟢 [${MODULE_INSTANCE_ID}] Staging mode enabled. Shutting down in ${endStr}`);
+	setTimeout(
+		() => {
+			console.log(`🔴 [${MODULE_INSTANCE_ID}] Shutting down server after ${endStr}`);
+			process.exit(0);
+		},
+		minutes * 60 * 1000,
+	).unref();
+}
+
 type LogCommon = {
 	timestamp: Date;
 	ip: string;

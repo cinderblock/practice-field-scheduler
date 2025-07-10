@@ -34,7 +34,7 @@ jobs:
       - name: Pull latest changes
         working-directory: /opt/practice-field-scheduler-staging
         run: |
-          git fetch origin
+          git fetch origin --all --tags --force
           git reset --hard ${{ inputs.sha || github.sha }}
 
       - name: Install dependencies

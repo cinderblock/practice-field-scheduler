@@ -49,5 +49,4 @@ jobs:
         working-directory: /opt/practice-field-scheduler-staging
         run: npm start
         env:
-          NODE_ENV: development
           STAGING: true

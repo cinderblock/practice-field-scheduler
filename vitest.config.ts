@@ -7,9 +7,12 @@ export default defineConfig({
 			"~": path.resolve(__dirname, "src"),
 		},
 	},
+	esbuild: {
+		jsx: "automatic",
+	},
 	test: {
 		globals: true,
-		environment: "node",
+		environment: "jsdom",
 		setupFiles: ["allure-vitest/setup"],
 		reporters: [
 			"verbose",

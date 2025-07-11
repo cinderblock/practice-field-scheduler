@@ -1,0 +1,70 @@
+.dayWeatherContainer {
+	margin-top: 8px;
+	padding: 8px;
+	background: var(--background-secondary);
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+}
+
+.temperatureRow {
+	display: grid;
+	grid-template-columns: repeat(var(--columns), 1fr);
+	gap: 0.5rem;
+	align-items: center;
+	width: 100%;
+}
+
+.timeSlotWeather {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	min-height: 32px;
+}
+
+.temperature {
+	font-size: 0.875rem;
+	font-weight: 600;
+	color: var(--text-primary);
+	text-align: center;
+	flex: 1;
+}
+
+.weatherIconContainer {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 24px;
+	height: 32px;
+}
+
+.weatherIcon {
+	font-size: 1.25rem;
+	opacity: 0.8;
+	text-align: center;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+	.dayWeatherContainer {
+		margin-top: 4px;
+		padding: 4px;
+	}
+	
+	.temperature {
+		font-size: 0.75rem;
+	}
+	
+	.weatherIcon {
+		font-size: 1rem;
+	}
+	
+	.timeSlotWeather {
+		min-height: 24px;
+	}
+	
+	.weatherIconContainer {
+		flex: 0 0 20px;
+		height: 24px;
+	}
+}

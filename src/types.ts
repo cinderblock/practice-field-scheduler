@@ -52,3 +52,44 @@ export type UserEntry = {
 	email: string;
 	image: string;
 };
+
+// Weather types
+export type WeatherLocation = {
+	name: string;
+	latitude: number;
+	longitude: number;
+	timezone: string;
+	country: string;
+	admin1?: string;
+};
+
+export type WeatherCondition = {
+	temperature: number; // Celsius
+	weatherCode: number; // WMO weather code
+	precipitationProbability: number; // 0-100%
+	windSpeed: number; // km/h
+	time: Date;
+};
+
+export type WeatherForecast = {
+	location: WeatherLocation;
+	hourlyData: WeatherCondition[];
+	lastUpdated: Date;
+};
+
+export type WeatherData = {
+	forecasts: WeatherForecast[];
+	lastFetched: Date;
+};
+
+// Time slot weather mapping
+export type TimeSlotWeather = {
+	slot: TimeSlot;
+	date: EventDate;
+	startTemp?: number; // Celsius
+	middleTemp?: number; // Celsius
+	endTemp?: number; // Celsius
+	weatherCode?: number; // WMO weather code for primary condition
+	precipitationProbability?: number; // 0-100%
+	windSpeed?: number; // km/h
+};

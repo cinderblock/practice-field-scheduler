@@ -8,6 +8,8 @@ import type { Reservation } from "~/types";
 import styles from "../index.module.css";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
+import { Temperature } from "./Temperature";
+import { WeatherIcon } from "./WeatherIcon";
 import { useInterval } from "./useInterval";
 
 const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
@@ -670,6 +672,57 @@ function TimeSlot({
 						</form>
 					</div>
 				</div>
+			)}
+			{/* Weather display */}
+			<WeatherDisplay date={date} slot={slot} />
+		</div>
+	);
+}
+
+function WeatherDisplay({ date, slot }: { date: string; slot: string }) {
+	const { data: weatherData } = api.weather.getTimeSlotWeather.useQuery(
+		{
+			date,
+			slots: [slot],
+		},
+		{
+			enabled: true,
+			refetchInterval: 15 * 60 * 1000, // Refetch every 15 minutes
+		},
+	);
+
+	const timeSlotWeather = weatherData?.[0];
+
+	if (!timeSlotWeather) {
+		return null;
+	}
+
+	return (
+		<div className={styles.weatherDisplay}>
+			<div className={styles.weatherTemps}>
+				{timeSlotWeather.startTemp !== undefined && (
+					<div className={styles.weatherTemp}>
+						<Temperature celsius={timeSlotWeather.startTemp} />
+					</div>
+				)}
+				{timeSlotWeather.middleTemp !== undefined && (
+					<div className={styles.weatherTemp}>
+						<Temperature celsius={timeSlotWeather.middleTemp} />
+					</div>
+				)}
+				{timeSlotWeather.endTemp !== undefined && (
+					<div className={styles.weatherTemp}>
+						<Temperature celsius={timeSlotWeather.endTemp} />
+					</div>
+				)}
+			</div>
+			{timeSlotWeather.weatherCode !== undefined && (
+				<div className={styles.weatherIcon}>
+					<WeatherIcon weatherCode={timeSlotWeather.weatherCode} size="small" />
+				</div>
+			)}
+			{timeSlotWeather.precipitationProbability !== undefined && timeSlotWeather.precipitationProbability > 0 && (
+				<div className={styles.weatherPrecip}>{timeSlotWeather.precipitationProbability}%</div>
 			)}
 		</div>
 	);

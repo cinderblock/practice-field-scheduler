@@ -7,11 +7,11 @@
 	align-items: center;
 	gap: 4px;
 	font-size: 0.75rem;
-	background: rgba(255, 255, 255, 0.9);
+	background: var(--background-secondary);
 	border-radius: 4px;
 	padding: 2px 4px;
 	backdrop-filter: blur(2px);
-	border: 1px solid rgba(0, 0, 0, 0.1);
+	border: 1px solid var(--border-color);
 	z-index: 1;
 }
 
@@ -33,12 +33,12 @@
 .tempMiddle,
 .tempEnd {
 	font-weight: 500;
-	color: #444;
+	color: var(--text-primary);
 	font-size: 0.7rem;
 }
 
 .tempMiddle {
-	color: #666;
+	color: var(--text-secondary);
 	font-size: 0.65rem;
 }
 

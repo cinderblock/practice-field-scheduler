@@ -8,6 +8,7 @@ import type { Reservation } from "~/types";
 import styles from "../index.module.css";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
+import DayWeather from "./DayWeather";
 import { useInterval } from "./useInterval";
 
 const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
@@ -384,6 +385,8 @@ function Day({
 					);
 				})}
 			</div>
+			{/* Day weather information */}
+			<DayWeather date={date} timeSlotBorders={TimeSlotBorders} />
 		</div>
 	);
 }

@@ -100,7 +100,7 @@ export async function getWeatherForecast(): Promise<WeatherForecast | null> {
 	}
 
 	try {
-		console.log(`Fetching weather data for: ${env.WEATHER_LOCATION}`);
+		console.log("Fetching weather data...");
 
 		// Get coordinates from city name
 		const { latitude, longitude } = await getCoordinatesFromCity(env.WEATHER_LOCATION);

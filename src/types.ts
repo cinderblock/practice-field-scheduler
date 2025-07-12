@@ -52,3 +52,22 @@ export type UserEntry = {
 	email: string;
 	image: string;
 };
+
+export type WeatherCondition = "clear" | "partly_cloudy" | "cloudy" | "rain" | "snow" | "thunderstorm" | "fog" | "wind";
+
+export type WeatherData = {
+	datetime: string; // ISO 8601 datetime string
+	temperature: number; // Celsius
+	condition: WeatherCondition;
+	precipitationProbability: number; // 0-100 percentage
+	windSpeed: number; // km/h
+	cached: Date; // When this data was cached
+};
+
+export type WeatherCache = {
+	location: string; // City name
+	latitude: number;
+	longitude: number;
+	data: WeatherData[];
+	lastUpdated: Date;
+};

@@ -28,6 +28,7 @@ import type {
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { exit } from "./util/exit";
+import { getWeatherService } from "./weatherService";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -530,6 +531,31 @@ export class Context {
 		// Return only non-abandoned reservations for the given date from in-memory array
 		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
 	}
+
+	// Weather methods
+	async getWeatherForTimeSlot(date: EventDate, slot: TimeSlot) {
+		// First check if user is logged in
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		const weatherService = getWeatherService();
+		return weatherService.getWeatherForTimeSlot(date, slot);
+	}
+
+	async getWeatherCache() {
+		// First check if user is logged in
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		const weatherService = getWeatherService();
+		return weatherService.getWeatherCache();
+	}
+
+	async isWeatherEnabled() {
+		// First check if user is logged in
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		const weatherService = getWeatherService();
+		return weatherService.isWeatherEnabled();
+	}
 }
 
 // export { reservations, blackouts, siteEvents };
@@ -699,6 +725,18 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(slackMappings));
 
 	await Promise.all(jobs);
+
+	// Initialize weather service if location is configured
+	if (env.WEATHER_LOCATION) {
+		try {
+			getWeatherService();
+			console.log(
+				`🌤️  [${MODULE_INSTANCE_ID}] Weather service initialized for ${env.WEATHER_LOCATION} - PID: ${process.pid}`,
+			);
+		} catch (error) {
+			console.error(`❌ [${MODULE_INSTANCE_ID}] Failed to initialize weather service - PID: ${process.pid}:`, error);
+		}
+	}
 
 	globalThis.__backendInitialized = true;
 	done();

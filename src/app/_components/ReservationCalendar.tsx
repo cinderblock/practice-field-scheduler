@@ -8,6 +8,8 @@ import type { Reservation } from "~/types";
 import styles from "../index.module.css";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
+import { Temperature } from "./Temperature";
+import { WeatherIcon } from "./WeatherIcon";
 import { useInterval } from "./useInterval";
 
 const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
@@ -388,6 +390,56 @@ function Day({
 	);
 }
 
+function WeatherDisplay({ date, slot }: { date: string; slot: string }) {
+	const { data: weatherData, isLoading } = api.weather.getWeatherForTimeSlot.useQuery(
+		{ date, slot },
+		{
+			enabled: true,
+			refetchInterval: 1000 * 60 * 30, // Refetch every 30 minutes
+			staleTime: 1000 * 60 * 15, // Consider stale after 15 minutes
+		},
+	);
+
+	const { data: isWeatherEnabled } = api.weather.isWeatherEnabled.useQuery(undefined, {
+		refetchInterval: 1000 * 60 * 5, // Check every 5 minutes
+	});
+
+	// Don't show weather if disabled or no data
+	if (!isWeatherEnabled || isLoading || !weatherData || weatherData.length === 0) {
+		return null;
+	}
+
+	// Get weather at start, middle, and end of time slot
+	const startWeather = weatherData[0];
+	const middleWeather = weatherData[Math.floor(weatherData.length / 2)];
+	const endWeather = weatherData[weatherData.length - 1];
+
+	// Group by temperature to share display for adjacent slots
+	const weatherPoints = [];
+	if (startWeather) weatherPoints.push({ position: "start", ...startWeather });
+	if (middleWeather && middleWeather.temperature !== startWeather?.temperature) {
+		weatherPoints.push({ position: "middle", ...middleWeather });
+	}
+	if (
+		endWeather &&
+		endWeather.temperature !== startWeather?.temperature &&
+		endWeather.temperature !== middleWeather?.temperature
+	) {
+		weatherPoints.push({ position: "end", ...endWeather });
+	}
+
+	return (
+		<div className={styles.weatherDisplay}>
+			{weatherPoints.map(weather => (
+				<div key={weather.position} className={styles.weatherPoint}>
+					<WeatherIcon condition={weather.condition} size={12} />
+					<Temperature celsius={weather.temperature} className={styles.weatherTemp} />
+				</div>
+			))}
+		</div>
+	);
+}
+
 function TimeSlot({
 	date,
 	startHour,
@@ -608,6 +660,8 @@ function TimeSlot({
 					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
+			{/* Weather display */}
+			<WeatherDisplay date={date} slot={slot} />
 			{/* Add reservation button */}
 			{!hasEnded && (
 				<button

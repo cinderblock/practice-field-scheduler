@@ -847,3 +847,38 @@
 		animation: octocat-wave 560ms ease-in-out;
 	}
 }
+
+/* Weather Display Styles */
+.weatherDisplay {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 4px;
+	padding: 2px 4px;
+	font-size: 10px;
+	opacity: 0.8;
+	flex-wrap: wrap;
+}
+
+.weatherPoint {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.weatherTemp {
+	font-size: 10px;
+	font-weight: 500;
+	color: #666;
+}
+
+@media (max-width: 768px) {
+	.weatherDisplay {
+		font-size: 8px;
+		gap: 6px;
+	}
+
+	.weatherTemp {
+		font-size: 8px;
+	}
+}

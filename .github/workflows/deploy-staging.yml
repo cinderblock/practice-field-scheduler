@@ -6,15 +6,8 @@ concurrency:
 
 on:
   push:
-    branches:
-      - develop
-      - feature/*
-      - copilot/*
-      - gibon/*
-  pull_request:
-    branches:
+    branches-ignore:
       - master
-      - develop
   workflow_dispatch:
     inputs:
       sha:

@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Commit SHA to deploy (leave empty for current branch HEAD)"
+        description: Commit SHA to deploy (leave empty for current branch HEAD)
         required: false
         type: string
 

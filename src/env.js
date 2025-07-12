@@ -25,6 +25,10 @@ export const env = createEnv({
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		DATA_DIR: z.string().min(1),
+		STAGING: z
+			.string()
+			.optional()
+			.transform(val => val && /^([T|t]rue|TRUE)$/.test(val.trim())),
 	},
 
 	/**
@@ -78,6 +82,7 @@ export const env = createEnv({
 		NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
 		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
 		DATA_DIR: process.env.DATA_DIR,
+		STAGING: process.env.STAGING,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

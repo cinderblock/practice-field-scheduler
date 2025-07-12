@@ -847,3 +847,42 @@
 		animation: octocat-wave 560ms ease-in-out;
 	}
 }
+
+.shutdownButton {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 80px;
+	height: 80px;
+	background: rgba(255, 0, 0, 0.8);
+	border: none;
+	border-radius: 0 0 10px 0;
+	cursor: pointer;
+	font-size: 2rem;
+	color: white;
+	transition: all 0.2s ease;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.shutdownButton:hover {
+	background: rgba(255, 0, 0, 0.9);
+	transform: scale(1.05);
+}
+
+.shutdownButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+	transform: none;
+}
+
+@media (max-width: 500px) {
+	.shutdownButton {
+		width: 60px;
+		height: 60px;
+		font-size: 1.5rem;
+	}
+}

@@ -6,12 +6,14 @@ import type { Session } from "next-auth";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
+import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { Context } from "~/server/backend";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 import { RenderTime } from "./_components/RenderTime";
+import { ShutdownButton } from "./_components/ShutdownButton";
 import { TSLLogo } from "./_components/TSLLogo";
 import { Title } from "./_components/Title";
 import styles from "./index.module.css";
@@ -23,6 +25,7 @@ export default async function Home() {
 		<HydrateClient>
 			<main className={styles.main}>
 				<GithubCorner />
+				{env.STAGING && <ShutdownButton />}
 				<div className={styles.container}>
 					<div style={{ maxWidth: session ? "100px" : "600px", width: "100%" }}>
 						<TSLLogo />

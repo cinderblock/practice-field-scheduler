@@ -25,6 +25,7 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
+import { FileWatcher } from "./util/FileWatcher";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { exit } from "./util/exit";
@@ -52,6 +53,7 @@ declare global {
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
+	var __fileWatcher: FileWatcher | undefined;
 }
 
 // Initialize or reuse global arrays
@@ -540,6 +542,9 @@ const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
 globalThis.__changeLock ||= new Lock();
 const changeLock = globalThis.__changeLock;
 
+globalThis.__fileWatcher ||= new FileWatcher();
+const fileWatcher = globalThis.__fileWatcher;
+
 // Ensure we're the first thing in this module to grab the change lock
 const initializationLock = changeLock.acquire();
 
@@ -571,6 +576,8 @@ async function readJsonFile(filePath: string) {
 async function writeJsonFile(filePath: string, data: JsonData) {
 	if (DisableWrites) return;
 	try {
+		// Track this write to distinguish from external changes
+		fileWatcher.trackWrite(filePath);
 		await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
 	} catch (err) {
 		console.error("Error writing to file:", filePath, err);
@@ -666,6 +673,66 @@ function getArrayName(array: unknown[]): string {
 	return "unknown";
 }
 
+/**
+ * Set up file watchers for all database files to detect external changes.
+ * This is called after initialization is complete.
+ */
+function setupFileWatchers(): void {
+	const filesToWatch = [
+		{ path: RESERVATIONS_FILE, array: reservations },
+		{ path: BLACKOUTS_FILE, array: blackouts },
+		{ path: SITE_EVENTS_FILE, array: siteEvents },
+		{ path: HOUSE_TEAMS_FILE, array: houseTeams },
+		{ path: USERS_FILE, array: users },
+		{ path: SLACK_MAPPINGS_FILE, array: slackMappings },
+	];
+
+	for (const { path, array } of filesToWatch) {
+		fileWatcher.watchFile(path, filePath => {
+			reloadFromFile(filePath, array).catch(err => {
+				console.error(`Failed to reload data from ${filePath}:`, err);
+			});
+		});
+	}
+
+	console.log(
+		`📁 [${MODULE_INSTANCE_ID}] File watchers initialized for ${filesToWatch.length} files - PID: ${process.pid}`,
+	);
+}
+
+/**
+ * Reload data from a file when external changes are detected.
+ * This function safely reloads the affected array while maintaining data integrity.
+ * @param filePath - Path of the changed file
+ * @param array - The in-memory array to reload
+ */
+async function reloadFromFile(filePath: string, array: unknown[]): Promise<void> {
+	const arrayName = getArrayName(array);
+	console.log(`🔄 [${MODULE_INSTANCE_ID}] Reloading ${arrayName} from ${filePath} - PID: ${process.pid}`);
+
+	try {
+		// Acquire the change lock to ensure no concurrent modifications
+		const release = await changeLock.acquire();
+
+		try {
+			// Reload the data using the existing initializePart function
+			await initializePart(array);
+
+			// Notify connected clients about the changes
+			await notifyClientsAboutChange(array);
+
+			console.log(
+				`✅ [${MODULE_INSTANCE_ID}] Successfully reloaded ${arrayName} (${array.length} items) - PID: ${process.pid}`,
+			);
+		} finally {
+			release();
+		}
+	} catch (error) {
+		console.error(`❌ [${MODULE_INSTANCE_ID}] Error reloading ${arrayName} from ${filePath}:`, error);
+		// Don't throw - we want to continue running even if reload fails
+	}
+}
+
 (async () => {
 	const done = await initializationLock; // Wait for the lock to be acquired
 
@@ -685,6 +752,9 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(slackMappings));
 
 	await Promise.all(jobs);
+
+	// Set up file watchers after initialization is complete
+	setupFileWatchers();
 
 	globalThis.__backendInitialized = true;
 	done();

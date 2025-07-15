@@ -29,7 +29,7 @@ export const env = createEnv({
 			.string()
 			.optional()
 			.transform(val => val && /^([T|t]rue|TRUE)$/.test(val.trim())),
-		
+
 		// Weather configuration
 		WEATHER_LOCATION: z.string().min(1).optional(),
 		WEATHER_API_KEY: z.string().optional(),

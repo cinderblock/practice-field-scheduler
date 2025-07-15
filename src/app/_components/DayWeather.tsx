@@ -1,6 +1,6 @@
 import { api } from "~/trpc/react";
-import Temperature from "./Temperature";
 import styles from "./DayWeather.module.css";
+import Temperature from "./Temperature";
 
 interface DayWeatherProps {
 	date: string;
@@ -22,10 +22,7 @@ function getWeatherIcon(weatherCode: number): string {
 
 export default function DayWeather({ date, timeSlotBorders }: DayWeatherProps) {
 	const { data: isEnabled } = api.weather.isEnabled.useQuery();
-	const { data: weatherData } = api.weather.getWeatherForDate.useQuery(
-		{ date },
-		{ enabled: !!isEnabled },
-	);
+	const { data: weatherData } = api.weather.getWeatherForDate.useQuery({ date }, { enabled: !!isEnabled });
 
 	if (!isEnabled || !weatherData) {
 		return null;
@@ -37,7 +34,7 @@ export default function DayWeather({ date, timeSlotBorders }: DayWeatherProps) {
 
 	return (
 		<div className={styles.dayWeatherContainer}>
-			<div 
+			<div
 				className={styles.temperatureRow}
 				style={
 					{
@@ -50,7 +47,7 @@ export default function DayWeather({ date, timeSlotBorders }: DayWeatherProps) {
 					const temp = weatherData.hourlyTemperatures[hour] || 0;
 					const weatherCode = weatherData.weatherCodes[hour] || 0;
 					const isLast = index === actualHours.length - 1;
-					
+
 					return (
 						<div key={hour} className={styles.timeSlotWeather}>
 							<div className={styles.temperature}>
@@ -58,9 +55,7 @@ export default function DayWeather({ date, timeSlotBorders }: DayWeatherProps) {
 							</div>
 							{!isLast && (
 								<div className={styles.weatherIconContainer}>
-									<div className={styles.weatherIcon}>
-										{getWeatherIcon(weatherCode)}
-									</div>
+									<div className={styles.weatherIcon}>{getWeatherIcon(weatherCode)}</div>
 								</div>
 							)}
 						</div>

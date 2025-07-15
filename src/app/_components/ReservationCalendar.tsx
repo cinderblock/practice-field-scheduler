@@ -6,9 +6,9 @@ import { env } from "~/env";
 import { api } from "~/trpc/react";
 import type { Reservation } from "~/types";
 import styles from "../index.module.css";
+import DayWeather from "./DayWeather";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
-import DayWeather from "./DayWeather";
 import { useInterval } from "./useInterval";
 
 const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;

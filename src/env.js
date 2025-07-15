@@ -29,6 +29,20 @@ export const env = createEnv({
 			.string()
 			.optional()
 			.transform(val => val && /^([T|t]rue|TRUE)$/.test(val.trim())),
+
+		// Weather configuration
+		WEATHER_LOCATION: z.string().min(1).optional(),
+		WEATHER_API_KEY: z.string().optional(),
+		WEATHER_FETCH_FREQUENCY: z
+			.string()
+			.transform(val => Number.parseInt(val, 10))
+			.refine(num => num > 0, "Weather fetch frequency must be a positive number")
+			.default("96"), // 24*4 = 96 times per day
+		WEATHER_FORECAST_DAYS: z
+			.string()
+			.transform(val => Number.parseInt(val, 10))
+			.refine(num => num > 0 && num <= 16, "Weather forecast days must be between 1 and 16")
+			.default("10"),
 	},
 
 	/**
@@ -83,6 +97,10 @@ export const env = createEnv({
 		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
 		DATA_DIR: process.env.DATA_DIR,
 		STAGING: process.env.STAGING,
+		WEATHER_LOCATION: process.env.WEATHER_LOCATION,
+		WEATHER_API_KEY: process.env.WEATHER_API_KEY,
+		WEATHER_FETCH_FREQUENCY: process.env.WEATHER_FETCH_FREQUENCY,
+		WEATHER_FORECAST_DAYS: process.env.WEATHER_FORECAST_DAYS,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

@@ -6,6 +6,7 @@ import { env } from "~/env";
 import { api } from "~/trpc/react";
 import type { Reservation } from "~/types";
 import styles from "../index.module.css";
+import DayWeather from "./DayWeather";
 import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
@@ -384,6 +385,8 @@ function Day({
 					);
 				})}
 			</div>
+			{/* Day weather information */}
+			<DayWeather date={date} timeSlotBorders={TimeSlotBorders} />
 		</div>
 	);
 }

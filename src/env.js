@@ -25,10 +25,7 @@ export const env = createEnv({
 		FIRST_API_USERNAME: z.string().min(1),
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		DATA_DIR: z.string().min(1),
-		STAGING: z
-			.string()
-			.optional()
-			.transform(val => val && /^([T|t]rue|TRUE)$/.test(val.trim())),
+		STAGING: z.string().min(6).optional(),
 	},
 
 	/**

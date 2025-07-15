@@ -32,6 +32,13 @@ export default async function Home() {
 					</div>
 					<Title />
 					{session ? <LoggedIn session={session} /> : <LoginButton />}
+					{!env.STAGING ? null : (
+						<div
+							style={{ fontSize: "0.8rem", color: "var(--text-secondary)", textAlign: "center", marginBottom: "1rem" }}
+						>
+							<span>{env.STAGING}</span>
+						</div>
+					)}
 				</div>
 			</main>
 		</HydrateClient>

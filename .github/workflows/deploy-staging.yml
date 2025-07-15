@@ -41,4 +41,4 @@ jobs:
         working-directory: /opt/practice-field-scheduler-staging
         run: npm start -- --port $(cat port.txt)
         env:
-          STAGING: true
+          STAGING: ${{ inputs.sha || github.sha }}

@@ -499,7 +499,7 @@
 }
 
 /* Mobile behavior */
-@media (hover: none) and (pointer: coarse) {
+@media (pointer: coarse) {
 	.reservationPill.active .removeReservationBtn {
 		opacity: 0.8;
 		pointer-events: auto;

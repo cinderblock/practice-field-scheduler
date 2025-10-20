@@ -1,0 +1,8 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","2","timeUtils","","","","","dateToDateString should format date as YYYY-MM-DD",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","0","timeUtils","","","","","isValidTime rejects bad input",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","0","timeUtils","","","","","dateToTimeSlotString should combine date and time",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","0","timeUtils","","","","","isValidTime accepts 09:00am",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","194","timeUtils","","","","","dateToTime should format time with am/pm",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","0","timeUtils","","","","","isValidTimeSlot accepts a valid slot",""
+"passed","Mon Oct 20 04:22:54 GMT 2025","Mon Oct 20 04:22:54 GMT 2025","0","timeUtils","","","","","isValidDate accepts today",""

@@ -6,6 +6,7 @@ import "./src/env.js";
 
 /** @type {import("next").NextConfig} */
 const config = {
+	productionBrowserSourceMaps: process.env.ENABLE_SOURCEMAPS === "true",
 	allowedDevOrigins: [process.env.NEXTAUTH_URL?.replace("https://", "") ?? "localhost"],
 	images: {
 		remotePatterns: [

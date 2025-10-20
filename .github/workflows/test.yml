@@ -12,6 +12,7 @@ jobs:
     env:
       DATA_DIR: .tmp/ci-data
       TEST_AUTH_BYPASS: "1"
+      ENABLE_SOURCEMAPS: "true"
 
     steps:
       - uses: actions/checkout@v4

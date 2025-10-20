@@ -10,6 +10,7 @@ type LogEntry = {
 	userAgent: string;
 	userId: string;
 	userName: string;
+	userFullName?: string;
 	type: string;
 	date?: string;
 	slot?: number;
@@ -216,7 +217,9 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
 									{log.name && <div>Name: {log.name}</div>}
 									{log.teams && <div>Teams: {log.teams === "admin" ? "Admin" : log.teams.join(", ")}</div>}
 								</td>
-								<td className={styles.userCell}>{log.userName}</td>
+								<td className={styles.userCell} title={log.userFullName}>
+									{log.userName}
+								</td>
 								<td className={styles.ipCell}>{log.ip}</td>
 							</tr>
 						))}

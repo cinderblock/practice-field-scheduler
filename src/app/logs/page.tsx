@@ -46,7 +46,8 @@ export default async function LogsPage() {
 				const user = users.find(u => u.id === log.userId);
 				return {
 					...log,
-					userName: user?.name ?? "Unknown User",
+					userName: user?.displayName ?? user?.name ?? "Unknown User",
+					userFullName: user?.name,
 				};
 			})
 			.reverse(); // Most recent first

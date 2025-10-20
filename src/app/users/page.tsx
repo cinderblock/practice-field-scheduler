@@ -27,6 +27,7 @@ export default async function UsersPage() {
 	const users = (await ctx.getUsers()).map((user: UserEntry) => ({
 		id: user.id,
 		name: user.name,
+		displayName: user.displayName,
 		image: user.image,
 		created: user.created,
 		teams: isAdmin ? user.teams : [],

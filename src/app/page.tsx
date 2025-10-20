@@ -124,14 +124,15 @@ async function LoggedIn({ session }: { session: Session }) {
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
 				<span>
-					Logged in as {session.user?.name}
+					Logged in as {session.user?.displayName ?? session.user?.name}
 					{session.user?.image && (
 						<img
 							style={{ userSelect: "none" }}
 							src={session.user.image}
-							alt={`${session.user.name}'s profile`}
+							alt={`${session.user.displayName ?? session.user.name}'s profile`}
 							className={styles.profileImage}
 							width={48}
+							title={session.user.displayName && session.user.name ? session.user.name : undefined}
 						/>
 					)}
 				</span>

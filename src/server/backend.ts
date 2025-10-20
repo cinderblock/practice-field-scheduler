@@ -407,6 +407,7 @@ export class Context {
 		const newUser: UserEntry = {
 			id: newUserId,
 			name: this.session.user.name ?? email ?? "Unknown",
+			displayName: this.session.user.displayName,
 			created: new Date(),
 			updated: new Date(),
 			teams: FirstUserIsAdmin && !users.length ? "admin" : [],
@@ -458,6 +459,7 @@ export class Context {
 			u = u.map(user => ({
 				id: user.id,
 				name: user.name,
+				displayName: user.displayName,
 				image: user.image,
 				created: user.created,
 				updated: user.updated,

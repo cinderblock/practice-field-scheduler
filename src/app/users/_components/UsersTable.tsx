@@ -7,7 +7,7 @@ import { dateToDateString } from "~/server/util/timeUtils";
 import type { UserEntry } from "~/types";
 import styles from "./UsersTable.module.css";
 
-type User = Omit<Pick<UserEntry, "id" | "name" | "image" | "created" | "teams">, "teams"> & {
+type User = Omit<Pick<UserEntry, "id" | "name" | "displayName" | "image" | "created" | "teams">, "teams"> & {
 	teams: UserEntry["teams"];
 	isAdmin: boolean;
 };
@@ -115,7 +115,7 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 										<div style={{ position: "relative", width: "40px", height: "40px" }}>
 											<Image
 												src={user.image}
-												alt={`${user.name}'s profile`}
+												alt={`${user.displayName ?? user.name}'s profile`}
 												className={styles.userImage}
 												fill
 												sizes="40px"
@@ -125,7 +125,14 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 									</div>
 								</td>
 								<td>
-									<div className={styles.userName}>{user.name}</div>
+									<div className={styles.userName} title={user.displayName && user.name ? user.name : undefined}>
+										{user.displayName ?? user.name}
+										{user.displayName && user.name && (
+											<div style={{ fontSize: "0.85em", color: "var(--text-secondary)", fontWeight: "normal" }}>
+												{user.name}
+											</div>
+										)}
+									</div>
 								</td>
 								{isAdmin && (
 									<td>

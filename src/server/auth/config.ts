@@ -12,6 +12,7 @@ declare module "next-auth" {
 	interface Session extends DefaultSession {
 		user: {
 			id: string;
+			displayName?: string; // Slack display_name
 			// ...other properties
 			// role: UserRole;
 		} & DefaultSession["user"];
@@ -38,6 +39,15 @@ export const authConfig = {
 					team: env.AUTH_SLACK_TEAM_ID,
 				},
 			},
+			profile(profile) {
+				return {
+					id: profile.sub,
+					name: profile.name, // real_name from Slack
+					email: profile.email,
+					image: profile.picture,
+					displayName: profile["https://slack.com/user_name"] as string | undefined, // display_name from Slack
+				};
+			},
 		}),
 		/**
 		 * ...add more providers here.
@@ -50,11 +60,18 @@ export const authConfig = {
 		 */
 	],
 	callbacks: {
+		jwt: ({ token, profile }) => {
+			if (profile) {
+				token.displayName = profile.displayName;
+			}
+			return token;
+		},
 		session: ({ session, token }) => ({
 			...session,
 			user: {
 				...session.user,
 				id: token.sub,
+				displayName: token.displayName as string | undefined,
 			},
 		}),
 		redirect: async () => "/",

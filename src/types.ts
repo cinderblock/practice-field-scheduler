@@ -44,7 +44,8 @@ export type SiteEvent = {
 
 export type UserEntry = {
 	id: UserId;
-	name: string;
+	name: string; // Full name (real_name from Slack)
+	displayName?: string; // Display name (display_name from Slack) - optional for backward compatibility
 	created: Date;
 	updated: Date;
 	disabled?: boolean;

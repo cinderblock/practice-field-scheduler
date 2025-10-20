@@ -1,11 +1,11 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import styles from "./login.module.css";
 import { TSLLogo } from "~/app/_components/TSLLogo";
-import Image from "next/image";
+import styles from "./login.module.css";
 
 function SignInContent() {
 	const searchParams = useSearchParams();

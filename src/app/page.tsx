@@ -156,8 +156,8 @@ async function LoggedIn({ session }: { session: Session }) {
 function LoginButton() {
 	return (
 		<>
-			<h2>Please log in to view the reservation calendar.</h2>
-			<Link href="/api/auth/signin" className={styles.loginButton}>
+			<h2>Please sign in to view the reservation calendar.</h2>
+			<Link href="/login" className={styles.loginButton}>
 				Sign&nbsp;in
 			</Link>
 		</>

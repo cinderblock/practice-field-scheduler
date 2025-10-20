@@ -57,6 +57,7 @@ export const authConfig = {
 				id: token.sub,
 			},
 		}),
+		redirect: async () => "/",
 	},
 	// debug: true,
 	trustHost: true,

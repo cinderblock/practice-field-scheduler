@@ -28,19 +28,20 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Setup environment variables
-        run: |
-          echo 'FIRST_API_USERNAME="${{ vars.FIRST_API_USERNAME }}"' > .env.test.local
-          echo 'FIRST_API_AUTH_TOKEN="${{ secrets.FIRST_API_AUTH_TOKEN }}"' >> .env.test.local
-
       - name: Run unit test
         id: unit
         run: npm run test:unit
+        env:
+          FIRST_API_USERNAME: ${{ vars.FIRST_API_USERNAME }}
+          FIRST_API_AUTH_TOKEN: ${{ secrets.FIRST_API_AUTH_TOKEN }}
 
       - name: Run e2e test
         if: success() || steps.unit.conclusion == 'failure'
         id: e2e
         run: npm run test:e2e
+        env:
+          FIRST_API_USERNAME: ${{ vars.FIRST_API_USERNAME }}
+          FIRST_API_AUTH_TOKEN: ${{ secrets.FIRST_API_AUTH_TOKEN }}
 
       - name: Load test report history
         # Even if tests fail, we want to generate the reports

@@ -400,7 +400,13 @@ function TimeSlot({
 	initialReservations: InitialReservations;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
-	const [teamNumber, setTeamNumber] = useState("");
+	const [teamNumber, setTeamNumber] = useState(() => {
+		// Load last used team number from localStorage
+		if (typeof window !== "undefined") {
+			return localStorage.getItem("lastTeamNumber") || "";
+		}
+		return "";
+	});
 	const [priority, setPriority] = useState(false);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
@@ -653,8 +659,13 @@ function TimeSlot({
 									id="teamNumber"
 									value={teamNumber}
 									onChange={e => {
-										setTeamNumber(e.target.value);
-										setTempTeamNumber(e.target.value);
+										const value = e.target.value;
+										setTeamNumber(value);
+										setTempTeamNumber(value);
+										// Save to localStorage for next time
+										if (typeof window !== "undefined") {
+											localStorage.setItem("lastTeamNumber", value);
+										}
 									}}
 									placeholder="Enter team number"
 								/>

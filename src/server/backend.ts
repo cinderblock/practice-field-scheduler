@@ -566,7 +566,25 @@ setInterval(async () => {
 // Read JSON data from a file
 async function readJsonFile(filePath: string) {
 	const data = await readFile(filePath, "utf-8");
-	return JSON.parse(data);
+	const trimmed = data.trim();
+	
+	// Handle empty or whitespace-only files
+	if (!trimmed) {
+		console.warn(`⚠️ [${MODULE_INSTANCE_ID}] Empty file detected: ${filePath}, treating as empty array`);
+		return [];
+	}
+	
+	try {
+		return JSON.parse(trimmed);
+	} catch (err) {
+		console.error(`❌ [${MODULE_INSTANCE_ID}] Failed to parse JSON from ${filePath}:`, err);
+		// If it's genuinely corrupted and not just a race condition, we should fail
+		// But for empty/partial writes during startup, treat as empty array
+		if (trimmed === '[]' || trimmed.length < 5) {
+			return [];
+		}
+		throw err;
+	}
 }
 
 // Write JSON data to a file

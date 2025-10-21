@@ -7,7 +7,7 @@ import { Suspense } from "react";
 import { TSLLogo } from "~/app/_components/TSLLogo";
 import styles from "./login.module.css";
 
-function SignInContent() {
+function LogInContent() {
 	const searchParams = useSearchParams();
 	const error = searchParams.get("error");
 
@@ -17,7 +17,7 @@ function SignInContent() {
 				{error === "OAuthAccountNotLinked"
 					? "This account is already linked to another user."
 					: error === "OAuthSignin"
-						? "Error occurred during sign in. Please try again."
+						? "Error occurred during log in. Please try again."
 						: "Authentication failed. Please try again."}
 			</div>
 		);
@@ -25,40 +25,46 @@ function SignInContent() {
 
 	return (
 		<>
-			<h2 className={styles.instructionsTitle}>Login Instructions</h2>
-			<ol className={styles.instructionsList}>
-				<li className={styles.instructionItem}>
-					Ensure you're logged into{" "}
-					<a href="https://tomsawyerlabs.slack.com" target="_blank" rel="noopener noreferrer" className={styles.link}>
-						Tom Sawyer Labs's Slack
-					</a>
-					<br />
-					<span className={styles.secondaryText}>
-						Click link and, if prompted, log into Slack. Come back here after.
-					</span>
-				</li>
-				<li className={styles.instructionItem}>
-					Click the <strong>Sign in with Slack</strong> button below
-					<br />
-					<span className={styles.secondaryText}>Allow Tom Sawyer Labs App to access your Slack account</span>
-				</li>
-			</ol>
-			<Image
-				src="/slack-allow.png"
-				alt="Slack permissions"
-				width={579}
-				height={666}
-				style={{
-					width: "70%",
-					height: "auto",
-					objectFit: "contain",
-					display: "block",
-					margin: "0.5em auto 0 auto",
-					borderRadius: "12px",
-				}}
-			/>
-
-			<button type="button" onClick={() => signIn("slack")} className={styles.signInButton}>
+			<h2 className={styles.instructionsTitle}>How to Log In</h2>
+			<div className={styles.stepsContainer}>
+				<div className={styles.step}>
+					<div className={styles.stepNumber}>1</div>
+					<div className={styles.stepContent}>
+						<h3 className={styles.stepTitle}>Log into Slack</h3>
+						<p className={styles.stepDescription}>
+							Make sure you're logged in to{" "}
+							<a
+								href="https://tomsawyerlabs.slack.com"
+								target="_blank"
+								rel="noopener noreferrer"
+								className={styles.link}
+							>
+								Tom Sawyer Labs's Slack
+							</a>
+						</p>
+					</div>
+				</div>
+				<div className={styles.step}>
+					<div className={styles.stepNumber}>2</div>
+					<div className={styles.stepContent}>
+						<h3 className={styles.stepTitle}>Access the Scheduler</h3>
+						<p className={styles.stepDescription}>
+							Click below to connect your Slack account to the Practice Field Scheduler. First time? You'll need to{" "}
+							<span className={styles.hoverTrigger}>allow access</span>.
+						</p>
+						<div className={styles.imageContainer}>
+							<Image
+								src="/slack-allow.png"
+								alt="Slack permissions"
+								width={579}
+								height={666}
+								className={styles.hoverImage}
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+			<button type="button" onClick={() => signIn("slack")} className={styles.logInButton}>
 				<svg
 					className={styles.slackIcon}
 					viewBox="0 0 24 24"
@@ -72,13 +78,13 @@ function SignInContent() {
 						fill="currentColor"
 					/>
 				</svg>
-				Sign in with Slack
+				Log in to the Scheduler with Slack
 			</button>
 		</>
 	);
 }
 
-export default function SignInPage() {
+export default function LogInPage() {
 	return (
 		<div className={styles.container}>
 			<div className={styles.card}>
@@ -86,7 +92,7 @@ export default function SignInPage() {
 					<TSLLogo />
 				</div>
 				<Suspense fallback={<div>Loading...</div>}>
-					<SignInContent />
+					<LogInContent />
 				</Suspense>
 			</div>
 		</div>

@@ -59,10 +59,11 @@
 }
 
 .instructionsTitle {
-	margin: 0 0 12px 0;
+	margin: 0 0 32px 0;
 	color: #2d3748;
-	font-size: 16px;
-	font-weight: 600;
+	font-size: 24px;
+	font-weight: 700;
+	text-align: center;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -71,26 +72,69 @@
 	}
 }
 
-.instructionsList {
+.stepsContainer {
+	margin-bottom: 32px;
+}
+
+.step {
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	margin-bottom: 24px;
+}
+
+.step:last-child {
+	margin-bottom: 0;
+}
+
+.stepNumber {
+	background: #667eea;
+	color: white;
+	border-radius: 50%;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 700;
+	font-size: 16px;
+	flex-shrink: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+	.stepNumber {
+		background: #9f7aea;
+	}
+}
+
+.stepContent {
+	flex: 1;
+}
+
+.stepTitle {
+	margin: 0 0 8px 0;
+	color: #2d3748;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+	.stepTitle {
+		color: #e2e8f0;
+	}
+}
+
+.stepDescription {
 	margin: 0;
-	padding-left: 20px;
 	color: #4a5568;
 	font-size: 14px;
 	line-height: 1.6;
 }
 
 @media (prefers-color-scheme: dark) {
-	.instructionsList {
+	.stepDescription {
 		color: #cbd5e0;
 	}
-}
-
-.instructionItem {
-	margin-bottom: 8px;
-}
-
-.instructionItem:last-child {
-	margin-bottom: 0;
 }
 
 .secondaryText {
@@ -151,7 +195,7 @@
 	}
 }
 
-.signInButton {
+.logInButton {
 	width: 100%;
 	display: flex;
 	align-items: center;
@@ -160,26 +204,82 @@
 	background: #4a154b;
 	color: white;
 	border: none;
-	border-radius: 8px;
-	padding: 14px 24px;
-	font-size: 16px;
-	font-weight: 600;
+	border-radius: 12px;
+	padding: 18px 32px;
+	font-size: 18px;
+	font-weight: 700;
 	cursor: pointer;
-	transition: all 0.2s;
-	margin-top: 16px;
+	transition: all 0.3s ease;
+	margin: 0 auto 24px auto;
+	box-shadow: 0 4px 16px rgba(74, 21, 75, 0.3);
 }
 
-.signInButton:hover {
+.logInButton:hover {
 	background: #611f69;
-	transform: translateY(-1px);
-	box-shadow: 0 4px 12px rgba(74, 21, 75, 0.4);
+	transform: translateY(-2px);
+	box-shadow: 0 8px 24px rgba(74, 21, 75, 0.4);
 }
 
-.signInButton:active {
+.logInButton:active {
 	transform: translateY(0);
 }
 
 .slackIcon {
 	width: 24px;
 	height: 24px;
+}
+
+.hoverTrigger {
+	color: #667eea;
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-style: dotted;
+	transition: color 0.2s ease;
+}
+
+.hoverTrigger:hover {
+	color: #9f7aea;
+}
+
+@media (prefers-color-scheme: dark) {
+	.hoverTrigger {
+		color: #a78bfa;
+	}
+
+	.hoverTrigger:hover {
+		color: #c4b5fd;
+	}
+}
+
+.imageContainer {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 1000;
+	opacity: 0;
+	visibility: hidden;
+	transition: all 0.3s ease;
+	pointer-events: none;
+	background: rgba(0, 0, 0, 0.8);
+	border-radius: 12px;
+	padding: 20px;
+	backdrop-filter: blur(4px);
+}
+
+.stepContent:hover .imageContainer {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+}
+
+.hoverImage {
+	max-width: 60vw;
+	max-height: 60vh;
+	width: auto;
+	height: auto;
+	object-fit: contain;
+	display: block;
+	border-radius: 8px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }

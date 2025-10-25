@@ -6,6 +6,8 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import type { Session } from "next-auth";
+import { HistoryButton } from "~/app/_components/HistoryButton";
+import { HistoryProvider } from "~/app/_components/HistoryContext";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
@@ -24,24 +26,31 @@ export default async function Home() {
 
 	return (
 		<HydrateClient>
-			<main className={styles.main}>
-				<GithubCorner />
-				{env.STAGING && <ShutdownButton />}
-				<div className={styles.container}>
-					<div style={{ maxWidth: session ? "100px" : "600px", width: "100%" }}>
-						<TSLLogo />
-					</div>
-					<Title />
-					{session ? <LoggedIn session={session} /> : <LoginButton />}
-					{!env.STAGING ? null : (
-						<div
-							style={{ fontSize: "0.8rem", color: "var(--text-secondary)", textAlign: "center", marginBottom: "1rem" }}
-						>
-							<span>{env.STAGING}</span>
+			<HistoryProvider>
+				<main className={styles.main}>
+					<GithubCorner />
+					{env.STAGING && <ShutdownButton />}
+					<div className={styles.container}>
+						<div style={{ maxWidth: session ? "100px" : "600px", width: "100%" }}>
+							<TSLLogo />
 						</div>
-					)}
-				</div>
-			</main>
+						<Title />
+						{session ? <LoggedIn session={session} /> : <LoginButton />}
+						{!env.STAGING ? null : (
+							<div
+								style={{
+									fontSize: "0.8rem",
+									color: "var(--text-secondary)",
+									textAlign: "center",
+									marginBottom: "1rem",
+								}}
+							>
+								<span>{env.STAGING}</span>
+							</div>
+						)}
+					</div>
+				</main>
+			</HistoryProvider>
 		</HydrateClient>
 	);
 }
@@ -142,6 +151,7 @@ async function LoggedIn({ session }: { session: Session }) {
 					)}
 				</span>
 				<div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+					<HistoryButton />
 					{isAdmin && (
 						<>
 							<Link href="/logs" className={styles.logoutButtonSmall}>

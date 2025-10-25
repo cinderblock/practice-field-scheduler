@@ -248,7 +248,7 @@
 	width: 100%;
 	overflow: hidden;
 	grid-template-rows: auto;
-	animation: fadeIn 0.2s ease-in-out;
+	/* animation: fadeIn 0.2s ease-in-out; */
 }
 
 @keyframes fadeIn {
@@ -278,7 +278,9 @@
 	width: 100%;
 	max-width: 100%;
 	box-sizing: border-box;
-	transition: all 0.2s ease-in-out;
+	/* transition:
+		all 2s ease-out,
+		transform 1s ease-out; */
 }
 
 .dayContainer:hover {
@@ -623,6 +625,8 @@
 .logoutButtonSmall {
 	padding: 0.3rem 1rem;
 	font-size: 1rem;
+	line-height: 2rem;
+	border: none;
 	border-radius: 0.5em;
 	background-color: rgb(255 255 255 / 0.1);
 	color: white;
@@ -641,6 +645,23 @@
 	font-size: 0.9rem;
 	color: #a7bfff;
 	text-align: center;
+}
+
+/* History day animations */
+@keyframes expandIn {
+	0% {
+		max-height: 0;
+		overflow: hidden;
+	}
+	100% {
+		max-height: 500px;
+		overflow: visible;
+	}
+}
+
+.historyDay {
+	animation: expandIn 0.7s ease;
+	/* transition: max-height 2s ease-in-out; */
 }
 
 .addReservationModal {
@@ -796,6 +817,7 @@
 	max-width: 100%;
 	display: block;
 	/* Ensure it's a block container */
+	/* transition: height 1s ease-out; */
 }
 
 .timeSlotHeaders {
@@ -807,6 +829,7 @@
 	margin-bottom: 0.5rem;
 	position: sticky;
 	top: -0.75rem;
+	bottom: -0.75rem;
 	z-index: 10;
 	padding: 1rem;
 	box-sizing: border-box;

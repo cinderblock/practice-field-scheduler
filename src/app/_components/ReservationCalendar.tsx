@@ -1,11 +1,12 @@
 "use client";
 
 import { TZDateMini } from "@date-fns/tz";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { env } from "~/env";
 import { api } from "~/trpc/react";
 import type { Holiday, Reservation } from "~/types";
 import styles from "../index.module.css";
+import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
 
@@ -102,6 +103,8 @@ function DayName({ date }: { date: string }) {
 	if (diffDays === 0) dayLabel = "(today)";
 	else if (diffDays === 1) dayLabel = "(tomorrow)";
 	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
+	else if (diffDays === -1) dayLabel = "(yesterday)";
+	else if (diffDays < -1) dayLabel = `(${Math.abs(diffDays)} days ago)`;
 
 	return (
 		<span className={styles.dayName} style={{ whiteSpace: "nowrap" }}>
@@ -260,6 +263,10 @@ export function ReservationCalendar({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 }) {
+	const [historyDays, setHistoryDays] = useState(0);
+	const [additionalReservations, setAdditionalReservations] = useState<InitialReservations>([]);
+	const { setIsLoadingHistory, setLoadHistory } = useHistory();
+
 	const startDate = useInterval(() => {
 		const today = getToday();
 
@@ -276,13 +283,77 @@ export function ReservationCalendar({
 
 	const daysText = `${ReservationDays} ${pluralize(ReservationDays, "day")}`;
 
+	// Combine initial reservations with additional history
+	const allReservations = useMemo(() => {
+		const combined = [...additionalReservations, ...initialReservations];
+		// Sort by date to ensure chronological order (earliest first)
+		return combined.sort((a, b) => a.date.localeCompare(b.date));
+	}, [additionalReservations, initialReservations]);
+
+	const utils = api.useUtils();
+
+	// Use refs to store current values to avoid dependency issues
+	const startDateRef = useRef(startDate);
+	const historyDaysRef = useRef(historyDays);
+	const utilsRef = useRef(utils);
+
+	// Update refs when values change
+	useEffect(() => {
+		startDateRef.current = startDate;
+	}, [startDate]);
+
+	useEffect(() => {
+		historyDaysRef.current = historyDays;
+	}, [historyDays]);
+
+	useEffect(() => {
+		utilsRef.current = utils;
+	}, [utils]);
+
+	const loadHistory = useCallback(async () => {
+		setIsLoadingHistory(true);
+
+		try {
+			// Load 7 days of history, one at a time
+			const totalDaysToLoad = 7;
+			const currentHistoryDays = historyDaysRef.current;
+
+			for (let i = 0; i < totalDaysToLoad; i++) {
+				const newDate = addDaysToDateString(startDateRef.current, -currentHistoryDays - i - 1);
+
+				// Fetch data for this single day
+				const newReservation = {
+					date: newDate,
+					reservations: await utilsRef.current.reservation.list.fetch({ date: newDate }),
+				};
+
+				// Add this day and increment count - this will trigger the transition
+				setAdditionalReservations(prev => [newReservation, ...prev]);
+				setHistoryDays(prev => prev + 1);
+
+				// Small delay between each day
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+		} catch (error) {
+			console.error("Failed to load history:", error);
+		} finally {
+			setIsLoadingHistory(false);
+		}
+	}, [setIsLoadingHistory]);
+
+	// Register the load history function with the context only once
+	useEffect(() => {
+		setLoadHistory(() => loadHistory);
+	}, [setLoadHistory]);
+
 	return (
 		<>
 			<div className={styles.calendarGrid}>
 				<Days
 					start={startDate}
 					days={ReservationDays + 1}
-					initialReservations={initialReservations}
+					daysHistory={historyDays}
+					initialReservations={allReservations}
 					initialHolidays={initialHolidays}
 				/>
 			</div>
@@ -329,18 +400,35 @@ function TimeSlotHeader({ startHour, endHour }: { startHour: number; endHour: nu
 function Days({
 	start,
 	days,
+	daysHistory,
 	initialReservations,
 	initialHolidays,
 }: {
 	start: string;
 	days: number;
+	daysHistory?: number;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 }) {
+	// Ensure good type
+	daysHistory ??= 0;
+
 	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
+	const datesHistory = Array.from({ length: daysHistory }, (_, i) => addDaysToDateString(start, i - daysHistory));
 
 	return (
 		<>
+			{/* History columns */}
+			{datesHistory.map(date => (
+				<DayWrapper
+					key={date}
+					date={date}
+					initialReservations={initialReservations}
+					initialHolidays={initialHolidays}
+					isHistory={true}
+				/>
+			))}
+
 			{/* Time slot headers */}
 			<div
 				className={styles.timeSlotHeaders}
@@ -365,11 +453,32 @@ function Days({
 			</div>
 			{/* Day columns */}
 			{dates.map(date => (
-				<div key={date} className={styles.calendarDay}>
-					<Day date={date} initialReservations={initialReservations} initialHolidays={initialHolidays} />
-				</div>
+				<DayWrapper
+					key={date}
+					date={date}
+					initialReservations={initialReservations}
+					initialHolidays={initialHolidays}
+				/>
 			))}
 		</>
+	);
+}
+
+function DayWrapper({
+	date,
+	initialReservations,
+	initialHolidays,
+	isHistory = false,
+}: {
+	date: string;
+	initialReservations: InitialReservations;
+	initialHolidays: Holiday[];
+	isHistory?: boolean;
+}) {
+	return (
+		<div className={`${styles.calendarDay} ${isHistory ? styles.historyDay : ""}`}>
+			<Day date={date} initialReservations={initialReservations} initialHolidays={initialHolidays} />
+		</div>
 	);
 }
 

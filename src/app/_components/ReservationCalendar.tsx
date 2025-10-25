@@ -4,9 +4,8 @@ import { TZDateMini } from "@date-fns/tz";
 import { useEffect, useRef, useState } from "react";
 import { env } from "~/env";
 import { api } from "~/trpc/react";
-import type { Reservation } from "~/types";
+import type { Holiday, Reservation } from "~/types";
 import styles from "../index.module.css";
-import { EmptyPlaceholder } from "./EmptyReservationPlaceholder";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
 
@@ -116,8 +115,37 @@ function DayName({ date }: { date: string }) {
 	);
 }
 
-function DayDate({ date }: { date: string }) {
-	return <span className={styles.dayDate}>{date}</span>;
+function DayDate({ date, holidays }: { date: string; holidays: Holiday[] }) {
+	// Find holidays for this date
+	const dayHolidays = holidays.filter(holiday => holiday.date === date);
+
+	return (
+		<span className={styles.dayDate}>
+			{dayHolidays.length > 0 && (
+				<span className={styles.holidayIcons}>
+					{dayHolidays.map(holiday =>
+						holiday.url ? (
+							<a
+								key={holiday.id}
+								href={holiday.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								className={styles.holidayIconLink}
+								title={holiday.name}
+							>
+								<span className={styles.holidayIcon}>{holiday.icon}</span>
+							</a>
+						) : (
+							<span key={holiday.id} className={styles.holidayIcon} title={holiday.name}>
+								{holiday.icon}
+							</span>
+						),
+					)}
+				</span>
+			)}
+			{date}
+		</span>
+	);
 }
 
 function addDaysToDateString(date: string, days: number): string {
@@ -226,8 +254,10 @@ function ReservationPill({
 
 export function ReservationCalendar({
 	initialReservations,
+	initialHolidays,
 }: {
 	initialReservations: InitialReservations;
+	initialHolidays: Holiday[];
 }) {
 	const startDate = useInterval(() => {
 		const today = getToday();
@@ -248,7 +278,12 @@ export function ReservationCalendar({
 	return (
 		<>
 			<div className={styles.calendarGrid}>
-				<Days start={startDate} days={ReservationDays + 1} initialReservations={initialReservations} />
+				<Days
+					start={startDate}
+					days={ReservationDays + 1}
+					initialReservations={initialReservations}
+					initialHolidays={initialHolidays}
+				/>
 			</div>
 			<p>
 				We only allow reservations for the next {daysText}.
@@ -294,10 +329,12 @@ function Days({
 	start,
 	days,
 	initialReservations,
+	initialHolidays,
 }: {
 	start: string;
 	days: number;
 	initialReservations: InitialReservations;
+	initialHolidays: Holiday[];
 }) {
 	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
 
@@ -328,7 +365,7 @@ function Days({
 			{/* Day columns */}
 			{dates.map(date => (
 				<div key={date} className={styles.calendarDay}>
-					<Day date={date} initialReservations={initialReservations} />
+					<Day date={date} initialReservations={initialReservations} initialHolidays={initialHolidays} />
 				</div>
 			))}
 		</>
@@ -338,9 +375,11 @@ function Days({
 function Day({
 	date,
 	initialReservations,
+	initialHolidays,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
+	initialHolidays: Holiday[];
 }) {
 	const style = [styles.dayContainer];
 	if (isWeekend(date)) style.push(styles.weekend);
@@ -352,7 +391,7 @@ function Day({
 		<div className={style.join(" ")}>
 			<div className={styles.dayHeader}>
 				<DayName date={date} />
-				<DayDate date={date} />
+				<DayDate date={date} holidays={initialHolidays} />
 			</div>
 			<div
 				className={styles.timeSlotRow}
@@ -380,6 +419,7 @@ function Day({
 							startHour={startHour}
 							endHour={endHour}
 							initialReservations={initialReservations}
+							initialHolidays={initialHolidays}
 						/>
 					);
 				})}
@@ -393,11 +433,13 @@ function TimeSlot({
 	startHour,
 	endHour,
 	initialReservations,
+	initialHolidays,
 }: {
 	date: string;
 	startHour: number;
 	endHour: number;
 	initialReservations: InitialReservations;
+	initialHolidays: Holiday[];
 }) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [teamNumber, setTeamNumber] = useState(() => {
@@ -632,7 +674,7 @@ function TimeSlot({
 						<h3>Add Reservation</h3>
 						<div className={styles.modalSubheader}>
 							<DayName date={date} />
-							<DayDate date={date} />
+							<DayDate date={date} holidays={initialHolidays} />
 							<TimeRangeDisplay date={date} start={startHour} end={endHour} />
 						</div>
 						<form

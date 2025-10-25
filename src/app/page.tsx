@@ -120,6 +120,9 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
+	// Get holidays for the calendar
+	const holidays = await ctx.getHolidays();
+
 	return (
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
@@ -138,16 +141,21 @@ async function LoggedIn({ session }: { session: Session }) {
 				</span>
 				<div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
 					{isAdmin && (
-						<Link href="/logs" className={styles.logoutButtonSmall}>
-							View&nbsp;Logs
-						</Link>
+						<>
+							<Link href="/logs" className={styles.logoutButtonSmall}>
+								View&nbsp;Logs
+							</Link>
+							<Link href="/holidays" className={styles.logoutButtonSmall}>
+								Holidays
+							</Link>
+						</>
 					)}
 					<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
 						Sign&nbsp;out
 					</Link>
 				</div>
 			</div>
-			<ReservationCalendar initialReservations={reservationsByDate} />
+			<ReservationCalendar initialReservations={reservationsByDate} initialHolidays={holidays} />
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />
 			<RenderTime time={new Date()} />
 		</div>

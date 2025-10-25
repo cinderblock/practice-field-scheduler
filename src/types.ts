@@ -53,3 +53,14 @@ export type UserEntry = {
 	email: string;
 	image: string;
 };
+
+export type Holiday = {
+	id: string;
+	name: string;
+	date: EventDate;
+	icon: string; // Emoji or icon identifier
+	url?: string; // Optional URL for more info
+	created?: Date; // Optional for system holidays
+	userId?: UserId; // Optional for system holidays
+	deleted?: Date;
+};

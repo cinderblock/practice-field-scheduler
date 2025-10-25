@@ -7,15 +7,16 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
+import type { Session } from "next-auth";
 import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { Session } from "next-auth";
 import { env } from "~/env";
 import type {
 	AddReservationArgs,
 	Blackout,
 	EventDate,
+	Holiday,
 	RemoveReservationArgs,
 	Reservation,
 	SiteEvent,
@@ -47,6 +48,7 @@ declare global {
 	var __reservations: Reservation[] | undefined;
 	var __blackouts: Blackout[] | undefined;
 	var __siteEvents: SiteEvent[] | undefined;
+	var __holidays: Holiday[] | undefined;
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
@@ -58,6 +60,7 @@ declare global {
 globalThis.__reservations ||= [];
 globalThis.__blackouts ||= [];
 globalThis.__siteEvents ||= [];
+globalThis.__holidays ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
@@ -65,6 +68,7 @@ globalThis.__slackMappings ||= [];
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
 const siteEvents = globalThis.__siteEvents;
+const holidays = globalThis.__holidays;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
@@ -356,6 +360,56 @@ export class Context {
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 	}
 
+	async addHoliday(holiday: Omit<Holiday, "id">) {
+		this.restrictToAdmin("Only admins can add holidays");
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		const newHoliday: Holiday = {
+			...holiday,
+			id: crypto.randomUUID(),
+			// Only set created and userId if not already provided (for system holidays)
+			created: holiday.created ?? ctx.timestamp,
+			userId: holiday.userId ?? (await this.user).id,
+		};
+
+		holidays.push(newHoliday);
+
+		jobs.push(writeJsonFile(HOLIDAYS_FILE, holidays));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return newHoliday;
+	}
+
+	async removeHoliday({ id }: { id: string }) {
+		this.restrictToAdmin("Only admins can remove holidays");
+
+		const holiday = holidays.find(h => h.id === id && !h.deleted);
+		if (!holiday) {
+			throw new Error("Holiday not found");
+		}
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		holiday.deleted = ctx.timestamp;
+
+		jobs.push(writeJsonFile(HOLIDAYS_FILE, holidays));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+	}
+
+	async getHolidays(): Promise<Holiday[]> {
+		await initialized();
+		return holidays.filter(h => !h.deleted);
+	}
+
 	private async getUser(): Promise<UserEntry> {
 		if (!this.session?.user) {
 			throw new PermissionError("Not authenticated");
@@ -531,10 +585,11 @@ const YEAR = new Date().getFullYear().toString();
 const KEYS_FILE = join(DATA_DIR, "keys.json");
 const USERS_FILE = join(DATA_DIR, "users.json");
 const SLACK_MAPPINGS_FILE = join(DATA_DIR, "slack.json");
-// Reservations, blackouts, and site events are year-specific
+// Reservations, blackouts, site events, and holidays are year-specific
 const RESERVATIONS_FILE = join(DATA_DIR, YEAR, "reservations.json");
 const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
 const SITE_EVENTS_FILE = join(DATA_DIR, YEAR, "events.json");
+const HOLIDAYS_FILE = join(DATA_DIR, YEAR, "holidays.json");
 const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
@@ -567,20 +622,20 @@ setInterval(async () => {
 async function readJsonFile(filePath: string) {
 	const data = await readFile(filePath, "utf-8");
 	const trimmed = data.trim();
-	
+
 	// Handle empty or whitespace-only files
 	if (!trimmed) {
 		console.warn(`⚠️ [${MODULE_INSTANCE_ID}] Empty file detected: ${filePath}, treating as empty array`);
 		return [];
 	}
-	
+
 	try {
 		return JSON.parse(trimmed);
 	} catch (err) {
 		console.error(`❌ [${MODULE_INSTANCE_ID}] Failed to parse JSON from ${filePath}:`, err);
 		// If it's genuinely corrupted and not just a race condition, we should fail
 		// But for empty/partial writes during startup, treat as empty array
-		if (trimmed === '[]' || trimmed.length < 5) {
+		if (trimmed === "[]" || trimmed.length < 5) {
 			return [];
 		}
 		throw err;
@@ -616,6 +671,7 @@ function getFilePath(array: unknown[]) {
 	if (array === reservations) return RESERVATIONS_FILE;
 	if (array === blackouts) return BLACKOUTS_FILE;
 	if (array === siteEvents) return SITE_EVENTS_FILE;
+	if (array === holidays) return HOLIDAYS_FILE;
 	if (array === users) return USERS_FILE;
 	if (array === houseTeams) return HOUSE_TEAMS_FILE;
 	if (array === slackMappings) return SLACK_MAPPINGS_FILE;
@@ -658,6 +714,15 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
+				// Handle holidays with optional created/userId fields
+				if (array === holidays) {
+					if (typeof item !== "object" || item === null) return false;
+					// Convert created to Date if it exists
+					if (item.created) {
+						item.created = new Date(item.created);
+					}
+				}
+
 				return true;
 			}),
 		);
@@ -680,6 +745,7 @@ function getArrayName(array: unknown[]): string {
 	if (array === reservations) return "reservations";
 	if (array === blackouts) return "blackouts";
 	if (array === siteEvents) return "siteEvents";
+	if (array === holidays) return "holidays";
 	if (array === users) return "users";
 	if (array === houseTeams) return "houseTeams";
 	if (array === slackMappings) return "slackMappings";
@@ -700,6 +766,7 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(reservations));
 	jobs.push(initializePart(blackouts));
 	jobs.push(initializePart(siteEvents));
+	jobs.push(initializePart(holidays));
 	jobs.push(initializePart(users));
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
@@ -724,9 +791,11 @@ export async function getPublicFeedData() {
 	const res = reservations.filter(r => !r.abandoned).map(r => ({ ...r }));
 	const bl = blackouts.filter(b => !b.deleted).map(b => ({ ...b }));
 	const ev = siteEvents.filter(e => !e.deleted).map(e => ({ ...e }));
+	const hol = holidays.filter(h => !h.deleted).map(h => ({ ...h }));
 	return {
 		reservations: res,
 		blackouts: bl,
 		siteEvents: ev,
+		holidays: hol,
 	} as const;
 }

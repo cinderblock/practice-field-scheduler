@@ -306,6 +306,47 @@
 .dayDate {
 	color: var(--accent-color);
 	font-family: monospace;
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.holidayIcons {
+	display: flex;
+	gap: 0.125rem;
+	margin-right: 0.25rem;
+	align-items: center;
+}
+
+.holidayIcon {
+	font-size: 0.9em;
+	cursor: help;
+	opacity: 0.8;
+	transition: opacity 0.2s;
+	line-height: 1;
+	display: inline-flex;
+	align-items: center;
+}
+
+.holidayIcon:hover {
+	opacity: 1;
+}
+
+.holidayIconLink {
+	text-decoration: none;
+	color: inherit;
+	display: inline-flex;
+	align-items: center;
+	transition: transform 0.2s ease;
+}
+
+.holidayIconLink:hover {
+	transform: scale(1.1);
+	text-decoration: none;
+}
+
+.holidayIconLink .holidayIcon {
+	cursor: pointer;
 }
 
 .dayLabel {

@@ -7,10 +7,10 @@
  * All APIs here expect safe data, so they don't do any validation.
  */
 
-import type { Session } from "next-auth";
 import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Session } from "next-auth";
 import { env } from "~/env";
 import type {
 	AddReservationArgs,
@@ -26,9 +26,9 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
+import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
-import { exit } from "./util/exit";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -552,7 +552,7 @@ export class Context {
 
 		if (reservationDate < thisMorning) throw new PermissionError("Cannot reserve a date in the past");
 
-		if (reservationDate > new Date(new Date().getTime() + 1000 * 60 * 60 * 24 * AdvancedReservationDays))
+		if (reservationDate > new Date(Date.now() + 1000 * 60 * 60 * 24 * AdvancedReservationDays))
 			throw new PermissionError(`Cannot reserve a date more than ${AdvancedReservationDays} days in advance`);
 	}
 
@@ -582,7 +582,7 @@ export class Context {
 const DATA_DIR = resolve(env.DATA_DIR);
 const YEAR = new Date().getFullYear().toString();
 // Keys & Users persist across years, so we don't include the year in the path
-const KEYS_FILE = join(DATA_DIR, "keys.json");
+const _KEYS_FILE = join(DATA_DIR, "keys.json");
 const USERS_FILE = join(DATA_DIR, "users.json");
 const SLACK_MAPPINGS_FILE = join(DATA_DIR, "slack.json");
 // Reservations, blackouts, site events, and holidays are year-specific
@@ -663,7 +663,7 @@ async function appendLog(logEntry: JsonData) {
 	}
 }
 
-function isHouseTeam(team: Team) {
+function _isHouseTeam(team: Team) {
 	return houseTeams.includes(team);
 }
 

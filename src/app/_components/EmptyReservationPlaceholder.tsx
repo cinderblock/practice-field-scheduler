@@ -143,5 +143,9 @@ function getEmptyPhrase(date: string, slot?: string): string {
 }
 
 export function EmptyPlaceholder({ date, slot, style }: { date: string; slot?: string; style?: React.CSSProperties }) {
-	return <div className={styles.emptyDayMessage}>{getEmptyPhrase(date, slot)}</div>;
+	return (
+		<div className={styles.emptyDayMessage} style={style}>
+			{getEmptyPhrase(date, slot)}
+		</div>
+	);
 }

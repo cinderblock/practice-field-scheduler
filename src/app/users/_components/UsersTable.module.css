@@ -19,7 +19,9 @@
 }
 
 .usersTable tbody tr {
-	transition: opacity 0.2s ease, transform 0.2s ease;
+	transition:
+		opacity 0.2s ease,
+		transform 0.2s ease;
 }
 
 .usersTable tbody tr:hover {
@@ -216,7 +218,7 @@
 	transition: all 0.2s ease;
 }
 
-.teamFilterButtonSelected .adminIcon,
+.adminIcon .teamFilterButtonSelected,
 .teamFilterButtonSelected img {
 	filter: saturate(1) brightness(1);
 	color: var(--background-primary);

@@ -1,7 +1,7 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
-const prod = process.env.NODE_ENV === "production";
+const _prod = process.env.NODE_ENV === "production";
 
 export const env = createEnv({
 	/**
@@ -99,7 +99,7 @@ export const env = createEnv({
 function isValidTimeZone(timeZone) {
 	try {
 		Intl.DateTimeFormat(undefined, { timeZone });
-	} catch (e) {
+	} catch (_e) {
 		return false;
 	}
 	return true;

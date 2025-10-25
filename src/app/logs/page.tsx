@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { TSLLogo } from "~/app/_components/TSLLogo";
 import { env } from "~/env";
 import { auth } from "~/server/auth";

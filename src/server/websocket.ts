@@ -1,7 +1,7 @@
 import type { Blackout, Reservation, SiteEvent } from "~/types";
 
 // TODO: Implement proper WebSocket handling
-export async function tellClientsAboutReservationChange(reservation: Reservation) {
+export async function tellClientsAboutReservationChange(_reservation: Reservation) {
 	// TODO: Implement
 }
 

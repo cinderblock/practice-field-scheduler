@@ -1,8 +1,8 @@
 "use client";
 
-import { signIn } from "next-auth/react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { Suspense } from "react";
 import { TSLLogo } from "~/app/_components/TSLLogo";
 import styles from "./login.module.css";

@@ -1,5 +1,5 @@
-import ical from "ical-generator";
 import type { ICalCalendar, ICalEventData } from "ical-generator";
+import ical from "ical-generator";
 import { env } from "~/env";
 import { getPublicFeedData } from "~/server/backend";
 import type { Reservation } from "~/types";
@@ -18,7 +18,7 @@ function parseSlotToDate(date: string, slot: string): { start: Date; end: Date }
 	const hStr = match[1] as string;
 	const mStr = match[2] as string;
 	const rawAmPm = match[3] as string;
-	const minute = Number.parseInt(mStr, 10);
+	const _minute = Number.parseInt(mStr, 10);
 	let hour = Number.parseInt(hStr, 10);
 	const ampm = rawAmPm.toLowerCase();
 	if (ampm === "pm" && hour !== 12) hour += 12;

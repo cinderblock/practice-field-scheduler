@@ -87,7 +87,13 @@ function Link({
 	title,
 	className,
 	newTab,
-}: { children: React.ReactNode; href: string; title: string; className?: string; newTab?: boolean }) {
+}: {
+	children: React.ReactNode;
+	href: string;
+	title: string;
+	className?: string;
+	newTab?: boolean;
+}) {
 	return (
 		<a
 			href={href}
@@ -114,7 +120,11 @@ function AddToGoogleCalendarIcon({
 	size,
 	webcalURI,
 	className,
-}: { size: number; webcalURI: string; className?: string }) {
+}: {
+	size: number;
+	webcalURI: string;
+	className?: string;
+}) {
 	return (
 		<Link
 			href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalURI)}`}
@@ -132,7 +142,12 @@ function AddToOutlookCalendarIcon({
 	webcalURI,
 	name,
 	className,
-}: { size: number; webcalURI: string; name: string; className?: string }) {
+}: {
+	size: number;
+	webcalURI: string;
+	name: string;
+	className?: string;
+}) {
 	return (
 		<Link
 			href={`https://outlook.live.com/calendar/0/addfromweb/?url=${encodeURIComponent(webcalURI)}&name=${encodeURIComponent(name)}`}

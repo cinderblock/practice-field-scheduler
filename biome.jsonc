@@ -15,6 +15,9 @@
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"linter": {
 		"enabled": true,
+		// "domains": {
+		// 	"react": "recommended",
+		// },
 		"rules": {
 			"nursery": {
 				"useSortedClasses": {
@@ -28,7 +31,6 @@
 			"style": {
 				"noParameterAssign": "off",
 				"useAsConstAssertion": "error",
-				"useDefaultParameterLast": "error",
 				"useEnumInitializers": "error",
 				"useSelfClosingElements": "error",
 				"useSingleVarDeclarator": "error",
@@ -36,6 +38,19 @@
 				"useNumberNamespace": "error",
 				"noInferrableTypes": "error",
 				"noUselessElse": "error"
+			},
+			"correctness": {
+				"useExhaustiveDependencies": {
+					"options": {
+						"hooks": [
+							{
+								"name": "useInterval",
+								"closureIndex": 0,
+								"dependenciesIndex": 2
+							}
+						]
+					}
+				}
 			},
 			"recommended": true
 		}

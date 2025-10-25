@@ -1,7 +1,7 @@
 "use client";
 
 import { TZDateMini } from "@date-fns/tz";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { env } from "~/env";
 import { api } from "~/trpc/react";
 import type { Holiday, Reservation } from "~/types";
@@ -227,6 +227,7 @@ function ReservationPill({
 
 	return (
 		// biome-ignore lint/a11y/useKeyWithClickEvents: The pill is just a container, the X button is the interactive element
+		// biome-ignore lint/a11y/noStaticElementInteractions: The pill is just a container, the X button is the interactive element
 		<div
 			ref={pillRef}
 			className={pillClasses.join(" ")}
@@ -454,6 +455,13 @@ function TimeSlot({
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
 	const utils = api.useUtils();
 
+	const handleCancelAdd = useCallback(() => {
+		setIsAdding(false);
+		setTeamNumber("");
+		setPriority(false);
+		setTempTeamNumber(null);
+	}, []);
+
 	useEffect(() => {
 		function handleEsc(event: KeyboardEvent) {
 			if (event.key === "Escape" && isAdding) {
@@ -465,18 +473,13 @@ function TimeSlot({
 		return () => {
 			document.removeEventListener("keydown", handleEsc);
 		};
-	}, [isAdding]);
+	}, [isAdding, handleCancelAdd]);
 
 	const slot = hourToTimeSlot(startHour);
 
 	// Calculate days difference
 	const today = useInterval(getToday, 1000);
-	const diffDays = getDateDaysDifference(date, today);
-
-	let dayLabel = "";
-	if (diffDays === 0) dayLabel = "(today)";
-	else if (diffDays === 1) dayLabel = "(tomorrow)";
-	else if (diffDays > 1) dayLabel = `(in ${diffDays} days)`;
+	const _diffDays = getDateDaysDifference(date, today);
 
 	const initialData = initialReservations.find(r => r.date === date)?.reservations ?? [];
 
@@ -534,7 +537,7 @@ function TimeSlot({
 			setIsAdding(false);
 			setTeamNumber("");
 		},
-		onError: (err, newReservation, context) => {
+		onError: (_err, newReservation, context) => {
 			// Rollback on error
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date }, context.previousData);
@@ -560,7 +563,7 @@ function TimeSlot({
 
 			return { previousData };
 		},
-		onSuccess: (data, { id }) => {
+		onSuccess: (_data, { id }) => {
 			// Now remove it from the cache
 			utils.reservation.list.setData({ date }, old => {
 				if (!Array.isArray(old)) return [];
@@ -573,7 +576,7 @@ function TimeSlot({
 				return next;
 			});
 		},
-		onError: (err, variables, context) => {
+		onError: (_err, variables, context) => {
 			// Rollback on error
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date }, context.previousData);
@@ -603,7 +606,7 @@ function TimeSlot({
 	if (current) style.push(styles.timeSlotCurrent);
 	if (hasEnded) style.push(styles.timeSlotOver);
 
-	const handleAddReservation = () => {
+	const handleAddReservation = useCallback(() => {
 		if (!teamNumber) return;
 		// Don't clear tempTeamNumber here - let the optimistic update handle it
 		addReservation.mutate({
@@ -613,20 +616,19 @@ function TimeSlot({
 			notes: "",
 			priority,
 		});
-	};
+	}, [
+		date,
+		slot,
+		teamNumber,
+		priority, // Don't clear tempTeamNumber here - let the optimistic update handle it
+		addReservation.mutate,
+	]);
 
-	const handleOpenAddModal = () => {
+	const handleOpenAddModal = useCallback(() => {
 		setIsAdding(true);
 		setTempTeamNumber(""); // Start with empty temporary pill
 		setPriority(false); // Reset priority when opening modal
-	};
-
-	const handleCancelAdd = () => {
-		setIsAdding(false);
-		setTeamNumber("");
-		setPriority(false);
-		setTempTeamNumber(null);
-	};
+	}, []);
 
 	return (
 		<div className={style.join(" ")} suppressHydrationWarning>

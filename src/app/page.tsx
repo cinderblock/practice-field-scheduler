@@ -2,9 +2,10 @@
 
 import "server-only";
 
-import type { Session } from "next-auth";
 import { headers } from "next/headers";
+import Image from "next/image";
 import Link from "next/link";
+import type { Session } from "next-auth";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
@@ -14,8 +15,8 @@ import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 import { RenderTime } from "./_components/RenderTime";
 import { ShutdownButton } from "./_components/ShutdownButton";
-import { TSLLogo } from "./_components/TSLLogo";
 import { Title } from "./_components/Title";
+import { TSLLogo } from "./_components/TSLLogo";
 import styles from "./index.module.css";
 
 export default async function Home() {
@@ -129,12 +130,13 @@ async function LoggedIn({ session }: { session: Session }) {
 				<span>
 					Logged in as {session.user?.displayName ?? session.user?.name}
 					{session.user?.image && (
-						<img
+						<Image
 							style={{ userSelect: "none" }}
 							src={session.user.image}
 							alt={`${session.user.displayName ?? session.user.name}'s profile`}
 							className={styles.profileImage}
 							width={48}
+							height={48}
 							title={session.user.displayName && session.user.name ? session.user.name : undefined}
 						/>
 					)}
@@ -144,6 +146,9 @@ async function LoggedIn({ session }: { session: Session }) {
 						<>
 							<Link href="/logs" className={styles.logoutButtonSmall}>
 								View&nbsp;Logs
+							</Link>
+							<Link href="/users" className={styles.logoutButtonSmall}>
+								Users
 							</Link>
 							<Link href="/holidays" className={styles.logoutButtonSmall}>
 								Holidays

@@ -288,7 +288,7 @@
 }
 
 .weekend {
-	background: var(--background-secondary);
+	background: var(--background-weekend);
 }
 
 .dayHeader {

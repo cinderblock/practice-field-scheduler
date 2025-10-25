@@ -25,6 +25,7 @@ html {
 	--background-primary: #232347;
 	--background-secondary: #1a1a3a;
 	--background-hover: #2a2a4a;
+	--background-weekend: #1e1e3f;
 	--text-primary: white;
 	--text-secondary: #a7bfff;
 }
@@ -42,6 +43,7 @@ html {
 		--background-primary: #f8fafc;
 		--background-secondary: #f1f5f9;
 		--background-hover: #e2e8f0;
+		--background-weekend: #e8f2ff;
 		--text-primary: #334155;
 		--text-secondary: #64748b;
 	}

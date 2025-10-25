@@ -4,10 +4,12 @@
  */
 import "./src/env.js";
 
+const NextAuthURL = process.env.NEXTAUTH_URL;
+
 /** @type {import("next").NextConfig} */
 const config = {
 	productionBrowserSourceMaps: process.env.ENABLE_SOURCEMAPS === "true",
-	allowedDevOrigins: [process.env.NEXTAUTH_URL?.replace("https://", "") ?? "localhost"],
+	allowedDevOrigins: [NextAuthURL?.replace("https://", "") ?? "localhost"],
 	images: {
 		remotePatterns: [
 			{
@@ -21,5 +23,7 @@ const config = {
 		],
 	},
 };
+
+console.log(`Public URL: ${NextAuthURL ?? "http://localhost:3000"}`);
 
 export default config;

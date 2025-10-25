@@ -34,7 +34,7 @@
 		"zod": "^3.25.64"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "1.9.4",
+		"@biomejs/biome": "2.0.6",
 		"@playwright/test": "^1.53.0",
 		"@testing-library/react": "^16.3.0",
 		"@types/jest": "^29.5.14",

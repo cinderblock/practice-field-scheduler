@@ -267,10 +267,9 @@
 	backdrop-filter: blur(4px);
 }
 
-.stepContent:hover .imageContainer {
+.stepContent:has(.hoverTrigger:hover) .imageContainer {
 	opacity: 1;
 	visibility: visible;
-	pointer-events: auto;
 }
 
 .hoverImage {

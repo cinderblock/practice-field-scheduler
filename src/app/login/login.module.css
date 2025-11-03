@@ -270,7 +270,6 @@
 .stepContent:has(.hoverTrigger:hover) .imageContainer {
 	opacity: 1;
 	visibility: visible;
-	pointer-events: auto;
 }
 
 .hoverImage {

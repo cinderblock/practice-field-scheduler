@@ -150,7 +150,7 @@ async function LoggedIn({ session }: { session: Session }) {
 						/>
 					)}
 				</span>
-				<div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
 					<HistoryButton />
 					{isAdmin && (
 						<>

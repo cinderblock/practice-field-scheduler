@@ -46,26 +46,44 @@ jobs:
           FIRST_API_USERNAME: ${{ vars.FIRST_API_USERNAME }}
           FIRST_API_AUTH_TOKEN: ${{ secrets.FIRST_API_AUTH_TOKEN }}
 
-      - name: Load test report history
-        # Even if tests fail, we want to generate the reports
+      - name: Upload test artifacts (allure results)
         if: success() || steps.unit.conclusion == 'failure' || steps.e2e.conclusion == 'failure'
-        id: history
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: |
+            allure-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  publish-test-report:
+    if: ${{ always() }}
+    needs: test
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Load test report history
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: gh-pages
 
+      - name: Download test artifacts (allure results)
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: .
+
       - name: Build test report
         uses: simple-elf/allure-report-action@v1.7
-        if: success() || steps.history.conclusion == 'success'
-        id: report
         with:
           gh_pages: gh-pages
           allure_history: allure-history
 
       - name: Publish test report
         uses: peaceiris/actions-gh-pages@v4
-        if: success() || steps.report.conclusion == 'success'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages

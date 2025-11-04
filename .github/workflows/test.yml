@@ -80,7 +80,7 @@ jobs:
           path: .
 
       - name: Build test report
-        uses: simple-elf/allure-report-action@v1.7
+        uses: simple-elf/allure-report-action@v1.13
         with:
           gh_pages: gh-pages
           allure_history: allure-history

@@ -2,10 +2,10 @@
 
 import "server-only";
 
+import type { Session } from "next-auth";
 import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
-import type { Session } from "next-auth";
 import { HistoryButton } from "~/app/_components/HistoryButton";
 import { HistoryProvider } from "~/app/_components/HistoryContext";
 import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
@@ -150,7 +150,7 @@ async function LoggedIn({ session }: { session: Session }) {
 						/>
 					)}
 				</span>
-                <div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+				<div style={{ display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
 					<HistoryButton />
 					{isAdmin && (
 						<>

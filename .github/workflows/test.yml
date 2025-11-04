@@ -62,6 +62,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    concurrency:
+      group: publish-test-report
+      cancel-in-progress: false
 
     steps:
       - name: Load test report history

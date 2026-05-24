@@ -15,6 +15,9 @@ export type Reservation = {
 	abandoned?: Date;
 	team: TeamFull;
 	notes?: string;
+	// Opaque URL-safe token granting access (e.g. to the gate) during the reservation window.
+	// Backfilled for legacy reservations the first time they're loaded.
+	token?: string;
 };
 /////// Public-ish Interfaces //////
 

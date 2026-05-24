@@ -26,6 +26,7 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
+import { type AccessCheckResult, evaluateAccess } from "./access";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
@@ -52,6 +53,7 @@ declare global {
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
+	var __reservationsByToken: Map<string, Reservation> | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
 }
@@ -64,6 +66,7 @@ globalThis.__holidays ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
+globalThis.__reservationsByToken ||= new Map();
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
@@ -72,6 +75,12 @@ const holidays = globalThis.__holidays;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
+const reservationsByToken = globalThis.__reservationsByToken;
+
+function newReservationToken(): string {
+	// 24 random bytes ⇒ 32 url-safe characters, ~192 bits of entropy.
+	return crypto.randomBytes(24).toString("base64url");
+}
 
 type LogCommon = {
 	timestamp: Date;
@@ -161,12 +170,14 @@ export class Context {
 			id: crypto.randomUUID(),
 			userId: (await this.user).id,
 			created: ctx.timestamp,
+			token: newReservationToken(),
 		};
 
 		console.log(
 			`🟡 [${MODULE_INSTANCE_ID}] Adding to reservations array (current size: ${reservations.length}) - PID: ${process.pid}`,
 		);
 		reservations.push(res);
+		if (res.token) reservationsByToken.set(res.token, res);
 
 		jobs.push(
 			log({
@@ -700,6 +711,10 @@ async function initializePart(array: unknown[]) {
 			array.length = 0;
 		}
 
+		if (array === reservations) reservationsByToken.clear();
+
+		let backfilledTokens = false;
+
 		array.push(
 			...data.filter(item => {
 				// Filter out expired keys
@@ -723,9 +738,28 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
+				// Index reservation access tokens; backfill any missing ones so
+				// pre-existing reservations get a token too.
+				if (array === reservations) {
+					if (typeof item !== "object" || item === null) return false;
+					const reservation = item as Reservation;
+					if (!reservation.token) {
+						reservation.token = newReservationToken();
+						backfilledTokens = true;
+					}
+					reservationsByToken.set(reservation.token, reservation);
+				}
+
 				return true;
 			}),
 		);
+
+		if (backfilledTokens) {
+			// Persist the new tokens so they survive the next restart.
+			void writeJsonFile(RESERVATIONS_FILE, reservations).catch(err =>
+				console.error("Error persisting backfilled reservation tokens:", err),
+			);
+		}
 
 		notifyClientsAboutChange(array);
 	} catch (err) {
@@ -779,6 +813,21 @@ function getArrayName(array: unknown[]): string {
 	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);
 	exit(1); // Exit the process on initialization error
 });
+
+// ===== Access (Tool Authorization) =====
+/**
+ * Look up a reservation by its access token and decide whether it currently
+ * grants the given tool access. Used by the /api/access/check endpoint, which
+ * Gate Manager and other tool integrations call on every interaction.
+ *
+ * Callers must already have authenticated themselves with the scheduler bearer
+ * token before reaching here; this function trusts that and just runs policy.
+ */
+export async function checkAccess(token: string, tool: string): Promise<AccessCheckResult> {
+	await initialized();
+	const reservation = reservationsByToken.get(token);
+	return evaluateAccess(reservation, tool);
+}
 
 // ===== Calendar Feed Helpers =====
 /**

@@ -1033,3 +1033,11 @@
 	color: var(--text-secondary);
 	overflow-wrap: anywhere;
 }
+
+/* Admins are exempt from blackouts, so the add button stays: say why it's still there */
+.blackoutAdminHint {
+	font-size: 0.6rem;
+	line-height: 1.2;
+	font-style: italic;
+	opacity: 0.7;
+}

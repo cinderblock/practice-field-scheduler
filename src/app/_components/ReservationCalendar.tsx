@@ -266,10 +266,13 @@ export function ReservationCalendar({
 	initialReservations,
 	initialHolidays,
 	initialBlackouts,
+	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	initialBlackouts: Blackout[];
+	/** Admins may book over a blackout, so they still get the add button on a closed slot */
+	isAdmin?: boolean;
 }) {
 	const [historyDays, setHistoryDays] = useState(0);
 	const [additionalReservations, setAdditionalReservations] = useState<InitialReservations>([]);
@@ -370,6 +373,7 @@ export function ReservationCalendar({
 					initialReservations={allReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					isAdmin={isAdmin}
 				/>
 			</div>
 			<p>
@@ -419,6 +423,7 @@ function Days({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	isAdmin,
 }: {
 	start: string;
 	days: number;
@@ -426,6 +431,7 @@ function Days({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	isAdmin: boolean;
 }) {
 	// Ensure good type
 	daysHistory ??= 0;
@@ -443,6 +449,7 @@ function Days({
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					isAdmin={isAdmin}
 					isHistory={true}
 				/>
 			))}
@@ -477,6 +484,7 @@ function Days({
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					isAdmin={isAdmin}
 				/>
 			))}
 		</>
@@ -488,12 +496,14 @@ function DayWrapper({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	isAdmin,
 	isHistory = false,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	isAdmin: boolean;
 	isHistory?: boolean;
 }) {
 	return (
@@ -503,6 +513,7 @@ function DayWrapper({
 				initialReservations={initialReservations}
 				initialHolidays={initialHolidays}
 				blackouts={blackouts}
+				isAdmin={isAdmin}
 			/>
 		</div>
 	);
@@ -513,11 +524,13 @@ function Day({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	isAdmin,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	isAdmin: boolean;
 }) {
 	const closedAllDay = isWholeDayBlackedOut(blackouts, date);
 
@@ -563,6 +576,7 @@ function Day({
 							initialReservations={initialReservations}
 							initialHolidays={initialHolidays}
 							blackouts={blackouts}
+							isAdmin={isAdmin}
 						/>
 					);
 				})}
@@ -578,6 +592,7 @@ function TimeSlot({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	isAdmin,
 }: {
 	date: string;
 	startHour: number;
@@ -585,6 +600,7 @@ function TimeSlot({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	isAdmin: boolean;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [teamNumber, setTeamNumber] = useState(() => {
@@ -786,6 +802,7 @@ function TimeSlot({
 				<div className={styles.blackoutNotice}>
 					<span className={styles.blackoutLabel}>Closed</span>
 					{blackout.reason && <span className={styles.blackoutReason}>{blackout.reason}</span>}
+					{isAdmin && <span className={styles.blackoutAdminHint}>Admins can still book</span>}
 				</div>
 			)}
 			<div className={styles.reservationStack}>
@@ -813,8 +830,8 @@ function TimeSlot({
 					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
-			{/* Add reservation button */}
-			{!hasEnded && !blackout && (
+			{/* Add reservation button. Admins are exempt from blackouts, so they keep it. */}
+			{!hasEnded && (!blackout || isAdmin) && (
 				<button
 					style={{ userSelect: "none" }}
 					type="button"

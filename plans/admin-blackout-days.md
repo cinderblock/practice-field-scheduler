@@ -38,10 +38,13 @@ blacked-out slot, and the blackout is visible on the calendar and in the iCal fe
    feature, but keeping per-slot blackouts costs nothing and the data model already had it.
 5. **Blackouts are keyed by `id`** (like `Holiday`), not by `date`+`slot`. Date+slot cannot
    address a range.
-6. **Blackouts block everyone, including admins.** `restrictTimeframe` lets admins bypass
-   the 7-day window because that is a fairness policy; a blackout is a statement about
-   physical field availability, so it applies to all. An admin who wants an exception
-   removes the blackout or blacks out individual slots instead.
+6. **Blackouts block teams; admins are exempt.** Decided by the user on 2026-09-15. I had
+   initially made blackouts bind everyone, reasoning that a blackout is a statement about
+   physical field availability rather than a fairness policy like the 7-day window. The user
+   chose the other way, so `restrictBlackout` now mirrors `restrictTimeframe` and returns
+   early for admins. Because the capability has to be reachable, the calendar also passes
+   `isAdmin` down and keeps the add button on a closed slot for admins, labelled
+   "Admins can still book".
 7. **Creating a blackout does not cancel reservations that already exist inside it.**
    Silently destroying teams' bookings is worse than reporting them: `addBlackout` returns
    the conflicting reservations and the admin UI shows them so a human can follow up.
@@ -134,10 +137,13 @@ blacked-out slot, and the blackout is visible on the calendar and in the iCal fe
 
 ## Open questions for the user
 
-1. Should admins be able to book _over_ a blackout? Currently no — blackouts apply to
-   everyone (decision 6). Easy to relax to an admin bypass if you'd rather.
-2. Should creating a blackout offer to cancel the reservations it conflicts with?
-   Currently it reports them and leaves them alone (decision 7).
+Both resolved on 2026-09-15:
+
+1. ~~Should admins be able to book over a blackout?~~ **Yes** — see decision 6.
+2. ~~Should creating a blackout offer to cancel conflicting reservations?~~ **No**, report
+   only — see decision 7, unchanged.
+
+Not pushed: the user asked to keep the branch local for now.
 
 ## Things not to do
 

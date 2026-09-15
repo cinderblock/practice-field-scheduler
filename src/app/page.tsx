@@ -180,6 +180,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				initialReservations={reservationsByDate}
 				initialHolidays={holidays}
 				initialBlackouts={blackouts}
+				isAdmin={isAdmin}
 			/>
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />
 			<RenderTime time={new Date()} />

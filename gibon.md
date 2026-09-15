@@ -7,7 +7,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Key Features
 
 - **Field Reservations**: Teams can book practice time slots on specific dates
-- **Blackout Management**: Admins can close the field for a single day or a range of days, either entirely or for one time slot per day. Blacked-out slots cannot be reserved.
+- **Blackout Management**: Admins can close the field for a single day or a range of days, either entirely or for one time slot per day. Teams cannot reserve a blacked-out slot; admins are exempt and can book over one.
 - **Site Events**: Track field-wide events that affect availability
 - **User Management**: Role-based access control (admin vs team members)
 - **Calendar Feeds**: Public iCalendar (ICS) exports for integration with calendar apps

@@ -161,7 +161,7 @@ export function BlackoutsTable({ blackouts: initialBlackouts }: { blackouts: Bla
 
 			<p className={styles.intro}>
 				A blackout closes the practice field. Teams cannot book any slot it covers, and it shows on the calendar and in
-				the subscribed calendar feeds.
+				the subscribed calendar feeds. Admins are exempt and can still book over a blackout.
 			</p>
 
 			{error && <div className={styles.error}>{error}</div>}

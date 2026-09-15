@@ -147,16 +147,7 @@ export class Context {
 		await this.restrictToTeam(reservation.team, "Only team members can add reservations");
 		await this.restrictTimeframe(reservation.date);
 
-		// Blackouts describe the field being unavailable, so unlike the advance-reservation window
-		// they apply to admins too. An admin who needs the slot removes the blackout first.
-		const blackout = findBlackoutForSlot(blackouts, reservation.date, reservation.slot);
-		if (blackout) {
-			throw new Error(
-				blackout.reason
-					? `The field is blacked out for this time: ${blackout.reason}`
-					: "The field is blacked out for this time",
-			);
-		}
+		await this.restrictBlackout(reservation.date, reservation.slot);
 
 		const existingReservation = reservations.find(
 			r => r.date === reservation.date && r.slot === reservation.slot && r.team === reservation.team && !r.abandoned,
@@ -588,6 +579,25 @@ export class Context {
 		if (permissions === "admin") return;
 		if (permissions.includes(team)) return;
 		throw new PermissionError(message);
+	}
+
+	/**
+	 * Refuse a reservation in a slot an admin has blacked out.
+	 *
+	 * Admins are exempt, as they are for the advance-reservation window: they are the ones who set
+	 * the blackout, so they can still book over one without tearing it down first.
+	 */
+	private async restrictBlackout(date: EventDate, slot: TimeSlot) {
+		if (await this.isAdmin()) return;
+
+		const blackout = findBlackoutForSlot(blackouts, date, slot);
+		if (!blackout) return;
+
+		throw new PermissionError(
+			blackout.reason
+				? `The field is blacked out for this time: ${blackout.reason}`
+				: "The field is blacked out for this time",
+		);
 	}
 
 	private async restrictTimeframe(date: EventDate) {

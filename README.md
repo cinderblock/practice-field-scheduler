@@ -119,6 +119,8 @@ one time slot on each day of the range. While a blackout is in effect:
 
 - Teams cannot create a reservation in any slot it covers. The slot shows as **Closed** on the calendar,
   with the reason if one was given, and the add button is hidden.
+- Admins are exempt and can still book over a blackout, the same way they bypass the advance-reservation
+  window. They keep the add button on a closed slot, labelled so it's clear why it's there.
 - The blackout appears in the `all` and `site` calendar feeds — whole-day blackouts as all-day events,
   slot blackouts as one timed event per day.
 

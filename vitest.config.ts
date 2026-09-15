@@ -10,7 +10,7 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: "node",
-		setupFiles: ["allure-vitest/setup"],
+		setupFiles: ["./test/setup-env.ts", "allure-vitest/setup"],
 		reporters: [
 			"verbose",
 			[

@@ -73,6 +73,7 @@ describe("POST /api/access/check", () => {
 		const payload = {
 			valid: true,
 			tool: "gate",
+			user: { id: "user-1", name: "Jane Doe (1234)" },
 			team: { id: "1234", name: "Team 1234" },
 			reservation_id: "res-1",
 			window_starts_at: "2026-05-23T16:30:00.000Z",
@@ -90,6 +91,7 @@ describe("POST /api/access/check", () => {
 			valid: false as const,
 			reason: "unknown_token" as const,
 			tool: "gate",
+			user: null,
 			team: null,
 			window_starts_at: null,
 			window_ends_at: null,

@@ -1,3 +1,13 @@
+/**
+ * Simple FIFO mutex.
+ *
+ * NOT reentrant: holding code that calls another function which also tries
+ * to `acquire()` will deadlock waiting for itself. Callers must release
+ * before any reachable code path that re-enters. If you find yourself
+ * wanting to acquire a second time, extract the inner work into a helper
+ * that takes a "lock already held" flag, or factor the shared mutation
+ * into a single critical section.
+ */
 export class Lock {
 	private locked = false;
 	private queue: Array<() => void> = [];

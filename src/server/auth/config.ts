@@ -1,6 +1,7 @@
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import SlackProvider from "next-auth/providers/slack";
 import { env } from "../../env.js";
+import { isValidSlackName } from "../util/slackName";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -60,6 +61,17 @@ export const authConfig = {
 		 */
 	],
 	callbacks: {
+		signIn: ({ profile }) => {
+			if (!env.STRICT_SLACK_NAMES) return true;
+			if (!profile) return true;
+			const displayName = profile["https://slack.com/user_name"] as string | undefined;
+			const realName = (profile.name as string | undefined) ?? undefined;
+			const candidate = (displayName ?? "").trim() || (realName ?? "").trim();
+			if (isValidSlackName(candidate)) return true;
+			// Redirect to the login page with a custom error so we can render
+			// fix-your-name instructions instead of a generic auth failure.
+			return "/login?error=BadSlackName";
+		},
 		jwt: ({ token, profile }) => {
 			if (profile) {
 				token.displayName = profile.displayName;

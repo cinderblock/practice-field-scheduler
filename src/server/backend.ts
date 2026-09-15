@@ -26,10 +26,12 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
-import { type AccessCheckResult, evaluateAccess } from "./access";
+import { type AccessCheckResult, evaluateUserAccess } from "./access";
+import { notifyTeamOfReservation, selectReservationDmRecipients, sendAccessTokenWelcome } from "./notifications";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
+import { parseSlackName, pickNameForValidation } from "./util/slackName";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -53,7 +55,7 @@ declare global {
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
-	var __reservationsByToken: Map<string, Reservation> | undefined;
+	var __usersByAccessToken: Map<string, UserEntry> | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
 }
@@ -66,7 +68,7 @@ globalThis.__holidays ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
-globalThis.__reservationsByToken ||= new Map();
+globalThis.__usersByAccessToken ||= new Map();
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
@@ -75,11 +77,159 @@ const holidays = globalThis.__holidays;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
-const reservationsByToken = globalThis.__reservationsByToken;
+const usersByAccessToken = globalThis.__usersByAccessToken;
 
-function newReservationToken(): string {
+function newAccessToken(): string {
 	// 24 random bytes ⇒ 32 url-safe characters, ~192 bits of entropy.
 	return crypto.randomBytes(24).toString("base64url");
+}
+
+/**
+ * Lazily issue a per-user access token if the user doesn't have one yet,
+ * and ensure it's indexed in usersByAccessToken. Safe to call on every
+ * login — no-ops if already issued.
+ *
+ * Returns whether the token was issued on THIS call, so the caller can
+ * trigger one-time follow-up (e.g. DMing the user their gate URL).
+ */
+async function ensureAccessToken(user: UserEntry): Promise<{ tokenJustIssued: boolean }> {
+	if (user.accessToken) {
+		if (!usersByAccessToken.has(user.accessToken)) usersByAccessToken.set(user.accessToken, user);
+		return { tokenJustIssued: false };
+	}
+	const release = await changeLock.acquire();
+	// Re-check under the lock to avoid double-issuance on concurrent logins.
+	if (user.accessToken) {
+		release();
+		return { tokenJustIssued: false };
+	}
+	user.accessToken = newAccessToken();
+	usersByAccessToken.set(user.accessToken, user);
+	try {
+		await writeJsonFile(USERS_FILE, users);
+	} catch (err) {
+		console.error("Error persisting user access token:", err);
+	} finally {
+		release();
+	}
+	return { tokenJustIssued: true };
+}
+
+/**
+ * Fire-and-forget welcome DM (logs but doesn't throw). Pulled out so the
+ * login flow stays linear.
+ *
+ * Skipped if the user has no team membership — they'd just receive a link
+ * that doesn't open the gate, which is worse than no DM at all. Once they
+ * fix their Slack name (or an admin assigns teams), the next login issues
+ * a new token attempt? No — token is already issued; the *welcome* DM is
+ * one-shot. We accept that someone who logs in with a bad name then fixes
+ * it won't get a follow-up welcome DM; the gate URL itself just starts
+ * working. They can grab it from the admin UI in a follow-up.
+ */
+function fireWelcomeDm(user: UserEntry, slackId: string): void {
+	if (user.teams !== "admin" && user.teams.length === 0) {
+		console.warn(
+			`Skipping welcome DM for user ${user.id} (slack ${slackId}): no teams assigned (likely invalid Slack name format).`,
+		);
+		return;
+	}
+	void sendAccessTokenWelcome(user, slackId).then(outcome => {
+		if (!outcome.sent) {
+			console.warn(
+				`Welcome DM not sent to user ${user.id} (slack ${slackId}): ${outcome.reason}${
+					outcome.error ? ` — ${outcome.error}` : ""
+				}`,
+			);
+		}
+	});
+}
+
+/**
+ * Update a stored user record to match the fresh values from the current
+ * Slack session. Specifically:
+ *   - Re-sync `name` / `displayName` if Slack reports new values.
+ *   - If the display name parses as "First Last (1234[, 5678…])", treat
+ *     it as authoritative and update `teams` to match (admins are skipped).
+ * Persists the users file if anything changed. Logs a warning if the name
+ * doesn't parse; the actual login block when STRICT_SLACK_NAMES is on
+ * happens in the NextAuth signIn callback.
+ *
+ * Returns `teamsWentFromZero=true` when this sync moved the user from
+ * "no team membership" to "at least one team" — the caller uses that to
+ * fire the welcome DM that was skipped on a previous bad-name login.
+ */
+async function syncUserFromSession(
+	user: UserEntry,
+	sessionName: string | undefined,
+	sessionDisplayName: string | undefined,
+): Promise<{ teamsWentFromZero: boolean }> {
+	let dirty = false;
+	let teamsWentFromZero = false;
+
+	if (sessionName && sessionName !== user.name) {
+		user.name = sessionName;
+		dirty = true;
+	}
+	if (sessionDisplayName !== undefined && sessionDisplayName !== user.displayName) {
+		user.displayName = sessionDisplayName;
+		dirty = true;
+	}
+
+	const candidate = pickNameForValidation({ name: user.name, displayName: user.displayName });
+	const parsed = parseSlackName(candidate);
+
+	if (parsed && user.teams !== "admin") {
+		const wanted = [...parsed.teams].sort((a, b) => a - b);
+		const current = [...(user.teams as Team[])].sort((a, b) => a - b);
+		if (wanted.length !== current.length || wanted.some((t, i) => t !== current[i])) {
+			if (current.length === 0 && wanted.length > 0) teamsWentFromZero = true;
+			user.teams = wanted;
+			dirty = true;
+		}
+	} else if (!parsed) {
+		console.warn(`User ${user.id} has an invalid Slack name format: ${JSON.stringify(candidate)}`);
+	}
+
+	if (!dirty) return { teamsWentFromZero };
+
+	user.updated = new Date();
+	const release = await changeLock.acquire();
+	try {
+		await writeJsonFile(USERS_FILE, users);
+	} catch (err) {
+		console.error("Error persisting user sync:", err);
+	} finally {
+		release();
+	}
+	return { teamsWentFromZero };
+}
+
+/**
+ * Fire-and-forget DMs to every team-member of the reservation (excluding
+ * the creator). Best-effort — logs failures but never blocks the caller.
+ */
+function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
+	const { recipients, skipReason } = selectReservationDmRecipients(users, slackMappings, reservation, excludeUserId);
+	if (skipReason === "non_numeric_team") {
+		console.warn(
+			`Reservation ${reservation.id} has non-numeric team ${JSON.stringify(reservation.team)}; skipping DMs.`,
+		);
+		return;
+	}
+	if (recipients.length === 0) return;
+
+	void notifyTeamOfReservation(reservation, recipients)
+		.then(outcomes => {
+			const failed = outcomes.filter(o => !o.sent);
+			if (failed.length > 0) {
+				console.warn(
+					`Reservation ${reservation.id}: ${failed.length}/${outcomes.length} DM(s) failed:`,
+					failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+				);
+			}
+		})
+		.catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
 }
 
 type LogCommon = {
@@ -149,8 +299,8 @@ export class Context {
 
 	async addReservation(reservation: AddReservationArgs) {
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation START - PID: ${process.pid}`);
-		this.restrictToTeam(reservation.team, "Only team members can add reservations");
-		this.restrictTimeframe(reservation.date);
+		await this.restrictToTeam(reservation.team, "Only team members can add reservations");
+		await this.restrictTimeframe(reservation.date);
 
 		const existingReservation = reservations.find(
 			r => r.date === reservation.date && r.slot === reservation.slot && r.team === reservation.team && !r.abandoned,
@@ -170,14 +320,12 @@ export class Context {
 			id: crypto.randomUUID(),
 			userId: (await this.user).id,
 			created: ctx.timestamp,
-			token: newReservationToken(),
 		};
 
 		console.log(
 			`🟡 [${MODULE_INSTANCE_ID}] Adding to reservations array (current size: ${reservations.length}) - PID: ${process.pid}`,
 		);
 		reservations.push(res);
-		if (res.token) reservationsByToken.set(res.token, res);
 
 		jobs.push(
 			log({
@@ -201,6 +349,11 @@ export class Context {
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation END - PID: ${process.pid}`);
 
+		// Fire-and-forget DMs to other team members so they get a reminder
+		// + their personal gate link. Excludes the creator (they already know).
+		const creatorId = (await this.user).id;
+		fireReservationDmsForTeam(res, creatorId);
+
 		return res;
 	}
 
@@ -211,8 +364,8 @@ export class Context {
 			throw new Error("Reservation not found");
 		}
 
-		this.restrictToTeam(reservation.team, "Only team members can remove reservations");
-		this.restrictTimeframe(reservation.date);
+		await this.restrictToTeam(reservation.team, "Only team members can remove reservations");
+		await this.restrictTimeframe(reservation.date);
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -247,7 +400,7 @@ export class Context {
 	}
 
 	async addBlackout(blackout: Omit<Blackout, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can add blackouts");
+		await this.restrictToAdmin("Only admins can add blackouts");
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -280,7 +433,7 @@ export class Context {
 	}
 
 	async removeBlackout({ date, slot }: Omit<Blackout, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can remove blackouts");
+		await this.restrictToAdmin("Only admins can remove blackouts");
 
 		const blackout = blackouts.find(b => b.date === date && b.slot === slot);
 		if (!blackout) {
@@ -312,7 +465,7 @@ export class Context {
 	}
 
 	async addSiteEvent(event: Pick<SiteEvent, "date" | "notes">) {
-		this.restrictToAdmin("Only admins can add site events");
+		await this.restrictToAdmin("Only admins can add site events");
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -343,7 +496,7 @@ export class Context {
 	}
 
 	async removeSiteEvent({ date }: Omit<SiteEvent, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can remove site events");
+		await this.restrictToAdmin("Only admins can remove site events");
 
 		const event = siteEvents.find(e => e.date === date && !e.deleted);
 
@@ -372,7 +525,7 @@ export class Context {
 	}
 
 	async addHoliday(holiday: Omit<Holiday, "id">) {
-		this.restrictToAdmin("Only admins can add holidays");
+		await this.restrictToAdmin("Only admins can add holidays");
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -397,7 +550,7 @@ export class Context {
 	}
 
 	async removeHoliday({ id }: { id: string }) {
-		this.restrictToAdmin("Only admins can remove holidays");
+		await this.restrictToAdmin("Only admins can remove holidays");
 
 		const holiday = holidays.find(h => h.id === id && !h.deleted);
 		if (!holiday) {
@@ -431,6 +584,9 @@ export class Context {
 		const slackId = this.session.user.id;
 		const email = this.session.user.email ?? "";
 
+		const sessionName = this.session.user.name ?? undefined;
+		const sessionDisplayName = this.session.user.displayName;
+
 		// First check if we have a direct Slack ID mapping
 		const existingMapping = slackMappings.find(m => m.slackId === slackId);
 		if (existingMapping) {
@@ -441,6 +597,9 @@ export class Context {
 			if (user.disabled) {
 				throw new PermissionError("User disabled");
 			}
+			const { teamsWentFromZero } = await syncUserFromSession(user, sessionName, sessionDisplayName);
+			const { tokenJustIssued } = await ensureAccessToken(user);
+			if (tokenJustIssued || teamsWentFromZero) fireWelcomeDm(user, slackId);
 			return user;
 		}
 
@@ -463,22 +622,32 @@ export class Context {
 					})
 					.finally(release);
 
+				const { teamsWentFromZero } = await syncUserFromSession(existingUser, sessionName, sessionDisplayName);
+				const { tokenJustIssued } = await ensureAccessToken(existingUser);
+				if (tokenJustIssued || teamsWentFromZero) fireWelcomeDm(existingUser, slackId);
 				return existingUser;
 			}
 		}
 
 		// No existing user found, create new user entry
 		const newUserId = crypto.randomUUID();
+		const nameForUser = this.session.user.name ?? email ?? "Unknown";
+		const parsedSlackName = parseSlackName(
+			pickNameForValidation({ name: nameForUser, displayName: sessionDisplayName }),
+		);
+		const sortedTeams = parsedSlackName ? [...parsedSlackName.teams].sort((a, b) => a - b) : [];
 		const newUser: UserEntry = {
 			id: newUserId,
-			name: this.session.user.name ?? email ?? "Unknown",
-			displayName: this.session.user.displayName,
+			name: nameForUser,
+			displayName: sessionDisplayName,
 			created: new Date(),
 			updated: new Date(),
-			teams: FirstUserIsAdmin && !users.length ? "admin" : [],
+			teams: FirstUserIsAdmin && !users.length ? "admin" : sortedTeams,
 			email,
 			image: this.session.user.image ?? "",
+			accessToken: newAccessToken(),
 		};
+		if (newUser.accessToken) usersByAccessToken.set(newUser.accessToken, newUser);
 
 		const release = await changeLock.acquire();
 
@@ -496,6 +665,8 @@ export class Context {
 				writeJsonFile(getFilePath(a), a).catch(err => console.error("Error saving user data:", err)),
 			),
 		).then(release);
+
+		fireWelcomeDm(newUser, slackId);
 
 		return newUser;
 	}
@@ -543,6 +714,36 @@ export class Context {
 	private async restrictToAdmin(message: string) {
 		if (await this.isAdmin()) return;
 		throw new PermissionError(message);
+	}
+
+	/** Throws PermissionError if the current user isn't an admin. */
+	async assertAdmin(message = "Admin access required"): Promise<void> {
+		await this.restrictToAdmin(message);
+	}
+
+	/** Slack user ID (e.g. "U01ABCDEF") of the current session, for DM targeting. */
+	getSlackUserId(): string {
+		return this.session.user.id;
+	}
+
+	/**
+	 * Admin-only: list users whose Slack display name does NOT match the
+	 * expected "First Last (1234)" convention, alongside the Slack IDs that
+	 * map to them so callers can DM the user. Disabled users are excluded.
+	 */
+	async listUsersWithInvalidSlackName(): Promise<Array<{ user: UserEntry; slackIds: string[] }>> {
+		await this.assertAdmin("Only admins can audit user names");
+		await initialized();
+
+		const out: Array<{ user: UserEntry; slackIds: string[] }> = [];
+		for (const user of users) {
+			if (user.disabled) continue;
+			const candidate = pickNameForValidation(user);
+			if (parseSlackName(candidate) !== null) continue;
+			const slackIds = slackMappings.filter(m => m.userId === user.id).map(m => m.slackId);
+			out.push({ user, slackIds });
+		}
+		return out;
 	}
 
 	private async restrictToTeam(team: Team | TeamFull, message: string) {
@@ -711,9 +912,9 @@ async function initializePart(array: unknown[]) {
 			array.length = 0;
 		}
 
-		if (array === reservations) reservationsByToken.clear();
+		if (array === users) usersByAccessToken.clear();
 
-		let backfilledTokens = false;
+		let strippedDeadFields = false;
 
 		array.push(
 			...data.filter(item => {
@@ -727,6 +928,8 @@ async function initializePart(array: unknown[]) {
 					} else if (item.created < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)) {
 						item.disabled = true;
 					}
+					const user = item as UserEntry;
+					if (user.accessToken) usersByAccessToken.set(user.accessToken, user);
 				}
 
 				// Handle holidays with optional created/userId fields
@@ -738,26 +941,25 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
-				// Index reservation access tokens; backfill any missing ones so
-				// pre-existing reservations get a token too.
+				// Old per-reservation `token` field is dead since we switched to
+				// per-user access tokens. Scrub it on load so future writes drop it.
 				if (array === reservations) {
 					if (typeof item !== "object" || item === null) return false;
-					const reservation = item as Reservation;
-					if (!reservation.token) {
-						reservation.token = newReservationToken();
-						backfilledTokens = true;
+					const legacy = item as Reservation & { token?: string };
+					if (legacy.token !== undefined) {
+						legacy.token = undefined;
+						strippedDeadFields = true;
 					}
-					reservationsByToken.set(reservation.token, reservation);
 				}
 
 				return true;
 			}),
 		);
 
-		if (backfilledTokens) {
-			// Persist the new tokens so they survive the next restart.
+		if (strippedDeadFields && array === reservations) {
+			// Persist the cleanup so we don't keep paying it on every boot.
 			void writeJsonFile(RESERVATIONS_FILE, reservations).catch(err =>
-				console.error("Error persisting backfilled reservation tokens:", err),
+				console.error("Error persisting reservation cleanup:", err),
 			);
 		}
 
@@ -816,17 +1018,17 @@ function getArrayName(array: unknown[]): string {
 
 // ===== Access (Tool Authorization) =====
 /**
- * Look up a reservation by its access token and decide whether it currently
- * grants the given tool access. Used by the /api/access/check endpoint, which
- * Gate Manager and other tool integrations call on every interaction.
+ * Look up the user behind a per-user access token and decide whether they
+ * currently have access to the given tool. The Gate Manager and other tool
+ * integrations call this on every interaction via /api/access/check.
  *
  * Callers must already have authenticated themselves with the scheduler bearer
  * token before reaching here; this function trusts that and just runs policy.
  */
 export async function checkAccess(token: string, tool: string): Promise<AccessCheckResult> {
 	await initialized();
-	const reservation = reservationsByToken.get(token);
-	return evaluateAccess(reservation, tool);
+	const user = usersByAccessToken.get(token);
+	return evaluateUserAccess(user, tool, reservations);
 }
 
 // ===== Calendar Feed Helpers =====

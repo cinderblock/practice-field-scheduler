@@ -1,5 +1,6 @@
 import { holidayRouter } from "~/server/api/routers/holiday";
 import { reservationRouter } from "~/server/api/routers/reservation";
+import { slackRouter } from "~/server/api/routers/slack";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 
 /**
@@ -10,6 +11,7 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 export const appRouter = createTRPCRouter({
 	reservation: reservationRouter,
 	holiday: holidayRouter,
+	slack: slackRouter,
 });
 
 // export type definition of API

@@ -1,32 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { ACCESS_POST_END_GRACE_MS, ACCESS_PRE_START_GRACE_MS, evaluateAccess } from "~/server/access";
-import type { Reservation } from "~/types";
+import { ACCESS_POST_END_GRACE_MS, ACCESS_PRE_START_GRACE_MS, evaluateUserAccess } from "~/server/access";
+import type { Reservation, UserEntry } from "~/types";
 
-const baseReservation: Reservation = {
+const baseUser: UserEntry = {
+	id: "user-1",
+	name: "Jane Doe",
+	displayName: "Jane Doe (1234)",
+	created: new Date("2026-05-01T00:00:00Z"),
+	updated: new Date("2026-05-01T00:00:00Z"),
+	teams: [1234],
+	email: "jane@example.com",
+	image: "",
+	accessToken: "tok-jane",
+};
+
+const teamReservation: Reservation = {
 	id: "res-1",
 	date: "2026-05-23",
 	slot: "10:00am",
 	created: new Date("2026-05-20T00:00:00Z"),
-	userId: "user-1",
+	userId: baseUser.id,
 	priority: false,
 	team: 1234,
-	token: "tok-1234",
 };
 
-// In .env.test the time zone is America/Los_Angeles and the 10am slot ends at
-// 4pm local (16:00 LA / 23:00 UTC during PDT). With grace, the window is:
-//   start = 2026-05-23T17:00Z − 30m = 2026-05-23T16:30Z
-//   end   = 2026-05-23T23:00Z + 6h  = 2026-05-24T05:00Z
+// 10am LA slot ends at 4pm LA (16/23:00Z PDT). With ±grace:
+//   start = 17:00Z − 30m = 16:30Z
+//   end   = 23:00Z + 6h  = 05:00Z next day
 const expectedStart = "2026-05-23T16:30:00.000Z";
 const expectedEnd = "2026-05-24T05:00:00.000Z";
 
-describe("evaluateAccess", () => {
+describe("evaluateUserAccess", () => {
 	it("returns valid inside the window for the gate tool", () => {
 		const inside = new Date("2026-05-23T18:00:00Z");
-		const result = evaluateAccess(baseReservation, "gate", inside);
+		const result = evaluateUserAccess(baseUser, "gate", [teamReservation], inside);
 		expect(result).toEqual({
 			valid: true,
 			tool: "gate",
+			user: { id: "user-1", name: "Jane Doe (1234)" },
 			team: { id: "1234", name: "Team 1234" },
 			reservation_id: "res-1",
 			window_starts_at: expectedStart,
@@ -34,16 +45,16 @@ describe("evaluateAccess", () => {
 		});
 	});
 
-	it("returns valid exactly at the pre-start grace boundary", () => {
+	it("returns valid at the pre-start grace boundary", () => {
 		const slotStart = new Date("2026-05-23T17:00:00Z");
 		const atStart = new Date(slotStart.getTime() - ACCESS_PRE_START_GRACE_MS);
-		const result = evaluateAccess(baseReservation, "gate", atStart);
+		const result = evaluateUserAccess(baseUser, "gate", [teamReservation], atStart);
 		expect(result.valid).toBe(true);
 	});
 
-	it("returns outside_window before the grace start", () => {
-		const before = new Date("2026-05-23T16:29:59Z");
-		const result = evaluateAccess(baseReservation, "gate", before);
+	it("returns outside_window with the nearest reservation window populated", () => {
+		const before = new Date("2026-05-23T15:00:00Z");
+		const result = evaluateUserAccess(baseUser, "gate", [teamReservation], before);
 		expect(result).toMatchObject({
 			valid: false,
 			reason: "outside_window",
@@ -54,63 +65,111 @@ describe("evaluateAccess", () => {
 		});
 	});
 
-	it("returns outside_window after the grace end", () => {
-		const slotEnd = new Date("2026-05-23T23:00:00Z");
-		const after = new Date(slotEnd.getTime() + ACCESS_POST_END_GRACE_MS + 1000);
-		const result = evaluateAccess(baseReservation, "gate", after);
-		expect(result.valid).toBe(false);
-		if (result.valid) return;
-		expect(result.reason).toBe("outside_window");
-	});
-
-	it("returns revoked for abandoned reservations even inside the window", () => {
-		const abandoned: Reservation = { ...baseReservation, abandoned: new Date("2026-05-22T00:00:00Z") };
-		const inside = new Date("2026-05-23T18:00:00Z");
-		const result = evaluateAccess(abandoned, "gate", inside);
+	it("returns outside_window with null windows when the user has no reservations at all", () => {
+		const result = evaluateUserAccess(baseUser, "gate", [], new Date());
 		expect(result).toMatchObject({
 			valid: false,
-			reason: "revoked",
-			tool: "gate",
-			team: { id: "1234", name: "Team 1234" },
-		});
-	});
-
-	it("returns tool_not_authorized for unknown tools", () => {
-		const inside = new Date("2026-05-23T18:00:00Z");
-		const result = evaluateAccess(baseReservation, "laser-cannon", inside);
-		expect(result).toMatchObject({
-			valid: false,
-			reason: "tool_not_authorized",
-			tool: "laser-cannon",
-			team: { id: "1234", name: "Team 1234" },
-		});
-	});
-
-	it("returns unknown_token when no reservation matches", () => {
-		const result = evaluateAccess(undefined, "gate", new Date());
-		expect(result).toEqual({
-			valid: false,
-			reason: "unknown_token",
-			tool: "gate",
+			reason: "outside_window",
 			team: null,
 			window_starts_at: null,
 			window_ends_at: null,
 		});
 	});
 
-	it("prefers the revoked reason over tool_not_authorized when both apply", () => {
-		const abandoned: Reservation = { ...baseReservation, abandoned: new Date("2026-05-22T00:00:00Z") };
-		const result = evaluateAccess(abandoned, "laser-cannon", new Date("2026-05-23T18:00:00Z"));
+	it("ignores abandoned reservations", () => {
+		const abandoned: Reservation = { ...teamReservation, abandoned: new Date("2026-05-22T00:00:00Z") };
+		const inside = new Date("2026-05-23T18:00:00Z");
+		const result = evaluateUserAccess(baseUser, "gate", [abandoned], inside);
+		expect(result.valid).toBe(false);
+		if (result.valid) return;
+		expect(result.reason).toBe("outside_window");
+	});
+
+	it("ignores reservations for other teams", () => {
+		const otherTeamRes: Reservation = { ...teamReservation, id: "res-2", team: 9999 };
+		const inside = new Date("2026-05-23T18:00:00Z");
+		const result = evaluateUserAccess(baseUser, "gate", [otherTeamRes], inside);
+		expect(result.valid).toBe(false);
+		if (result.valid) return;
+		expect(result.reason).toBe("outside_window");
+		expect(result.team).toBeNull();
+	});
+
+	it("matches reservations for any of the user's teams (multi-team)", () => {
+		const multiTeamUser = { ...baseUser, teams: [1234, 5678] };
+		const otherTeamRes: Reservation = { ...teamReservation, id: "res-2", team: 5678 };
+		const inside = new Date("2026-05-23T18:00:00Z");
+		const result = evaluateUserAccess(multiTeamUser, "gate", [otherTeamRes], inside);
+		expect(result.valid).toBe(true);
+		if (!result.valid) return;
+		expect(result.team).toEqual({ id: "5678", name: "Team 5678" });
+	});
+
+	it("returns revoked for disabled users", () => {
+		const disabled = { ...baseUser, disabled: true };
+		const result = evaluateUserAccess(disabled, "gate", [teamReservation], new Date("2026-05-23T18:00:00Z"));
+		expect(result).toMatchObject({
+			valid: false,
+			reason: "revoked",
+			user: { id: "user-1" },
+		});
+	});
+
+	it("returns revoked for users with no teams", () => {
+		const teamless = { ...baseUser, teams: [] };
+		const result = evaluateUserAccess(teamless, "gate", [teamReservation], new Date("2026-05-23T18:00:00Z"));
 		expect(result.valid).toBe(false);
 		if (result.valid) return;
 		expect(result.reason).toBe("revoked");
 	});
 
-	it("accepts string team identifiers", () => {
-		const houseRes: Reservation = { ...baseReservation, team: "house-1" };
-		const result = evaluateAccess(houseRes, "gate", new Date("2026-05-23T18:00:00Z"));
+	it("returns revoked for admin users (no auto-access)", () => {
+		const adminUser = { ...baseUser, teams: "admin" as const };
+		const result = evaluateUserAccess(adminUser, "gate", [teamReservation], new Date("2026-05-23T18:00:00Z"));
+		expect(result.valid).toBe(false);
+		if (result.valid) return;
+		expect(result.reason).toBe("revoked");
+	});
+
+	it("returns tool_not_authorized for unknown tools", () => {
+		const result = evaluateUserAccess(baseUser, "laser-cannon", [teamReservation], new Date("2026-05-23T18:00:00Z"));
+		expect(result).toMatchObject({
+			valid: false,
+			reason: "tool_not_authorized",
+			tool: "laser-cannon",
+			user: { id: "user-1" },
+		});
+	});
+
+	it("returns unknown_token when no user matches", () => {
+		const result = evaluateUserAccess(undefined, "gate", [teamReservation], new Date());
+		expect(result).toEqual({
+			valid: false,
+			reason: "unknown_token",
+			tool: "gate",
+			user: null,
+			team: null,
+			window_starts_at: null,
+			window_ends_at: null,
+		});
+	});
+
+	it("prefers the active reservation when one is currently in-window", () => {
+		const past: Reservation = { ...teamReservation, id: "past", date: "2026-05-20" };
+		const future: Reservation = { ...teamReservation, id: "future", date: "2026-05-30" };
+		const inside = new Date("2026-05-23T18:00:00Z");
+		const result = evaluateUserAccess(baseUser, "gate", [past, teamReservation, future], inside);
 		expect(result.valid).toBe(true);
 		if (!result.valid) return;
-		expect(result.team).toEqual({ id: "house-1", name: "Team house-1" });
+		expect(result.reservation_id).toBe("res-1");
+	});
+
+	it("post-window: rejects after the +6h grace ends", () => {
+		const slotEnd = new Date("2026-05-23T23:00:00Z");
+		const after = new Date(slotEnd.getTime() + ACCESS_POST_END_GRACE_MS + 1000);
+		const result = evaluateUserAccess(baseUser, "gate", [teamReservation], after);
+		expect(result.valid).toBe(false);
+		if (result.valid) return;
+		expect(result.reason).toBe("outside_window");
 	});
 });

@@ -15,9 +15,6 @@ export type Reservation = {
 	abandoned?: Date;
 	team: TeamFull;
 	notes?: string;
-	// Opaque URL-safe token granting access (e.g. to the gate) during the reservation window.
-	// Backfilled for legacy reservations the first time they're loaded.
-	token?: string;
 };
 /////// Public-ish Interfaces //////
 
@@ -55,6 +52,9 @@ export type UserEntry = {
 	teams: Team[] | "admin";
 	email: string;
 	image: string;
+	// Opaque URL-safe token a user enrolls in their browser for tool integrations
+	// (e.g. the gate). Issued lazily on first login and reused for the whole season.
+	accessToken?: string;
 };
 
 export type Holiday = {

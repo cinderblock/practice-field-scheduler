@@ -110,6 +110,24 @@ npm test
 
 The `test` script runs unit/integration tests with Vitest first and then the browser E2E tests with Playwright.
 
+### Blackouts (admin)
+
+Admins can close the field from the **Blackouts** page (linked from the calendar header, or at `/blackouts`).
+
+A blackout covers either a single day or an inclusive range of days, and applies either to the whole day or to
+one time slot on each day of the range. While a blackout is in effect:
+
+- Teams cannot create a reservation in any slot it covers. The slot shows as **Closed** on the calendar,
+  with the reason if one was given, and the add button is hidden.
+- The blackout appears in the `all` and `site` calendar feeds — whole-day blackouts as all-day events,
+  slot blackouts as one timed event per day.
+
+Creating a blackout does **not** cancel reservations that already exist inside it. Any that conflict are
+listed back to the admin so the affected teams can be contacted first. Removing the blackout reopens the
+slots immediately.
+
+Blackouts, like all scheduling data, are scoped to the current calendar year.
+
 ### Calendar Feeds (public)
 
 We expose iCalendar (ICS) feeds that you can subscribe to in Google Calendar, Apple Calendar, Outlook, etc.

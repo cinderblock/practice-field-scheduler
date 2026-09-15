@@ -130,14 +130,18 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
-	// Get holidays for the calendar
+	// Get holidays and blackouts for the calendar
 	const holidays = await ctx.getHolidays();
+	const blackouts = await ctx.getBlackouts();
 
 	return (
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
 				<span>
 					Logged in as {session.user?.displayName ?? session.user?.name}
+					{session.user?.displayName && session.user?.name && session.user.displayName !== session.user.name && (
+						<span style={{ color: "var(--text-secondary)" }}> ({session.user.name})</span>
+					)}
 					{session.user?.image && (
 						<Image
 							style={{ userSelect: "none" }}
@@ -146,7 +150,6 @@ async function LoggedIn({ session }: { session: Session }) {
 							className={styles.profileImage}
 							width={48}
 							height={48}
-							title={session.user.displayName && session.user.name ? session.user.name : undefined}
 						/>
 					)}
 				</span>
@@ -163,6 +166,9 @@ async function LoggedIn({ session }: { session: Session }) {
 							<Link href="/holidays" className={styles.logoutButtonSmall}>
 								Holidays
 							</Link>
+							<Link href="/blackouts" className={styles.logoutButtonSmall}>
+								Blackouts
+							</Link>
 						</>
 					)}
 					<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
@@ -170,7 +176,11 @@ async function LoggedIn({ session }: { session: Session }) {
 					</Link>
 				</div>
 			</div>
-			<ReservationCalendar initialReservations={reservationsByDate} initialHolidays={holidays} />
+			<ReservationCalendar
+				initialReservations={reservationsByDate}
+				initialHolidays={holidays}
+				initialBlackouts={blackouts}
+			/>
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />
 			<RenderTime time={new Date()} />
 		</div>

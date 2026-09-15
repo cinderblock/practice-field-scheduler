@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 import type { Session } from "next-auth";
 import { env } from "~/env";
 import type {
+	AddBlackoutArgs,
 	AddReservationArgs,
 	Blackout,
 	EventDate,
@@ -26,6 +27,7 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
+import { activeBlackouts, blackoutCoversSlot, findBlackoutForSlot, normalizeBlackoutRange } from "./util/blackout";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
@@ -90,8 +92,10 @@ type LogReservationEntry = LogCommon & {
 
 type LogBlackoutEntry = LogCommon & {
 	type: "blackoutAdd" | "blackoutRemove";
+	id: string;
 	date: EventDate;
-	slot: TimeSlot;
+	endDate?: EventDate;
+	slot?: TimeSlot; // Absent when the whole day is blacked out
 	reason?: string;
 };
 
@@ -140,8 +144,19 @@ export class Context {
 
 	async addReservation(reservation: AddReservationArgs) {
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation START - PID: ${process.pid}`);
-		this.restrictToTeam(reservation.team, "Only team members can add reservations");
-		this.restrictTimeframe(reservation.date);
+		await this.restrictToTeam(reservation.team, "Only team members can add reservations");
+		await this.restrictTimeframe(reservation.date);
+
+		// Blackouts describe the field being unavailable, so unlike the advance-reservation window
+		// they apply to admins too. An admin who needs the slot removes the blackout first.
+		const blackout = findBlackoutForSlot(blackouts, reservation.date, reservation.slot);
+		if (blackout) {
+			throw new Error(
+				blackout.reason
+					? `The field is blacked out for this time: ${blackout.reason}`
+					: "The field is blacked out for this time",
+			);
+		}
 
 		const existingReservation = reservations.find(
 			r => r.date === reservation.date && r.slot === reservation.slot && r.team === reservation.team && !r.abandoned,
@@ -200,8 +215,8 @@ export class Context {
 			throw new Error("Reservation not found");
 		}
 
-		this.restrictToTeam(reservation.team, "Only team members can remove reservations");
-		this.restrictTimeframe(reservation.date);
+		await this.restrictToTeam(reservation.team, "Only team members can remove reservations");
+		await this.restrictTimeframe(reservation.date);
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -235,18 +250,34 @@ export class Context {
 		return reservation;
 	}
 
-	async addBlackout(blackout: Omit<Blackout, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can add blackouts");
+	/**
+	 * Black out the field for a single day, or for an inclusive range of days.
+	 *
+	 * Reservations that already exist inside the new blackout are left alone and returned to the
+	 * caller, so an admin can decide what to do about them rather than having them silently
+	 * cancelled.
+	 */
+	async addBlackout(blackout: AddBlackoutArgs) {
+		await this.restrictToAdmin("Only admins can add blackouts");
+
+		// Throws if the range runs backwards
+		const { date, endDate, slot, reason } = normalizeBlackoutRange(blackout);
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		const newBlackout: Blackout = {
-			...blackout,
+			id: crypto.randomUUID(),
+			date,
+			endDate,
+			slot,
+			reason,
 			created: ctx.timestamp,
-			userId: (await this.user).id, // Update the user ID to the current user
+			userId: ctx.userId,
 		};
+
+		const conflicts = reservations.filter(r => !r.abandoned && blackoutCoversSlot(newBlackout, r.date, r.slot));
 
 		blackouts.push(newBlackout);
 
@@ -254,9 +285,11 @@ export class Context {
 			log({
 				...ctx,
 				type: "blackoutAdd",
-				date: blackout.date,
-				slot: blackout.slot,
-				reason: blackout.reason,
+				id: newBlackout.id,
+				date,
+				endDate,
+				slot,
+				reason,
 			}),
 		);
 
@@ -266,29 +299,34 @@ export class Context {
 
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return { blackout: { ...newBlackout }, conflicts: conflicts.map(r => ({ ...r })) };
 	}
 
-	async removeBlackout({ date, slot }: Omit<Blackout, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can remove blackouts");
+	async removeBlackout({ id }: { id: string }) {
+		await this.restrictToAdmin("Only admins can remove blackouts");
 
-		const blackout = blackouts.find(b => b.date === date && b.slot === slot);
+		const blackout = blackouts.find(b => b.id === id && !b.deleted);
 		if (!blackout) {
 			throw new Error("Blackout not found");
 		}
 
-		const jobs: Promise<unknown>[] = [];
-		const ctx = await this.getContext();
 		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
 
 		blackout.deleted = ctx.timestamp; // Mark as deleted
-		blackout.userId = (await this.user).id; // Update the user ID to the current user
+		blackout.userId = ctx.userId; // Update the user ID to the current user
 
 		jobs.push(
 			log({
 				...ctx,
 				type: "blackoutRemove",
+				id: blackout.id,
 				date: blackout.date,
+				endDate: blackout.endDate,
 				slot: blackout.slot,
+				reason: blackout.reason,
 			}),
 		);
 
@@ -298,10 +336,19 @@ export class Context {
 
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return { ...blackout };
+	}
+
+	/** Every blackout still in effect. Any signed-in user may read these; the calendar needs them. */
+	async getBlackouts(): Promise<Blackout[]> {
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		return activeBlackouts(blackouts).map(b => ({ ...b }));
 	}
 
 	async addSiteEvent(event: Pick<SiteEvent, "date" | "notes">) {
-		this.restrictToAdmin("Only admins can add site events");
+		await this.restrictToAdmin("Only admins can add site events");
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -332,7 +379,7 @@ export class Context {
 	}
 
 	async removeSiteEvent({ date }: Omit<SiteEvent, "created" | "userId" | "deleted">) {
-		this.restrictToAdmin("Only admins can remove site events");
+		await this.restrictToAdmin("Only admins can remove site events");
 
 		const event = siteEvents.find(e => e.date === date && !e.deleted);
 
@@ -361,7 +408,7 @@ export class Context {
 	}
 
 	async addHoliday(holiday: Omit<Holiday, "id">) {
-		this.restrictToAdmin("Only admins can add holidays");
+		await this.restrictToAdmin("Only admins can add holidays");
 
 		const release = await changeLock.acquire();
 		const ctx = await this.getContext();
@@ -386,7 +433,7 @@ export class Context {
 	}
 
 	async removeHoliday({ id }: { id: string }) {
-		this.restrictToAdmin("Only admins can remove holidays");
+		await this.restrictToAdmin("Only admins can remove holidays");
 
 		const holiday = holidays.find(h => h.id === id && !h.deleted);
 		if (!holiday) {
@@ -700,6 +747,10 @@ async function initializePart(array: unknown[]) {
 			array.length = 0;
 		}
 
+		// Set when loading rewrote any record, so the migration is persisted instead of being redone
+		// (with different ids) on every boot
+		let migrated = false;
+
 		array.push(
 			...data.filter(item => {
 				// Filter out expired keys
@@ -723,9 +774,26 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
+				if (array === blackouts) {
+					if (typeof item !== "object" || item === null) return false;
+					if (item.created) item.created = new Date(item.created);
+					if (item.deleted) item.deleted = new Date(item.deleted);
+					// Blackouts written before they gained ranges were keyed by date+slot alone. Give
+					// them a stable id so they can be removed like any other.
+					if (!item.id) {
+						item.id = crypto.randomUUID();
+						migrated = true;
+					}
+				}
+
 				return true;
 			}),
 		);
+
+		if (migrated) {
+			await writeJsonFile(filePath, array as JsonData);
+			console.log(`🔧 [${MODULE_INSTANCE_ID}] Migrated ${arrayName} on load - PID: ${process.pid}`);
+		}
 
 		notifyClientsAboutChange(array);
 	} catch (err) {

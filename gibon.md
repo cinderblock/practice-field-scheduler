@@ -7,7 +7,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Key Features
 
 - **Field Reservations**: Teams can book practice time slots on specific dates
-- **Blackout Management**: Admins can block dates/times when fields are unavailable
+- **Blackout Management**: Admins can close the field for a single day or a range of days, either entirely or for one time slot per day. Blacked-out slots cannot be reserved.
 - **Site Events**: Track field-wide events that affect availability
 - **User Management**: Role-based access control (admin vs team members)
 - **Calendar Feeds**: Public iCalendar (ICS) exports for integration with calendar apps
@@ -43,6 +43,8 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 │   │   │   ├── auth/            # NextAuth.js endpoints
 │   │   │   ├── calendar/        # iCalendar feed endpoints
 │   │   │   └── trpc/            # tRPC API handler
+│   │   ├── blackouts/           # Blackout management page (admin)
+│   │   ├── holidays/            # Holiday management page (admin)
 │   │   ├── logs/                # Admin logs page
 │   │   ├── users/               # User management page
 │   │   ├── layout.tsx           # Root layout component
@@ -56,7 +58,9 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 │   │   ├── util/                # Server utilities
 │   │   │   ├── JsonData.ts      # JSON data type definitions
 │   │   │   ├── Lock.ts          # Concurrency control
+│   │   │   ├── blackout.ts      # Blackout range/coverage logic (pure)
 │   │   │   ├── exit.ts          # Process exit helper
+│   │   │   ├── timeSlots.ts     # Time slot derivation from configured borders
 │   │   │   └── timeUtils.ts     # Date/time utilities
 │   │   ├── backend.ts           # Main backend logic and data management
 │   │   ├── calendarFeed.ts      # iCalendar generation
@@ -69,7 +73,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ├── data/                        # JSON data storage
 │   ├── {YEAR}/                  # Year-specific data
 │   │   ├── reservations.json    # Reservation records
-│   │   ├── blackouts.json       # Blackout periods
+│   │   ├── blackouts.json       # Blackout periods (single day or range)
 │   │   ├── events.json          # Site events
 │   │   ├── teams.json           # Team definitions
 │   │   └── logs.txt             # Activity logs
@@ -96,7 +100,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Data Types (`src/types.ts`)
 
 - **Reservation**: Core booking entity with date, time slot, team, and metadata
-- **Blackout**: Admin-defined unavailable periods
+- **Blackout**: Admin-defined unavailable period. Covers the inclusive range `date`..`endDate` (`endDate` omitted means a single day); an omitted `slot` closes the whole day. Identified by `id`; removal is a soft delete via `deleted`.
 - **SiteEvent**: Field-wide events affecting availability
 - **UserEntry**: User account with team memberships and permissions
 - **EventDate**: String format (YYYY-MM-DD)

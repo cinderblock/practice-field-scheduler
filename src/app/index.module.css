@@ -315,14 +315,14 @@
 
 .holidayIcons {
 	display: flex;
-	gap: 0.125rem;
+	flex-wrap: wrap;
+	gap: 0.4rem;
 	margin-right: 0.25rem;
 	align-items: center;
 }
 
 .holidayIcon {
 	font-size: 0.9em;
-	cursor: help;
 	opacity: 0.8;
 	transition: opacity 0.2s;
 	line-height: 1;
@@ -339,6 +339,7 @@
 	color: inherit;
 	display: inline-flex;
 	align-items: center;
+	gap: 0.2rem;
 	transition: transform 0.2s ease;
 }
 
@@ -950,4 +951,85 @@
 		height: 60px;
 		font-size: 1.5rem;
 	}
+}
+
+/* ===== Holidays ===== */
+
+.holidayEntry {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2rem;
+}
+
+/* The holiday name sits next to its icon instead of in a tooltip, which touch devices can't show */
+.holidayName {
+	font-size: 0.7rem;
+	color: var(--text-secondary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 8rem;
+}
+
+/* ===== Blackouts ===== */
+
+.dayClosed {
+	background: repeating-linear-gradient(
+		135deg,
+		var(--background-secondary),
+		var(--background-secondary) 10px,
+		var(--background-weekend) 10px,
+		var(--background-weekend) 20px
+	);
+}
+
+.dayClosedChip {
+	display: inline-block;
+	align-self: flex-start;
+	border: 1px solid var(--accent-color);
+	border-radius: 999px;
+	padding: 0 0.5rem;
+	font-size: 0.7rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--accent-color);
+	white-space: nowrap;
+	user-select: none;
+}
+
+.timeSlotBlackedOut {
+	background: repeating-linear-gradient(
+		135deg,
+		var(--background-secondary),
+		var(--background-secondary) 8px,
+		var(--background-hover) 8px,
+		var(--background-hover) 16px
+	);
+	cursor: not-allowed;
+}
+
+.blackoutNotice {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.1rem;
+	padding: 0.2rem 0.3rem;
+	text-align: center;
+	user-select: none;
+}
+
+.blackoutLabel {
+	font-size: 0.7rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--accent-color);
+}
+
+.blackoutReason {
+	font-size: 0.7rem;
+	line-height: 1.2;
+	color: var(--text-secondary);
+	overflow-wrap: anywhere;
 }

@@ -1,0 +1,281 @@
+.container {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+}
+
+.header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.header h2 {
+	margin: 0;
+}
+
+.intro {
+	margin: 0;
+	color: var(--text-secondary);
+	font-size: 0.9rem;
+	max-width: 60ch;
+}
+
+.addButton {
+	background: var(--accent-color);
+	color: var(--background-secondary);
+	border: none;
+	padding: 0.5rem 1rem;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+
+.addButton:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+
+.addButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.addForm {
+	background: var(--background-primary);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 1.5rem;
+}
+
+.addForm h3 {
+	margin: 0 0 1rem 0;
+}
+
+.formRow {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	margin-bottom: 1.25rem;
+}
+
+.formRow label {
+	font-weight: 600;
+}
+
+.formRow input[type="date"],
+.formRow input[type="text"],
+.formRow select {
+	padding: 0.5rem;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	font-size: 0.9rem;
+	background: var(--background-secondary);
+	color: var(--text-primary);
+	max-width: 28rem;
+}
+
+.formRow input:focus,
+.formRow select:focus {
+	outline: 2px solid var(--accent-color);
+	outline-offset: 1px;
+}
+
+.checkboxLabel {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.hint {
+	color: var(--text-secondary);
+	font-size: 0.8rem;
+}
+
+.fieldError {
+	color: #ff8080;
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+
+.formActions {
+	display: flex;
+	gap: 1rem;
+	margin-top: 1rem;
+}
+
+.saveButton {
+	background: var(--accent-color);
+	color: var(--background-secondary);
+	border: none;
+	padding: 0.5rem 1rem;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+
+.saveButton:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+
+.saveButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.cancelButton {
+	background: transparent;
+	color: var(--text-primary);
+	border: 1px solid var(--border-color);
+	padding: 0.5rem 1rem;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9rem;
+}
+
+.cancelButton:hover {
+	background: var(--background-hover);
+}
+
+.error {
+	background: rgba(220, 53, 69, 0.15);
+	border: 1px solid #dc3545;
+	border-radius: 6px;
+	padding: 0.75rem 1rem;
+	font-size: 0.9rem;
+}
+
+.warning {
+	background: rgba(247, 200, 115, 0.12);
+	border: 1px solid var(--accent-color);
+	border-radius: 6px;
+	padding: 1rem;
+	font-size: 0.9rem;
+}
+
+.warning p {
+	margin: 0.5rem 0;
+	color: var(--text-secondary);
+}
+
+.warningTitle {
+	font-weight: 700;
+}
+
+.conflictList {
+	margin: 0.5rem 0 1rem;
+	padding-left: 1.25rem;
+}
+
+.list h3 {
+	margin: 0 0 1rem 0;
+}
+
+.emptyMessage {
+	color: var(--text-secondary);
+	font-style: italic;
+	padding: 1.5rem;
+	text-align: center;
+	border: 1px dashed var(--border-color);
+	border-radius: 8px;
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+	gap: 1rem;
+}
+
+.card {
+	background: var(--background-primary);
+	border: 1px solid var(--border-color);
+	border-left: 4px solid var(--accent-color);
+	border-radius: 8px;
+	padding: 1rem;
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+	transition: box-shadow 0.2s;
+}
+
+.card:hover {
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.pastCard {
+	opacity: 0.6;
+	border-left-color: var(--border-color);
+}
+
+.cardInfo {
+	flex: 1;
+	min-width: 0;
+}
+
+.cardDates {
+	font-weight: 600;
+	margin-bottom: 0.4rem;
+}
+
+.cardMeta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4rem;
+	margin-bottom: 0.4rem;
+}
+
+.chip {
+	background: var(--background-secondary);
+	border: 1px solid var(--border-color);
+	border-radius: 999px;
+	padding: 0.1rem 0.6rem;
+	font-size: 0.75rem;
+	color: var(--text-secondary);
+	white-space: nowrap;
+}
+
+.cardReason {
+	font-size: 0.9rem;
+	overflow-wrap: anywhere;
+}
+
+.cardNoReason {
+	font-size: 0.85rem;
+	color: var(--text-secondary);
+	font-style: italic;
+}
+
+.removeButton {
+	background: transparent;
+	color: #ff8080;
+	border: 1px solid #ff8080;
+	padding: 0.3rem 0.7rem;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.8rem;
+	white-space: nowrap;
+}
+
+.removeButton:hover:not(:disabled) {
+	background: rgba(220, 53, 69, 0.15);
+}
+
+.removeButton:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+	.header {
+		flex-direction: column;
+		gap: 1rem;
+		align-items: stretch;
+	}
+
+	.grid {
+		grid-template-columns: 1fr;
+	}
+}

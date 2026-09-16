@@ -7,8 +7,9 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Key Features
 
 - **Field Reservations**: Teams can book practice time slots on specific dates
-- **Blackout Management**: Admins can block dates/times when fields are unavailable
+- **Blackout Management**: Admins can close the field for a single day or a range of days, either entirely or for one time slot per day. Teams cannot reserve a blacked-out slot; admins are exempt and can book over one.
 - **Site Events**: Track field-wide events that affect availability
+- **Weather**: Optional Open-Meteo forecast under each day, lined up with the time slots: a temperature/rain sparkline plus the temperature at each slot border, each slot's chance of rain, and condition icons. Enabled by `WEATHER_LOCATION`.
 - **User Management**: Role-based access control (admin vs team members)
 - **Calendar Feeds**: Public iCalendar (ICS) exports for integration with calendar apps
 - **Real-time Updates**: WebSocket notifications for reservation changes
@@ -43,6 +44,8 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 │   │   │   ├── auth/            # NextAuth.js endpoints
 │   │   │   ├── calendar/        # iCalendar feed endpoints
 │   │   │   └── trpc/            # tRPC API handler
+│   │   ├── blackouts/           # Blackout management page (admin)
+│   │   ├── holidays/            # Holiday management page (admin)
 │   │   ├── logs/                # Admin logs page
 │   │   ├── users/               # User management page
 │   │   ├── layout.tsx           # Root layout component
@@ -56,11 +59,15 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 │   │   ├── util/                # Server utilities
 │   │   │   ├── JsonData.ts      # JSON data type definitions
 │   │   │   ├── Lock.ts          # Concurrency control
+│   │   │   ├── blackout.ts      # Blackout range/coverage logic (pure)
 │   │   │   ├── exit.ts          # Process exit helper
-│   │   │   └── timeUtils.ts     # Date/time utilities
+│   │   │   ├── timeSlots.ts     # Time slot derivation from configured borders
+│   │   │   ├── timeUtils.ts     # Date/time utilities
+│   │   │   └── weather.ts       # Forecast summarizing and sparkline geometry (pure)
 │   │   ├── backend.ts           # Main backend logic and data management
 │   │   ├── calendarFeed.ts      # iCalendar generation
 │   │   ├── teamLogoManager.ts   # Team logo handling
+│   │   ├── weather.ts           # Open-Meteo client and cached, periodically refreshed forecast
 │   │   └── websocket.ts         # WebSocket notifications
 │   ├── trpc/                    # tRPC client configuration
 │   ├── styles/                  # Global styles
@@ -69,7 +76,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ├── data/                        # JSON data storage
 │   ├── {YEAR}/                  # Year-specific data
 │   │   ├── reservations.json    # Reservation records
-│   │   ├── blackouts.json       # Blackout periods
+│   │   ├── blackouts.json       # Blackout periods (single day or range)
 │   │   ├── events.json          # Site events
 │   │   ├── teams.json           # Team definitions
 │   │   └── logs.txt             # Activity logs
@@ -96,9 +103,10 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Data Types (`src/types.ts`)
 
 - **Reservation**: Core booking entity with date, time slot, team, and metadata
-- **Blackout**: Admin-defined unavailable periods
+- **Blackout**: Admin-defined unavailable period. Covers the inclusive range `date`..`endDate` (`endDate` omitted means a single day); an omitted `slot` closes the whole day. Identified by `id`; removal is a soft delete via `deleted`.
 - **SiteEvent**: Field-wide events affecting availability
 - **UserEntry**: User account with team memberships and permissions
+- **WeatherForecast**: Cached hourly `WeatherSample`s (temperature in °C, chance of rain for the preceding hour, WMO weather code, daylight) around reservation hours. Kept in memory only, never written to `data/`.
 - **EventDate**: String format (YYYY-MM-DD)
 - **TimeSlot**: String format (HH:mm)
 
@@ -112,7 +120,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 ### Environment Configuration (`src/env.js`)
 
 - **Strict environment variable validation** using Zod schemas
-- **Server-side variables**: Auth secrets, API tokens, data directory
+- **Server-side variables**: Auth secrets, API tokens, data directory, optional weather settings (`WEATHER_*`)
 - **Client-side variables**: Time zones, calendar configuration, UI settings
 
 ## Database System (JSON Files)

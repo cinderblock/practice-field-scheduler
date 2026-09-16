@@ -1,21 +1,26 @@
-import { readFileSync } from "node:fs";
+/**
+ * Load `.env.test` into `process.env` before any test module is evaluated.
+ *
+ * Vitest does not populate `process.env` from dotenv files, but `src/env.js` validates against it
+ * at import time. Without this, importing any module that reaches `~/env` throws
+ * "Invalid environment variables" before a single test runs.
+ *
+ * Real values already in the environment (CI secrets, a developer's shell) win over the file.
+ */
+
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseEnv } from "node:util";
 
-// Push `.env.test` values into `process.env` before any test file imports
-// `~/env`, so the strict env-validation in src/env.js passes. Real process
-// env (e.g. CI-provided secrets) wins over what's in the file.
-const envPath = resolve(__dirname, "../.env.test");
+const envFile = resolve(import.meta.dirname, "..", ".env.test");
 
-try {
-	const content = readFileSync(envPath, "utf-8");
-	const parsed = parseEnv(content);
-	for (const [key, value] of Object.entries(parsed)) {
-		const current = process.env[key];
-		if (current === undefined || current === "") {
-			process.env[key] = value;
-		}
+if (existsSync(envFile)) {
+	// An empty value counts as absent, matching `emptyStringAsUndefined` in src/env.js. CI forwards
+	// some values from repository vars/secrets, and an unset one arrives as "" rather than missing;
+	// left in place it would fail validation instead of falling back to the test value.
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value === "") delete process.env[key];
 	}
-} catch (err) {
-	if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+
+	// Variables already set are left alone by loadEnvFile, so a real environment wins for free.
+	process.loadEnvFile(envFile);
 }

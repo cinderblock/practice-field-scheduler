@@ -110,6 +110,48 @@ npm test
 
 The `test` script runs unit/integration tests with Vitest first and then the browser E2E tests with Playwright.
 
+### Blackouts (admin)
+
+Admins can close the field from the **Blackouts** page (linked from the calendar header, or at `/blackouts`).
+
+A blackout covers either a single day or an inclusive range of days, and applies either to the whole day or to
+one time slot on each day of the range. While a blackout is in effect:
+
+- Teams cannot create a reservation in any slot it covers. The slot shows as **Closed** on the calendar,
+  with the reason if one was given, and the add button is hidden.
+- Admins are exempt and can still book over a blackout, the same way they bypass the advance-reservation
+  window. They keep the add button on a closed slot, labelled so it's clear why it's there.
+- The blackout appears in the `all` and `site` calendar feeds — whole-day blackouts as all-day events,
+  slot blackouts as one timed event per day.
+
+Creating a blackout does **not** cancel reservations that already exist inside it. Any that conflict are
+listed back to the admin so the affected teams can be contacted first. Removing the blackout reopens the
+slots immediately.
+
+Blackouts, like all scheduling data, are scoped to the current calendar year.
+
+### Weather
+
+Set `WEATHER_LOCATION` to show the forecast under each day of the calendar. Leave it unset and nothing
+weather-related appears.
+
+Beneath each time slot, lined up with it, is a sparkline of the temperature (and chance of rain, when
+there is any) over that slot's hours. Under that are the temperature at the start and end of every
+slot, each slot's chance of rain, and an icon for the conditions over the first and second half of
+the slot. Only reservable hours are shown, not the night. Temperatures are shown in °F.
+
+| Variable                  | Default | Meaning                                                                                                                 |
+| ------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `WEATHER_LOCATION`        | unset   | `latitude,longitude` of the field (exact, and preferred), or a place name / postal code to look up, like `San Jose, CA` |
+| `WEATHER_API_KEY`         | unset   | Only needed for [Open-Meteo](https://open-meteo.com)'s commercial tier                                                  |
+| `WEATHER_UPDATES_PER_DAY` | `96`    | How often the server refreshes its cached forecast (96 is every 15 minutes)                                             |
+| `WEATHER_FORECAST_DAYS`   | `10`    | How many days ahead to fetch, 1–16                                                                                      |
+
+Forecasts come from Open-Meteo, which needs no API key for non-commercial use. Its data is licensed
+CC BY 4.0, so the calendar credits it whenever weather is shown. The server logs the resolved place
+when it first fetches a forecast; if a place name picks the wrong town, use coordinates instead. If Open-Meteo is
+unreachable, the last forecast keeps being shown for up to a day.
+
 ### Calendar Feeds (public)
 
 We expose iCalendar (ICS) feeds that you can subscribe to in Google Calendar, Apple Calendar, Outlook, etc.

@@ -2,6 +2,7 @@ import type { ICalCalendar, ICalEventData } from "ical-generator";
 import ical from "ical-generator";
 import { env } from "~/env";
 import { getPublicFeedData } from "~/server/backend";
+import { blackoutEndDate, eachBlackoutDate } from "~/server/util/blackout";
 import type { Reservation } from "~/types";
 
 export type FeedKind = "all" | "site" | "team";
@@ -137,15 +138,37 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 	if (kind === "all" || kind === "site") {
 		for (const b of blackouts) {
 			if (b.deleted) continue;
-			const dateTimes = parseSlotToDate(b.date, b.slot);
-			if (!dateTimes) continue;
-			push({
-				id: `blackout-${b.date}-${b.slot}`,
-				start: dateTimes.start,
-				end: dateTimes.end,
-				summary: "Field Blackout",
-				description: b.reason ?? undefined,
-			});
+
+			if (b.slot === undefined) {
+				// Whole-day blackout: a single all-day event spanning the range. iCal treats the end of
+				// an all-day event as exclusive, so it sits on the day after the last blacked-out day.
+				const start = new Date(`${b.date}T00:00:00`);
+				const end = new Date(`${blackoutEndDate(b)}T00:00:00`);
+				end.setDate(end.getDate() + 1);
+
+				push({
+					id: `blackout-${b.id}`,
+					start,
+					end,
+					allDay: true,
+					summary: "Field Blackout",
+					description: b.reason ?? undefined,
+				});
+				continue;
+			}
+
+			// Slot blackout: one timed event per day of the range
+			for (const date of eachBlackoutDate(b)) {
+				const dateTimes = parseSlotToDate(date, b.slot);
+				if (!dateTimes) continue;
+				push({
+					id: `blackout-${b.id}-${date}`,
+					start: dateTimes.start,
+					end: dateTimes.end,
+					summary: "Field Blackout",
+					description: b.reason ?? undefined,
+				});
+			}
 		}
 	}
 

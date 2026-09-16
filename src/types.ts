@@ -25,14 +25,25 @@ export type TeamFull = Team | string;
 
 export type TimeSlot = string; // HH:mm format
 
+/**
+ * A period during which the field is unavailable.
+ *
+ * A blackout covers the inclusive date range `date`..`endDate`. `endDate` is omitted for a
+ * single day. `slot` restricts the blackout to one time slot on each of those days; when it is
+ * omitted the whole day is blacked out.
+ */
 export type Blackout = {
-	date: EventDate;
-	slot: TimeSlot;
+	id: string;
+	date: EventDate; // First day of the blackout, inclusive
+	endDate?: EventDate; // Last day of the blackout, inclusive. Omitted for a single day.
+	slot?: TimeSlot; // Omitted to black out the entire day
 	created: Date;
 	userId: UserId; // ID of the user who last modified the blackout
 	deleted?: Date; // Date when the blackout was removed
 	reason?: string;
 };
+
+export type AddBlackoutArgs = Pick<Blackout, "date" | "endDate" | "slot" | "reason">;
 
 export type SiteEvent = {
 	date: EventDate;
@@ -105,6 +116,23 @@ export type PersonalAccess = {
  * - `disabled`: the account is disabled
  */
 export type PersonalAccessStatus = "active" | "not_issued" | "not_approved" | "invalid_name" | "disabled";
+
+/** One point of the hourly forecast. Values are null where the provider has no data. */
+export type WeatherSample = {
+	time: number; // Epoch milliseconds
+	temperature: number | null; // Celsius
+	precipitationProbability: number | null; // 0-100, over the hour before `time`
+	weatherCode: number | null; // WMO weather interpretation code
+	isDay: boolean | null; // Whether it's daylight at `time`
+};
+
+export type WeatherForecast = {
+	/** Resolved place, for display. Coordinates when the location was configured as coordinates. */
+	location: string;
+	updated: Date; // When the forecast was fetched
+	/** Hourly samples in chronological order, limited to the hours around reservation time */
+	samples: WeatherSample[];
+};
 
 export type Holiday = {
 	id: string;

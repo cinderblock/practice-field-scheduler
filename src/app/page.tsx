@@ -13,6 +13,7 @@ import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { Context } from "~/server/backend";
 import { dateToDateString } from "~/server/util/timeUtils";
+import { getWeatherForecast } from "~/server/weather";
 import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 import { RenderTime } from "./_components/RenderTime";
@@ -130,14 +131,21 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
-	// Get holidays for the calendar
-	const holidays = await ctx.getHolidays();
+	// Get holidays, blackouts, and weather for the calendar
+	const [holidays, blackouts, weather] = await Promise.all([
+		ctx.getHolidays(),
+		ctx.getBlackouts(),
+		getWeatherForecast(),
+	]);
 
 	return (
 		<div className={styles.reservationCalendar}>
 			<div className={`${styles.showcaseText} ${styles.showcaseRow}`}>
 				<span>
 					Logged in as {session.user?.displayName ?? session.user?.name}
+					{session.user?.displayName && session.user?.name && session.user.displayName !== session.user.name && (
+						<span style={{ color: "var(--text-secondary)" }}> ({session.user.name})</span>
+					)}
 					{session.user?.image && (
 						<Image
 							style={{ userSelect: "none" }}
@@ -146,7 +154,6 @@ async function LoggedIn({ session }: { session: Session }) {
 							className={styles.profileImage}
 							width={48}
 							height={48}
-							title={session.user.displayName && session.user.name ? session.user.name : undefined}
 						/>
 					)}
 				</span>
@@ -163,6 +170,9 @@ async function LoggedIn({ session }: { session: Session }) {
 							<Link href="/holidays" className={styles.logoutButtonSmall}>
 								Holidays
 							</Link>
+							<Link href="/blackouts" className={styles.logoutButtonSmall}>
+								Blackouts
+							</Link>
 						</>
 					)}
 					<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
@@ -170,7 +180,13 @@ async function LoggedIn({ session }: { session: Session }) {
 					</Link>
 				</div>
 			</div>
-			<ReservationCalendar initialReservations={reservationsByDate} initialHolidays={holidays} />
+			<ReservationCalendar
+				initialReservations={reservationsByDate}
+				initialHolidays={holidays}
+				initialBlackouts={blackouts}
+				initialWeather={weather}
+				isAdmin={isAdmin}
+			/>
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />
 			<RenderTime time={new Date()} />
 		</div>

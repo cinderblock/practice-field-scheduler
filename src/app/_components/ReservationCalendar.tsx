@@ -1,11 +1,13 @@
 "use client";
 
-import { TZDateMini } from "@date-fns/tz";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { env } from "~/env";
+import { findBlackoutForSlot, isWholeDayBlackedOut } from "~/server/util/blackout";
+import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Holiday, Reservation } from "~/types";
+import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
+import { DayWeather } from "./DayWeather";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
@@ -25,23 +27,6 @@ type InitialReservations = {
  */
 function getToday(): string {
 	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
-}
-
-function createDateFromDateStringHour(date: string, hour: number): Date {
-	const [year, month, day] = date.split("-").map(Number);
-
-	if (year === undefined || month === undefined || day === undefined) throw new Error("Invalid date");
-
-	// // Handle fractional hours
-	const wholeHours = Math.floor(hour);
-	const minutes = Math.round((hour - wholeHours) * 60);
-
-	const wholeMinutes = Math.floor(minutes);
-	const seconds = Math.round((minutes - wholeMinutes) * 60);
-
-	const tzDate = new TZDateMini(year, month - 1, day, wholeHours, wholeMinutes, seconds, TimeZone);
-
-	return new Date(tzDate.getTime());
 }
 
 function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {
@@ -126,24 +111,34 @@ function DayDate({ date, holidays }: { date: string; holidays: Holiday[] }) {
 		<span className={styles.dayDate}>
 			{dayHolidays.length > 0 && (
 				<span className={styles.holidayIcons}>
-					{dayHolidays.map(holiday =>
-						holiday.url ? (
+					{dayHolidays.map(holiday => {
+						// The name is rendered next to the icon rather than hidden behind a tooltip, which
+						// would be unreachable on a touch screen
+						const content = (
+							<>
+								<span className={styles.holidayIcon} role="img" aria-label={holiday.name}>
+									{holiday.icon}
+								</span>
+								<span className={styles.holidayName}>{holiday.name}</span>
+							</>
+						);
+
+						return holiday.url ? (
 							<a
 								key={holiday.id}
 								href={holiday.url}
 								target="_blank"
 								rel="noopener noreferrer"
 								className={styles.holidayIconLink}
-								title={holiday.name}
 							>
-								<span className={styles.holidayIcon}>{holiday.icon}</span>
+								{content}
 							</a>
 						) : (
-							<span key={holiday.id} className={styles.holidayIcon} title={holiday.name}>
-								{holiday.icon}
+							<span key={holiday.id} className={styles.holidayEntry}>
+								{content}
 							</span>
-						),
-					)}
+						);
+					})}
 				</span>
 			)}
 			{date}
@@ -163,12 +158,6 @@ function getDateDaysDifference(from: string, until: string): number {
 	const delta = b.getTime() - a.getTime();
 	const day = 1000 * 60 * 60 * 24;
 	return Math.round(delta / day);
-}
-
-function hourToTimeSlot(hour: number, minute = 0): string {
-	const am_pm = hour < 12 ? "am" : "pm";
-	if (hour > 12) hour -= 12;
-	return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}${am_pm}`;
 }
 
 function pluralize(count: number, singular = "", plural = `${singular}s`) {
@@ -259,9 +248,17 @@ function ReservationPill({
 export function ReservationCalendar({
 	initialReservations,
 	initialHolidays,
+	initialBlackouts,
+	initialWeather,
+	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
+	initialBlackouts: Blackout[];
+	/** Null when weather is disabled or no forecast is available */
+	initialWeather: WeatherForecast | null;
+	/** Admins may book over a blackout, so they still get the add button on a closed slot */
+	isAdmin?: boolean;
 }) {
 	const [historyDays, setHistoryDays] = useState(0);
 	const [additionalReservations, setAdditionalReservations] = useState<InitialReservations>([]);
@@ -291,6 +288,18 @@ export function ReservationCalendar({
 	}, [additionalReservations, initialReservations]);
 
 	const utils = api.useUtils();
+
+	// Blackouts change rarely and apply to every day on screen, so they're fetched once here and
+	// passed down rather than queried per slot
+	const { data: blackouts = initialBlackouts } = api.blackout.list.useQuery(undefined, {
+		initialData: initialBlackouts,
+	});
+
+	// The server refreshes its cached forecast on its own schedule; this just picks up the latest
+	const { data: weather = initialWeather } = api.weather.forecast.useQuery(undefined, {
+		initialData: initialWeather,
+		refetchInterval: 15 * 60 * 1000,
+	});
 
 	// Use refs to store current values to avoid dependency issues
 	const startDateRef = useRef(startDate);
@@ -355,6 +364,9 @@ export function ReservationCalendar({
 					daysHistory={historyDays}
 					initialReservations={allReservations}
 					initialHolidays={initialHolidays}
+					blackouts={blackouts}
+					weather={weather}
+					isAdmin={isAdmin}
 				/>
 			</div>
 			<p>
@@ -362,6 +374,15 @@ export function ReservationCalendar({
 				<br />
 				Please check back later for more availability.
 			</p>
+			{weather && (
+				// Open-Meteo's data is CC BY 4.0, which requires this credit
+				<p className={styles.weatherAttribution}>
+					Weather for {weather.location}, from{" "}
+					<a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">
+						Open-Meteo.com
+					</a>
+				</p>
+			)}
 		</>
 	);
 }
@@ -403,12 +424,18 @@ function Days({
 	daysHistory,
 	initialReservations,
 	initialHolidays,
+	blackouts,
+	weather,
+	isAdmin,
 }: {
 	start: string;
 	days: number;
 	daysHistory?: number;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
+	blackouts: Blackout[];
+	weather: WeatherForecast | null;
+	isAdmin: boolean;
 }) {
 	// Ensure good type
 	daysHistory ??= 0;
@@ -425,6 +452,9 @@ function Days({
 					date={date}
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
+					blackouts={blackouts}
+					weather={weather}
+					isAdmin={isAdmin}
 					isHistory={true}
 				/>
 			))}
@@ -458,6 +488,9 @@ function Days({
 					date={date}
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
+					blackouts={blackouts}
+					weather={weather}
+					isAdmin={isAdmin}
 				/>
 			))}
 		</>
@@ -468,16 +501,29 @@ function DayWrapper({
 	date,
 	initialReservations,
 	initialHolidays,
+	blackouts,
+	weather,
+	isAdmin,
 	isHistory = false,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
+	blackouts: Blackout[];
+	weather: WeatherForecast | null;
+	isAdmin: boolean;
 	isHistory?: boolean;
 }) {
 	return (
 		<div className={`${styles.calendarDay} ${isHistory ? styles.historyDay : ""}`}>
-			<Day date={date} initialReservations={initialReservations} initialHolidays={initialHolidays} />
+			<Day
+				date={date}
+				initialReservations={initialReservations}
+				initialHolidays={initialHolidays}
+				blackouts={blackouts}
+				weather={weather}
+				isAdmin={isAdmin}
+			/>
 		</div>
 	);
 }
@@ -486,13 +532,22 @@ function Day({
 	date,
 	initialReservations,
 	initialHolidays,
+	blackouts,
+	weather,
+	isAdmin,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
+	blackouts: Blackout[];
+	weather: WeatherForecast | null;
+	isAdmin: boolean;
 }) {
+	const closedAllDay = isWholeDayBlackedOut(blackouts, date);
+
 	const style = [styles.dayContainer];
 	if (isWeekend(date)) style.push(styles.weekend);
+	if (closedAllDay) style.push(styles.dayClosed);
 
 	// Calculate number of time slots (subtract 1 because we map pairs)
 	const numSlots = TimeSlotBorders.length - 1;
@@ -502,6 +557,7 @@ function Day({
 			<div className={styles.dayHeader}>
 				<DayName date={date} />
 				<DayDate date={date} holidays={initialHolidays} />
+				{closedAllDay && <span className={styles.dayClosedChip}>Field closed</span>}
 			</div>
 			<div
 				className={styles.timeSlotRow}
@@ -530,9 +586,13 @@ function Day({
 							endHour={endHour}
 							initialReservations={initialReservations}
 							initialHolidays={initialHolidays}
+							blackouts={blackouts}
+							isAdmin={isAdmin}
 						/>
 					);
 				})}
+				{/* A second row in the same grid, so each slot's forecast sits directly beneath it */}
+				<DayWeather date={date} forecast={weather} />
 			</div>
 		</div>
 	);
@@ -544,12 +604,16 @@ function TimeSlot({
 	endHour,
 	initialReservations,
 	initialHolidays,
+	blackouts,
+	isAdmin,
 }: {
 	date: string;
 	startHour: number;
 	endHour: number;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
+	blackouts: Blackout[];
+	isAdmin: boolean;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [teamNumber, setTeamNumber] = useState(() => {
@@ -711,9 +775,14 @@ function TimeSlot({
 	// Calculate progress percentage for current time slot
 	const progress = current ? getProgressPercentage(startTime, endTime, now) : 0;
 
+	// Blacked-out slots can't be booked. Any reservation made before the blackout was created is
+	// still shown so the team can see it (and cancel it).
+	const blackout = findBlackoutForSlot(blackouts, date, slot);
+
 	const style = [styles.timeSlotStackContainer];
 	if (current) style.push(styles.timeSlotCurrent);
 	if (hasEnded) style.push(styles.timeSlotOver);
+	if (blackout) style.push(styles.timeSlotBlackedOut);
 
 	const handleAddReservation = useCallback(() => {
 		if (!teamNumber) return;
@@ -742,6 +811,13 @@ function TimeSlot({
 	return (
 		<div className={style.join(" ")} suppressHydrationWarning>
 			{current && <div className={styles.timeSlotProgress} style={{ left: `${progress}%` }} suppressHydrationWarning />}
+			{blackout && (
+				<div className={styles.blackoutNotice}>
+					<span className={styles.blackoutLabel}>Closed</span>
+					{blackout.reason && <span className={styles.blackoutReason}>{blackout.reason}</span>}
+					{isAdmin && <span className={styles.blackoutAdminHint}>Admins can still book</span>}
+				</div>
+			)}
 			<div className={styles.reservationStack}>
 				{/* Existing reservations */}
 				{slotReservations.map(r => (
@@ -767,8 +843,8 @@ function TimeSlot({
 					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
-			{/* Add reservation button */}
-			{!hasEnded && (
+			{/* Add reservation button. Admins are exempt from blackouts, so they keep it. */}
+			{!hasEnded && (!blackout || isAdmin) && (
 				<button
 					style={{ userSelect: "none" }}
 					type="button"

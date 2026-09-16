@@ -123,8 +123,11 @@ their code is reused.
 11. [x] Final checks and commit.
 12. [x] Production `WEATHER_LOCATION` set (coordinates from the user). Coordinates now display
         like `37.3394° N, 121.8950° W` in the credit line rather than as raw decimals.
-13. [ ] **(current)** Push to `master` (user: "just publish to master"), watch Test and Deploy,
-        confirm the forecast loads in production.
+13. [x] Pushed `b119e1a` straight to `master` (user: "just publish to master. yolo"). Test
+        (lint, test, report) and Deploy both succeeded; the service restarted on `b119e1a`, and
+        the server can reach Open-Meteo.
+14. [x] Confirmed in production: after the first signed-in visit, the service logged
+        `Weather forecasts for 37.4…° N, 122.1…° W` with no failures (2026-09-16).
 
 ## Findings / gotchas
 
@@ -171,6 +174,12 @@ their code is reused.
 - **White cloud and moon emoji vanish in light mode**; a 1px dark `drop-shadow` fixes it.
 - **Pre-existing, not touched:** at phone width the page overflows horizontally by a few px
   (identical with weather hidden), and a long holiday name wraps the date onto two lines.
+- **Nothing is fetched until a signed-in user loads the calendar**: the service starts lazily
+  on the first `getWeatherForecast()` call, which only the signed-in page and the protected
+  tRPC route make. The login page doesn't trigger it, so after a deploy the log stays quiet
+  until someone visits.
+- **`master` has a pull-request-required rule.** The direct push went through because the
+  pushing account can bypass it; GitHub prints "Changes must be made through a pull request".
 - **Dev-only:** after changing the sample shape, the in-memory cache from before the reload
   lacks the new fields until the next refresh (triggered by the next request).
 
@@ -182,7 +191,8 @@ their code is reused.
       touched files, `next build` passes, visually verified.
 - [x] Fixed the 1px current-time line offset the user reported; verified by measurement.
 - [x] Production `WEATHER_LOCATION` set with the user's go-ahead.
-- [ ] Pushed to `master` and deployed.
+- [x] Pushed to `master` (`b119e1a`); CI green; deployed.
+- [x] First production forecast fetch confirmed in the log.
 
 ## Open questions for the user
 

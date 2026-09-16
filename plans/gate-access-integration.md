@@ -29,7 +29,16 @@ reuse the same endpoint with a different `tool` identifier. See
 - Related, owned by a _different_ session in a separate worktree:
   `t3code/admin-blackout-days` at
   `C:\Users\camer\.t3\worktrees\practice-field-scheduler\t3code-b9d31dd3`.
-  **Do not do blackout-days work in this tree.**
+  It has since landed on `master` and was merged into this branch
+  (`e82e1ec`). **Still, don't do blackout-days work in this tree.**
+- Deploys:
+  - Scheduler production: merge to `master`, then `Test`, then `Deploy`
+    (self-hosted runner: `/opt/practice-field-scheduler`,
+    `practice-field-scheduler.service`).
+  - Scheduler staging: any non-`master` push deploys to
+    `https://practice-field-scheduler-staging.tomsawyerlabs.com`
+    (`/opt/practice-field-scheduler-staging`, exits after 60 minutes).
+  - Gate Manager production: push to its `master`.
 
 ### New env vars
 
@@ -193,31 +202,98 @@ consult the `home-assistant-best-practices` skill first.
    the contract doc also describe explicit approval. Committed as one
    commit, Gate Manager `3916779` _(user: "one logical commit per feature
    usually")_, leaving that repo's other uncommitted deploy-pipeline work
-   alone. **Not pushed yet.**
+   alone. **Pushed and live in production** (Deploy run `35141819045`
+   succeeded, 2026-09-16).
 6. ✅ General gate access became an explicit admin grant _(commit
    `1358a90`)_, with the startup prune of unapproved links _(`eeb035c`)_.
 7. ✅ `/users` reworked for phones _(the people table and per-person
    controls in `1358a90`, the rest in `84123b0`)_.
-8. ⬅️ **NEXT** — Ship, in this order, each push only with the user's
-   go-ahead (pushes deploy):
-   1. Push Gate Manager `master`. Its `Deploy` workflow builds, tests and
+8. Ship, in this order, each push only with the user's go-ahead (pushes
+   deploy). The user approved steps 1–2 on 2026-09-16.
+   1. ✅ Push Gate Manager `master`. Its `Deploy` workflow builds, tests and
       deploys **production** on steamboat on every push to `master`.
-      Local `master` was `ahead 1` (just `3916779`) when committed.
-   2. Push the scheduler branch. Any non-`master` push deploys **staging**.
-      Check staging with a real link.
-   3. Merge the scheduler branch to `master`. Production deploys after the
-      `Test` workflow passes.
-   4. Approve the people who should have general access. Nobody has it
+   2. ✅ Push the scheduler branch. Any non-`master` push deploys
+      **staging**. First merged `master` in (`e82e1ec`, see Findings),
+      then pushed. CI `Test` passed. Staging is up at
+      `https://practice-field-scheduler-staging.tomsawyerlabs.com`.
+   3. ⬅️ **NEXT, blocked on the user:** server settings, **set before the
+      merge**. Staging answers `/api/access/check` with 503
+      "SCHEDULER_API_KEY unset".
+      - **Ops now manages the scheduler's deployed env** (user,
+        2026-09-16: "now OPS repo manages deployed env of dependency apps
+        (like the scheduler). plan to add whatever you need to OPS repo's
+        deploy of the sceduler").
+      - The ops plan is `plans/practice-field-scheduler-ops-managed.md` in
+        `cinderblock/ops`. It's owned by session `t3code-2ac884c3-4d`,
+        which implements it in its own ops worktree.
+      - **This session owns that plan's "Gate access settings" section**,
+        which holds everything the scheduler needs:
+        - production-only secrets `SCHEDULER_API_KEY` (must equal Gate
+          Manager's) and `SLACK_BOT_TOKEN` (`xoxb-…`, `chat:write`);
+        - `GATE_BASE_URL=https://gate.tomsawyerlabs.com` in the shared
+          `common.env`;
+        - `STRICT_SLACK_NAMES` left unset.
+      - The two secrets are **required** in the render. Set them in the
+        ops `steamboat` environment before the render lists them. Their
+        names there are prefixed (user, 2026-09-16):
+        `PRACTICE_FIELD_SCHEDULER_API_KEY` and
+        `PRACTICE_FIELD_SCHEDULER_SLACK_BOT_TOKEN`.
+      - **The user makes the Slack bot token** (scope, App Home Messages
+        tab, reinstall, `gh secret set`).
+      - The settings ship in ops' stage 1 (env and unit), ahead of runner
+        adoption.
+      - **Still needs the user's yes:** copying `SCHEDULER_API_KEY` from
+        Gate Manager's `gate.env` on steamboat into
+        `PRACTICE_FIELD_SCHEDULER_API_KEY`, never printed.
+
+   4. Merge the scheduler branch to `master`. Production deploys after the
+      `Test` workflow passes. Until then, production has no
+      `/api/access/check` (404), so every gate link shows "Service
+      unavailable". That's expected; nothing regressed.
+   5. Approve the people who should have general access. Nobody has it
       until then.
-   5. Drive a real link through `/g/:token` on a phone, in and out of site
+   6. Drive a real link through `/g/:token` on a phone, in and out of site
       hours.
+
 9. Later: tool catalog refactor before a second tool (see Home Assistant).
 
 ## Findings / gotchas
 
-- **`git status` shows ~75 modified files; only a handful actually differ.**
-  The rest is CRLF/stat noise from `core.autocrlf` (`git diff --stat` on
-  them is empty). Use `git diff --numstat`. Don't "fix" line endings.
+- **`git status` shows ~55 "modified" files in the main tree that don't
+  actually differ.** `git diff` on them is empty, and `git hash-object`
+  equals the `HEAD` blob. Cause: the files are LF on disk (a formatter
+  rewrote them), while the index's cached size is from an old CRLF
+  checkout. When the cached size is non-zero and differs, git reports
+  "modified" **without comparing content**. `git update-index --refresh`
+  doesn't clear it. It matters because `git merge` refuses to overwrite
+  such files.
+  - **Fix, per file, only after checking `git hash-object f` equals
+    `git rev-parse HEAD:f`:** `git add -- f`. That stages nothing and
+    refreshes the cached size.
+  - **Then merge with `git -c core.autocrlf=false …`**, so updated files
+    are written as LF like the rest of the tree. The formatters want LF,
+    and CRLF files fail `npm run check`.
+  - Don't `git checkout --` them (shared-tree rule).
+- **A fresh worktree or checkout here is CRLF** (`core.autocrlf=true`), so
+  biome/prettier flag every file there. To lint such a tree, export it with
+  LF: `git -c core.autocrlf=false checkout-index -a --prefix=<dir>/`.
+- **Merging `master` in (2026-09-16, `e82e1ec`)** brought in blackout days
+  and the weather forecast. It was done in a temporary worktree, so the
+  shared tree was never mid-merge. Conflicts:
+  - `backend.ts`: master's blackout code, and one shared `migrated`
+    load flag.
+  - `test/setup-env.ts`: took master's.
+  - `.env.test`: master's FIRST API stubs plus the gate/Slack ones.
+  - `env.js`, `.env.example`, `types.ts`, `root.ts`: both sides.
+
+  267 tests and `next build` passed on the result.
+
+- **Staging deploy runs never "finish" quickly.** The last step
+  (`npm start`) _is_ the staging server. The job stays in progress until
+  staging exits, which it does by itself after 60 minutes
+  (`src/app/api/shutdown/route.ts`). Don't `gh run watch` it.
+- **`curl -o /dev/null` and `curl -w` fail with error 43 on this machine.**
+  Use `curl -s -i … | head -1` for status checks.
 - **Typecheck one commit on its own** (when a change is split across
   commits): `git archive HEAD | tar -x -C <tmp>`, junction the repo's
   `node_modules` into it, then run `npx tsc --noEmit` there. When cleaning
@@ -298,26 +374,37 @@ consult the `home-assistant-best-practices` skill first.
       ✅, 144 unit tests ✅.
 - [x] Gate Manager change committed (`3916779`). Before committing,
       re-checked on top of its newer HEAD: typecheck ✅, 86 tests ✅.
-- [ ] Gate Manager pushed/deployed (needs the user's go-ahead).
-- [ ] Scheduler branch pushed to staging, then merged to `master`.
+- [x] Gate Manager pushed and deployed to production. Landing page is 200;
+      a bogus `/g/` token gets 503 because production scheduler has no
+      access API yet (expected).
+- [x] `master` merged into the branch (`e82e1ec`) and pushed. CI `Test` ✅.
+      Staging is serving it. Main tree fast-forwarded (check, typecheck,
+      267 tests ✅).
+- [ ] Staging/production server settings (`SCHEDULER_API_KEY`,
+      `SLACK_BOT_TOKEN`, `GATE_BASE_URL`), needing the user's authorization.
+- [ ] Branch merged to `master` (production deploy).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user
 
-1. **Deploying** — may I push Gate Manager `master` (production deploy),
-   then push the scheduler branch (staging deploy)? Recommendation: yes,
-   in that order. The Gate Manager change is backward compatible, so it's
-   safe to have live before the scheduler changes.
-2. **People who never sign in to the scheduler get no links.** The scheduler
+1. **Copying `SCHEDULER_API_KEY`** from Gate Manager's `gate.env` on
+   steamboat into the ops secret `PRACTICE_FIELD_SCHEDULER_API_KEY`
+   (piped, never printed): may a session do it? Recommendation: yes. It's
+   the only way to get the value without rotating the key in both places.
+   The other settings questions are answered (step 8.3).
+2. **Merging to `master`** (production deploy): when? Recommendation:
+   right after the production settings are in place, then approve people
+   on `/users`.
+3. **People who never sign in to the scheduler get no links.** The scheduler
    only knows people who've signed in once; enumerating the Slack workspace
    would need the `users:read` scope. Recommendation: fine for now, since
    mentors book through the scheduler anyway.
-3. **The 18-month auto-disable** (above) will bite long-standing mentors.
+4. **The 18-month auto-disable** (above) will bite long-standing mentors.
    Recommendation: base it on last sign-in rather than creation — a separate
    change.
-4. **House/special teams** get a link like any team (ids compared as
+5. **House/special teams** get a link like any team (ids compared as
    strings). Flag if they shouldn't.
-5. **Departing members** keep a shared team link until it's rotated; their
+6. **Departing members** keep a shared team link until it's rotated; their
    personal link can be revoked immediately.
 
 ## Things not to do
@@ -327,6 +414,10 @@ consult the `home-assistant-best-practices` skill first.
   account" opt-out. General gate access is an explicit grant.
 - Don't run `npm run check:write` without checking `git diff --stat`
   afterwards. It formats the whole repo, and this tree is shared.
+- Don't hand-edit the scheduler's `.env` on steamboat. Ops renders it now
+  (see step 8.3), and ops changes still need the user's per-change yes.
+- Don't push plan-only commits to this branch casually. Every push
+  redeploys staging.
 - Don't give the scheduler Home Assistant credentials (see above).
 - Don't change HA automations/scripts without explicit per-change approval.
 - Don't switch this project to Bun.

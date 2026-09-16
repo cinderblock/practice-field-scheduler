@@ -1478,6 +1478,30 @@ async function initializePart(array: unknown[]) {
 	}
 }
 
+/**
+ * A personal link may only exist for someone approved for general gate
+ * access. Links written before approval was required, or whose owner's user
+ * record has since expired, are deleted here. Otherwise approving that person
+ * later would quietly revive an old token instead of issuing a fresh one.
+ *
+ * Runs once at startup, while initialization holds `changeLock`.
+ */
+async function prunePersonalLinksWithoutApproval() {
+	const approved = new Set(users.filter(u => u.generalAccessApproved).map(u => u.id));
+	const kept = personalAccess.filter(p => approved.has(p.userId));
+	const removed = personalAccess.length - kept.length;
+	if (removed === 0) return;
+
+	for (const p of personalAccess) {
+		if (!approved.has(p.userId)) accessByToken.delete(p.token);
+	}
+	personalAccess.splice(0, personalAccess.length, ...kept);
+	console.warn(
+		`⚠️ [${MODULE_INSTANCE_ID}] Removed ${removed} personal gate link(s) whose owner isn't approved for general gate access`,
+	);
+	await writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess);
+}
+
 function getArrayName(array: unknown[]): string {
 	if (array === reservations) return "reservations";
 	if (array === blackouts) return "blackouts";
@@ -1514,6 +1538,9 @@ function getArrayName(array: unknown[]): string {
 
 	await Promise.all(jobs);
 
+	// Needs both users and personal links loaded, and still holds the lock.
+	await prunePersonalLinksWithoutApproval();
+
 	globalThis.__backendInitialized = true;
 	done();
 })().catch(err => {
@@ -1537,8 +1564,8 @@ export async function checkAccess(token: string, tool: string): Promise<AccessCh
 
 	if (indexed.kind === "team") return evaluateAccess({ kind: "team", team: indexed.entry.team }, tool, reservations);
 
-	// Resolve the live user so disabling, blocking or a broken Slack name takes
-	// effect immediately. A link whose user has since expired grants nothing.
+	// Resolve the live user so disabling or a broken Slack name takes effect
+	// immediately. A link whose user has since expired grants nothing.
 	const user = users.find(u => u.id === indexed.entry.userId);
 	return evaluateAccess(user ? { kind: "personal", user } : undefined, tool, reservations);
 }

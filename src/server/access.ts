@@ -1,5 +1,6 @@
-import type { Reservation, Team, TeamFull, UserEntry } from "~/types";
-import { getReservationWindow } from "./util/slotTime";
+import type { Reservation, TeamFull, UserEntry } from "~/types";
+import { parseSlackName, pickNameForValidation } from "./util/slackName";
+import { atFieldTime, fieldDateOf, getReservationWindow, parseEventDate } from "./util/slotTime";
 
 /** Tools the scheduler is willing to be asked about. */
 export const SUPPORTED_TOOLS = ["gate"] as const;
@@ -17,6 +18,18 @@ export const ACCESS_PRE_START_GRACE_MS = 20 * 60 * 1000;
  */
 export const ACCESS_POST_END_GRACE_MS = 60 * 60 * 1000;
 
+/**
+ * Site hours, as whole hours in the field's timezone. Nothing the scheduler
+ * issues works outside them: personal links work throughout, team links are
+ * clamped to them. Overnight, only Gate Manager's own registered employees can
+ * open the gate — that path never asks the scheduler.
+ */
+export const SITE_OPEN_HOUR = 8;
+export const SITE_CLOSE_HOUR = 23;
+
+/** What kind of link granted (or was refused) access. */
+export type AccessGrant = "team" | "personal";
+
 export type AccessTeam = {
 	id: string;
 	name: string;
@@ -27,27 +40,40 @@ export type AccessUser = {
 	name: string;
 };
 
-export type AccessCheckSuccess = {
-	valid: true;
-	tool: string;
-	/**
-	 * Which person opened the tool. Always `null` under the current per-team
-	 * token model — the link is shared, so the scheduler genuinely doesn't
-	 * know who clicked. Kept in the envelope because per-user tokens remain
-	 * a live option (see `evaluateUserAccess`).
-	 */
-	user: AccessUser | null;
-	team: AccessTeam;
-	reservation_id: string;
-	window_starts_at: string;
-	window_ends_at: string;
-};
+type Window = { start: Date; end: Date };
+
+export type AccessCheckSuccess =
+	| {
+			valid: true;
+			grant: "team";
+			tool: string;
+			/** Always null: a team link is shared, so nobody knows who clicked. */
+			user: null;
+			team: AccessTeam;
+			reservation_id: string;
+			window_starts_at: string;
+			window_ends_at: string;
+	  }
+	| {
+			valid: true;
+			grant: "personal";
+			tool: string;
+			user: AccessUser;
+			/** Always null: a personal link isn't tied to a team or reservation. */
+			team: null;
+			reservation_id: null;
+			/** Today's site hours. */
+			window_starts_at: string;
+			window_ends_at: string;
+	  };
 
 export type AccessCheckDenialReason = "outside_window" | "unknown_token" | "revoked" | "tool_not_authorized";
 
 export type AccessCheckDenial = {
 	valid: false;
 	reason: AccessCheckDenialReason;
+	/** Null only when the token matched nothing. */
+	grant: AccessGrant | null;
 	tool: string;
 	user: AccessUser | null;
 	team: AccessTeam | null;
@@ -58,14 +84,11 @@ export type AccessCheckDenial = {
 export type AccessCheckResult = AccessCheckSuccess | AccessCheckDenial;
 
 /**
- * Whatever the presented token resolved to.
- *
- * `team` is what's in use today (one shared link per team). `user` is the
- * alternative model — kept implemented and tested so switching back is a
- * lookup change in `backend.ts`, not a rewrite. See
- * `plans/gate-access-integration.md` for why per-team won.
+ * Whatever the presented token resolved to. For a personal link, pass the
+ * live user record so disabling, blocking or a broken Slack name takes effect
+ * on the very next check.
  */
-export type AccessPrincipal = { kind: "team"; team: TeamFull } | { kind: "user"; user: UserEntry };
+export type AccessPrincipal = { kind: "team"; team: TeamFull } | { kind: "personal"; user: UserEntry };
 
 function teamFor(team: TeamFull): AccessTeam {
 	const id = team.toString();
@@ -82,14 +105,18 @@ function isSupportedTool(tool: string): tool is Tool {
 
 function deny(
 	reason: AccessCheckDenialReason,
+	grant: AccessGrant | null,
 	tool: string,
-	user: AccessUser | null = null,
-	team: AccessTeam | null = null,
-	window: { start: Date; end: Date } | null = null,
+	{
+		user = null,
+		team = null,
+		window = null,
+	}: { user?: AccessUser | null; team?: AccessTeam | null; window?: Window | null } = {},
 ): AccessCheckDenial {
 	return {
 		valid: false,
 		reason,
+		grant,
 		tool,
 		user,
 		team,
@@ -98,109 +125,125 @@ function deny(
 	};
 }
 
-/**
- * Returns the team numbers a user can act on behalf of. Admins are
- * intentionally treated as having NO automatic access — admins manage
- * reservations but aren't necessarily the people at the field. They'd get
- * access via team membership like everyone else.
- */
-function userTeams(user: UserEntry): readonly Team[] {
-	if (user.teams === "admin") return [];
-	return user.teams;
+/** A whole hour on a 12-hour clock, e.g. 23 → "11pm", 0 → "12am". */
+export function formatHour(hour: number): string {
+	const suffix = hour % 24 < 12 ? "am" : "pm";
+	const twelve = hour % 12 === 0 ? 12 : hour % 12;
+	return `${twelve}${suffix}`;
 }
 
-/**
- * Compute the absolute access window for a reservation (slot bounds padded
- * by the pre-start / post-end grace).
- */
-export function computeAccessWindow(reservation: Reservation): { start: Date; end: Date } | null {
-	const slot = getReservationWindow(reservation.date, reservation.slot);
-	if (!slot) return null;
+/** Human-readable site hours, e.g. "8am–11pm", for messages. */
+export function describeSiteHours(): string {
+	return `${formatHour(SITE_OPEN_HOUR)}–${formatHour(SITE_CLOSE_HOUR)}`;
+}
+
+function siteHoursOnDate(year: number, month: number, day: number): Window {
 	return {
-		start: new Date(slot.start.getTime() - ACCESS_PRE_START_GRACE_MS),
-		end: new Date(slot.end.getTime() + ACCESS_POST_END_GRACE_MS),
+		start: atFieldTime(year, month, day, SITE_OPEN_HOUR),
+		end: atFieldTime(year, month, day, SITE_CLOSE_HOUR),
 	};
 }
 
 /**
- * Normalize a reservation's team for comparison. Team numbers arriving from
- * the tRPC input layer can be numeric strings; house/special teams are
- * genuinely non-numeric and compare as strings.
+ * The site-hours window that is open at `now`, or else the next one to open.
  */
-function sameTeam(a: TeamFull, b: TeamFull): boolean {
+export function currentOrNextSiteHours(now: Date): Window {
+	const { year, month, day } = fieldDateOf(now);
+	const today = siteHoursOnDate(year, month, day);
+	if (now < today.end) return today;
+	return siteHoursOnDate(year, month, day + 1);
+}
+
+/**
+ * Compute the absolute access window for a reservation: slot bounds padded by
+ * the grace periods, then clamped to site hours on the reservation's date.
+ * Returns null for malformed input or if nothing is left after clamping.
+ */
+export function computeAccessWindow(reservation: Reservation): Window | null {
+	const slot = getReservationWindow(reservation.date, reservation.slot);
+	const date = parseEventDate(reservation.date);
+	if (!slot || !date) return null;
+
+	const hours = siteHoursOnDate(date.year, date.month, date.day);
+	const start = Math.max(slot.start.getTime() - ACCESS_PRE_START_GRACE_MS, hours.start.getTime());
+	const end = Math.min(slot.end.getTime() + ACCESS_POST_END_GRACE_MS, hours.end.getTime());
+	if (start >= end) return null;
+	return { start: new Date(start), end: new Date(end) };
+}
+
+/**
+ * Whether a user is an approved member who should hold a personal link:
+ * not disabled, not flagged by an admin as a shared/unverified account, and
+ * with a Slack display name in the expected format (a malformed name is how
+ * we tell an unverified account apart). Team membership isn't required —
+ * admins and `(TSL)` lab mates qualify too.
+ */
+export function isPersonalAccessEligible(user: UserEntry): boolean {
+	if (user.disabled) return false;
+	if (user.personalAccessBlocked) return false;
+	return parseSlackName(pickNameForValidation(user)) !== null;
+}
+
+/**
+ * Tolerant team comparison: numeric strings from the tRPC input layer match
+ * stored numbers, while house/special teams compare as trimmed strings.
+ */
+export function sameTeam(a: TeamFull, b: TeamFull): boolean {
 	const na = typeof a === "string" ? Number.parseInt(a, 10) : a;
 	const nb = typeof b === "string" ? Number.parseInt(b, 10) : b;
 	if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
 	return String(a).trim() === String(b).trim();
 }
 
-function reservationMatchesAny(reservation: Reservation, teams: readonly TeamFull[]): boolean {
-	if (reservation.abandoned) return false;
-	return teams.some(t => sameTeam(reservation.team, t));
-}
+type WindowedReservation = { reservation: Reservation; window: Window };
 
-/**
- * Find a reservation for one of the given teams that `now` falls inside.
- */
-function findActiveReservation(
-	now: Date,
-	reservations: readonly Reservation[],
-	teams: readonly TeamFull[],
-): { reservation: Reservation; window: { start: Date; end: Date } } | null {
+function windowsFor(team: TeamFull, reservations: readonly Reservation[]): WindowedReservation[] {
+	const out: WindowedReservation[] = [];
 	for (const reservation of reservations) {
-		if (!reservationMatchesAny(reservation, teams)) continue;
+		if (reservation.abandoned) continue;
+		if (!sameTeam(reservation.team, team)) continue;
 		const window = computeAccessWindow(reservation);
-		if (!window) continue;
-		if (now >= window.start && now < window.end) return { reservation, window };
+		if (window) out.push({ reservation, window });
 	}
-	return null;
+	return out;
 }
 
 /**
- * Find the reservation whose window is nearest to `now` (most-recent past or
- * next upcoming, by absolute distance). Used to populate the "your window was
- * X to Y" / "your next window is X to Y" fields on a denial.
+ * The window whose edge is nearest `now` (most-recent past or next upcoming).
+ * Used to populate "your window was/is X to Y" on a denial.
  */
-function findNearestReservation(
-	now: Date,
-	reservations: readonly Reservation[],
-	teams: readonly TeamFull[],
-): { reservation: Reservation; window: { start: Date; end: Date } } | null {
-	let best: { reservation: Reservation; window: { start: Date; end: Date }; distance: number } | null = null;
-	for (const reservation of reservations) {
-		if (!reservationMatchesAny(reservation, teams)) continue;
-		const window = computeAccessWindow(reservation);
-		if (!window) continue;
+function nearest(now: Date, candidates: readonly WindowedReservation[]): WindowedReservation | null {
+	let best: WindowedReservation | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const candidate of candidates) {
 		const distance = Math.min(
-			Math.abs(now.getTime() - window.start.getTime()),
-			Math.abs(now.getTime() - window.end.getTime()),
+			Math.abs(now.getTime() - candidate.window.start.getTime()),
+			Math.abs(now.getTime() - candidate.window.end.getTime()),
 		);
-		if (!best || distance < best.distance) best = { reservation, window, distance };
+		if (distance < bestDistance) {
+			best = candidate;
+			bestDistance = distance;
+		}
 	}
-	if (!best) return null;
-	return { reservation: best.reservation, window: best.window };
+	return best;
 }
 
-/**
- * Shared policy core: given the teams a caller may act for, decide whether
- * the named tool is open to them right now.
- */
-function evaluateForTeams(
-	teams: readonly TeamFull[],
+function evaluateTeam(
+	team: TeamFull,
 	tool: string,
 	reservations: readonly Reservation[],
 	now: Date,
-	user: AccessUser | null,
 ): AccessCheckResult {
-	if (!isSupportedTool(tool)) return deny("tool_not_authorized", tool, user);
-	if (teams.length === 0) return deny("revoked", tool, user);
+	if (!isSupportedTool(tool)) return deny("tool_not_authorized", "team", tool);
 
-	const active = findActiveReservation(now, reservations, teams);
+	const candidates = windowsFor(team, reservations);
+	const active = candidates.find(c => now >= c.window.start && now < c.window.end);
 	if (active) {
 		return {
 			valid: true,
+			grant: "team",
 			tool,
-			user,
+			user: null,
 			team: teamFor(active.reservation.team),
 			reservation_id: active.reservation.id,
 			window_starts_at: active.window.start.toISOString(),
@@ -208,20 +251,41 @@ function evaluateForTeams(
 		};
 	}
 
-	const nearest = findNearestReservation(now, reservations, teams);
-	return deny(
-		"outside_window",
-		tool,
-		user,
-		nearest ? teamFor(nearest.reservation.team) : null,
-		nearest?.window ?? null,
-	);
+	const near = nearest(now, candidates);
+	return deny("outside_window", "team", tool, {
+		team: near ? teamFor(near.reservation.team) : null,
+		window: near?.window ?? null,
+	});
+}
+
+function evaluatePersonal(user: UserEntry, tool: string, now: Date): AccessCheckResult {
+	const accessUser = userFor(user);
+	// An unapproved account grants nothing, whatever it was asked about.
+	if (!isPersonalAccessEligible(user)) return deny("revoked", "personal", tool, { user: accessUser });
+	if (!isSupportedTool(tool)) return deny("tool_not_authorized", "personal", tool, { user: accessUser });
+
+	const hours = currentOrNextSiteHours(now);
+	if (now >= hours.start && now < hours.end) {
+		return {
+			valid: true,
+			grant: "personal",
+			tool,
+			user: accessUser,
+			team: null,
+			reservation_id: null,
+			window_starts_at: hours.start.toISOString(),
+			window_ends_at: hours.end.toISOString(),
+		};
+	}
+
+	// Overnight: report when the gate next opens for this link.
+	return deny("outside_window", "personal", tool, { user: accessUser, window: hours });
 }
 
 /**
  * Decide whether the holder of a token currently has access to the named
  * tool. Pure function over the resolved principal + reservations + clock —
- * the caller (route handler) owns the token → principal lookup.
+ * the caller owns the token → principal lookup.
  *
  * `undefined` principal means the token matched nothing.
  */
@@ -231,41 +295,7 @@ export function evaluateAccess(
 	reservations: readonly Reservation[],
 	now: Date = new Date(),
 ): AccessCheckResult {
-	if (!principal) return deny("unknown_token", tool);
-
-	if (principal.kind === "team") {
-		return evaluateForTeams([principal.team], tool, reservations, now, null);
-	}
-
-	const { user } = principal;
-	const accessUser = userFor(user);
-	// A disabled account grants nothing, whatever it was asked about.
-	if (user.disabled) return deny("revoked", tool, accessUser);
-	return evaluateForTeams(userTeams(user), tool, reservations, now, accessUser);
-}
-
-/**
- * Per-team convenience wrapper — the model in use today.
- */
-export function evaluateTeamAccess(
-	team: TeamFull | undefined,
-	tool: string,
-	reservations: readonly Reservation[],
-	now: Date = new Date(),
-): AccessCheckResult {
-	return evaluateAccess(team === undefined ? undefined : { kind: "team", team }, tool, reservations, now);
-}
-
-/**
- * Per-user convenience wrapper. Not on the live path today, but kept
- * implemented and tested so per-user tokens can be reinstated by changing
- * the token lookup in `backend.ts` rather than rewriting policy.
- */
-export function evaluateUserAccess(
-	user: UserEntry | undefined,
-	tool: string,
-	reservations: readonly Reservation[],
-	now: Date = new Date(),
-): AccessCheckResult {
-	return evaluateAccess(user === undefined ? undefined : { kind: "user", user }, tool, reservations, now);
+	if (!principal) return deny("unknown_token", null, tool);
+	if (principal.kind === "team") return evaluateTeam(principal.team, tool, reservations, now);
+	return evaluatePersonal(principal.user, tool, now);
 }

@@ -14,9 +14,10 @@ type RevealState = { team: string; url: string | null; token: string };
  * team they actually need to hand over, and that reveal is audited.
  */
 export function TeamAccessPanel() {
-	const list = api.teamAccess.list.useQuery();
-	const reveal = api.teamAccess.reveal.useMutation();
-	const rotate = api.teamAccess.rotate.useMutation();
+	const config = api.access.config.useQuery();
+	const list = api.access.teams.list.useQuery();
+	const reveal = api.access.teams.reveal.useMutation();
+	const rotate = api.access.teams.rotate.useMutation();
 
 	const [revealed, setRevealed] = useState<RevealState | null>(null);
 	const [confirmingRotate, setConfirmingRotate] = useState<string | null>(null);
@@ -65,42 +66,37 @@ export function TeamAccessPanel() {
 		}
 	}
 
-	if (list.isLoading) return <div className={styles.panel}>Loading team gate links…</div>;
-	if (list.error) return <div className={styles.panel}>Couldn't load team gate links: {list.error.message}</div>;
+	if (list.isLoading || config.isLoading) return <div className={styles.panel}>Loading team gate links…</div>;
+	const loadError = list.error ?? config.error;
+	if (loadError) return <div className={styles.panel}>Couldn't load team gate links: {loadError.message}</div>;
 
-	const data = list.data;
-	if (!data) return null;
-
-	const staleCount = data.teams.filter(t => t.stale).length;
+	const teams = list.data;
+	const cfg = config.data;
+	if (!teams || !cfg) return null;
 
 	return (
 		<div className={styles.panel}>
 			<div className={styles.headerRow}>
 				<strong>Team gate links</strong>
 				<span className={styles.subtle}>
-					One shared link per team. Anyone on the team can use it during that team's reserved times.
+					One shared link per team, working around that team's reservations (never outside {cfg.siteHours}). Links reset
+					each new year.
 				</span>
 			</div>
 
-			{!data.gateUrlConfigured && (
+			{!cfg.gateUrlConfigured && (
 				<div className={styles.warning}>
 					<code>GATE_BASE_URL</code> isn't configured, so links can't be built or sent. Set it on the scheduler.
 				</div>
 			)}
-			{!data.slackConfigured && (
+			{!cfg.slackConfigured && (
 				<div className={styles.warning}>
 					<code>SLACK_BOT_TOKEN</code> isn't configured, so rotating won't DM anyone the new link. Reveal it and pass it
 					along manually.
 				</div>
 			)}
-			{staleCount > 0 && (
-				<div className={styles.warning}>
-					{staleCount} link{staleCount === 1 ? "" : "s"} issued before this season. Rotating starts the season fresh —
-					note that it invalidates every existing bookmark for that team.
-				</div>
-			)}
 
-			{data.teams.length === 0 ? (
+			{teams.length === 0 ? (
 				<div className={styles.emptyState}>
 					No teams yet. Teams appear here once someone logs in with a team number in their Slack display name.
 				</div>
@@ -116,7 +112,7 @@ export function TeamAccessPanel() {
 						</tr>
 					</thead>
 					<tbody>
-						{data.teams.map(t => {
+						{teams.map(t => {
 							const issued = t.rotated ?? t.created;
 							const busy = busyTeam === t.team;
 							return (
@@ -131,7 +127,6 @@ export function TeamAccessPanel() {
 										) : (
 											<span className={styles.notIssued}>not issued yet</span>
 										)}
-										{t.stale && <span className={styles.staleTag}>previous season</span>}
 									</td>
 									<td className={styles.dateCell}>
 										{issued ? new Date(issued).toLocaleDateString() : "—"}
@@ -163,7 +158,7 @@ export function TeamAccessPanel() {
 												<button
 													type="button"
 													onClick={() => doReveal(t.team)}
-													disabled={busy || !data.gateUrlConfigured}
+													disabled={busy || !cfg.gateUrlConfigured}
 													className={styles.button}
 												>
 													{busy && reveal.isPending ? "Revealing…" : "Reveal link"}

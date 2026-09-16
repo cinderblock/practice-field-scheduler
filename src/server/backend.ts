@@ -17,6 +17,7 @@ import type {
 	Blackout,
 	EventDate,
 	Holiday,
+	PersonalAccess,
 	RemoveReservationArgs,
 	Reservation,
 	SiteEvent,
@@ -27,8 +28,14 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
-import { type AccessCheckResult, evaluateTeamAccess } from "./access";
-import { notifyTeamOfLink, notifyTeamOfReservation, selectTeamMemberRecipients, sendTeamLinkDm } from "./notifications";
+import { type AccessCheckResult, evaluateAccess, isPersonalAccessEligible, sameTeam } from "./access";
+import {
+	type GateLink,
+	notifyTeamOfLink,
+	notifyTeamOfReservation,
+	selectTeamMemberRecipients,
+	sendLinksDm,
+} from "./notifications";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
@@ -57,7 +64,8 @@ declare global {
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
 	var __teamAccess: TeamAccess[] | undefined;
-	var __teamAccessByToken: Map<string, TeamAccess> | undefined;
+	var __personalAccess: PersonalAccess[] | undefined;
+	var __accessByToken: Map<string, IndexedToken> | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
 }
@@ -71,7 +79,8 @@ globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
 globalThis.__teamAccess ||= [];
-globalThis.__teamAccessByToken ||= new Map();
+globalThis.__personalAccess ||= [];
+globalThis.__accessByToken ||= new Map();
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
@@ -81,102 +90,107 @@ const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
 const teamAccess = globalThis.__teamAccess;
-const teamAccessByToken = globalThis.__teamAccessByToken;
+const personalAccess = globalThis.__personalAccess;
+const accessByToken = globalThis.__accessByToken;
+
+/** What a token in {@link accessByToken} resolves to. */
+type IndexedToken = { kind: "team"; entry: TeamAccess } | { kind: "personal"; entry: PersonalAccess };
 
 function newAccessToken(): string {
 	// 24 random bytes ⇒ 32 url-safe characters, ~192 bits of entropy.
 	return crypto.randomBytes(24).toString("base64url");
 }
 
-/**
- * Compare team identifiers tolerantly: numeric strings from the tRPC input
- * layer must match the numbers stored on records, while house/special teams
- * are genuinely non-numeric and compare as trimmed strings.
- */
-function sameTeamKey(a: TeamFull, b: TeamFull): boolean {
-	const na = typeof a === "string" ? Number.parseInt(a, 10) : a;
-	const nb = typeof b === "string" ? Number.parseInt(b, 10) : b;
-	if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
-	return String(a).trim() === String(b).trim();
-}
-
-/** Look up a team's access record, if it has one. */
 function findTeamAccess(team: TeamFull): TeamAccess | undefined {
-	return teamAccess.find(t => sameTeamKey(t.team, team));
+	return teamAccess.find(t => sameTeam(t.team, team));
+}
+
+function findPersonalAccess(userId: UserId): PersonalAccess | undefined {
+	return personalAccess.find(p => p.userId === userId);
+}
+
+type AccessRecord = { token: string; created: Date; rotated?: Date; rotatedBy?: UserId };
+
+/** Everything the issue/rotate machinery needs to know about one link. */
+type AccessStore<T extends AccessRecord> = {
+	records: T[];
+	find: () => T | undefined;
+	make: (token: string) => T;
+	indexed: (entry: T) => IndexedToken;
+	persist: () => Promise<void>;
+};
+
+function teamStore(team: TeamFull): AccessStore<TeamAccess> {
+	return {
+		records: teamAccess,
+		find: () => findTeamAccess(team),
+		make: token => ({ team, token, created: new Date() }),
+		indexed: entry => ({ kind: "team", entry }),
+		persist: () => writeJsonFile(TEAM_ACCESS_FILE, teamAccess),
+	};
+}
+
+function personalStore(userId: UserId): AccessStore<PersonalAccess> {
+	return {
+		records: personalAccess,
+		find: () => findPersonalAccess(userId),
+		make: token => ({ userId, token, created: new Date() }),
+		indexed: entry => ({ kind: "personal", entry }),
+		persist: () => writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess),
+	};
 }
 
 /**
- * Lazily issue a team's shared access token if it doesn't have one yet.
- * Safe to call on every login - no-ops once issued.
- *
- * Returns the record plus whether it was created on THIS call, so the caller
- * can trigger one-time follow-up.
+ * Return the link's record, issuing it first if it doesn't exist yet. Safe to
+ * call on every login.
  *
  * Takes `changeLock`. Must NOT be called while already holding it.
  */
-async function ensureTeamAccess(team: TeamFull): Promise<{ entry: TeamAccess; justIssued: boolean }> {
-	const existing = findTeamAccess(team);
-	if (existing) {
-		teamAccessByToken.set(existing.token, existing);
-		return { entry: existing, justIssued: false };
-	}
+async function ensureAccess<T extends AccessRecord>(store: AccessStore<T>): Promise<T> {
+	const existing = store.find();
+	if (existing) return existing;
 
 	const release = await changeLock.acquire();
 	try {
-		// Re-check under the lock: concurrent logins from the same team race here.
-		const raced = findTeamAccess(team);
-		if (raced) {
-			teamAccessByToken.set(raced.token, raced);
-			return { entry: raced, justIssued: false };
-		}
+		// Re-check under the lock: concurrent logins race here.
+		const raced = store.find();
+		if (raced) return raced;
 
-		const entry: TeamAccess = { team, token: newAccessToken(), created: new Date() };
-		teamAccess.push(entry);
-		teamAccessByToken.set(entry.token, entry);
-		try {
-			await writeJsonFile(TEAM_ACCESS_FILE, teamAccess);
-		} catch (err) {
-			console.error("Error persisting team access token:", err);
-		}
-		return { entry, justIssued: true };
+		const entry = store.make(newAccessToken());
+		store.records.push(entry);
+		accessByToken.set(entry.token, store.indexed(entry));
+		await store.persist();
+		return entry;
 	} finally {
 		release();
 	}
 }
 
 /**
- * Replace a team's shared token with a fresh one. The old token stops working
- * immediately (it is dropped from the index), so every existing bookmark for
- * that team dies - callers are expected to DM the team the new link.
+ * Replace a link's token. The old token stops working immediately (it's
+ * dropped from the index), so callers are expected to DM the replacement.
+ * Issues the link if there wasn't one — that satisfies the request just as well.
  *
  * Takes `changeLock`. Must NOT be called while already holding it.
  */
-async function rotateTeamAccess(team: TeamFull, rotatedBy: UserId): Promise<TeamAccess> {
+async function rotateAccess<T extends AccessRecord>(store: AccessStore<T>, rotatedBy: UserId): Promise<T> {
 	const release = await changeLock.acquire();
 	try {
-		const existing = findTeamAccess(team);
-		const now = new Date();
-
+		const existing = store.find();
 		if (!existing) {
-			// Nothing to rotate yet - issuing satisfies the request just as well.
-			const entry: TeamAccess = { team, token: newAccessToken(), created: now };
-			teamAccess.push(entry);
-			teamAccessByToken.set(entry.token, entry);
-			await writeJsonFile(TEAM_ACCESS_FILE, teamAccess).catch(err =>
-				console.error("Error persisting team access token:", err),
-			);
+			const entry = store.make(newAccessToken());
+			store.records.push(entry);
+			accessByToken.set(entry.token, store.indexed(entry));
+			await store.persist();
 			return entry;
 		}
 
-		teamAccessByToken.delete(existing.token);
+		accessByToken.delete(existing.token);
 		existing.token = newAccessToken();
-		existing.rotated = now;
+		existing.rotated = new Date();
 		existing.rotatedBy = rotatedBy;
-		teamAccessByToken.set(existing.token, existing);
-
-		await writeJsonFile(TEAM_ACCESS_FILE, teamAccess).catch(err =>
-			console.error("Error persisting rotated team access token:", err),
-		);
+		accessByToken.set(existing.token, store.indexed(existing));
+		await store.persist();
 		return existing;
 	} finally {
 		release();
@@ -184,88 +198,132 @@ async function rotateTeamAccess(team: TeamFull, rotatedBy: UserId): Promise<Team
 }
 
 /**
- * Record that a user has been DM'd the given team token, so we do not re-send
- * the same link on every login. Rotation invalidates this naturally: the new
- * token is not in the list, so the next login re-sends.
+ * Delete a person's link outright. Used when an admin blocks an account: a
+ * shared account's link may have spread, so unblocking later must not bring
+ * the same token back.
  *
  * Takes `changeLock`. Must NOT be called while already holding it.
  */
-async function markLinkSent(user: UserEntry, token: string): Promise<void> {
-	if (user.gateLinkSentTokens?.includes(token)) return;
+async function removePersonalAccess(userId: UserId): Promise<void> {
 	const release = await changeLock.acquire();
 	try {
-		user.gateLinkSentTokens ??= [];
-		if (!user.gateLinkSentTokens.includes(token)) user.gateLinkSentTokens.push(token);
-		await writeJsonFile(USERS_FILE, users).catch(err => console.error("Error persisting gate link state:", err));
+		const index = personalAccess.findIndex(p => p.userId === userId);
+		if (index === -1) return;
+		const [removed] = personalAccess.splice(index, 1);
+		if (removed) accessByToken.delete(removed.token);
+		await writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess);
 	} finally {
 		release();
 	}
 }
 
 /**
- * Make sure every team this user belongs to has a shared link, and DM them any
- * link they have not been sent yet. Covers first login, joining a team, and
- * picking up a rotation - all through the same path.
+ * Record that a user has been DM'd the given tokens, so we don't re-send the
+ * same links on every login. Rotation invalidates this naturally: a new token
+ * isn't in the list, so the next login re-sends.
  *
- * Never throws: logs failures so a Slack hiccup cannot break login.
- *
- * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ * Takes `changeLock`. Must NOT be called while already holding it.
  */
-async function ensureTeamLinksForUser(user: UserEntry, slackId: string): Promise<void> {
-	if (user.teams === "admin") return;
-	if (user.teams.length === 0) {
-		console.warn(
-			`Skipping gate link for user ${user.id} (slack ${slackId}): no teams assigned (likely an invalid Slack name).`,
-		);
-		return;
-	}
-
-	for (const team of user.teams) {
-		try {
-			const { entry } = await ensureTeamAccess(team);
-			if (user.gateLinkSentTokens?.includes(entry.token)) continue;
-
-			const outcome = await sendTeamLinkDm(user, slackId, entry.team, entry.token);
-			if (!outcome.sent) {
-				console.warn(
-					`Gate link DM not sent to user ${user.id} (slack ${slackId}, team ${team}): ${outcome.reason}${
-						outcome.error ? ` - ${outcome.error}` : ""
-					}`,
-				);
-				continue;
-			}
-			await markLinkSent(user, entry.token);
-		} catch (err) {
-			console.error(`Failed ensuring gate link for user ${user.id}, team ${team}:`, err);
-		}
+async function markLinksSent(user: UserEntry, tokens: readonly string[]): Promise<void> {
+	const fresh = tokens.filter(t => !user.gateLinkSentTokens?.includes(t));
+	if (fresh.length === 0) return;
+	const release = await changeLock.acquire();
+	try {
+		user.gateLinkSentTokens = [...new Set([...(user.gateLinkSentTokens ?? []), ...fresh])];
+		await writeJsonFile(USERS_FILE, users);
+	} finally {
+		release();
 	}
 }
 
-/** Kick off {@link ensureTeamLinksForUser} without blocking the login path. */
-function fireTeamLinkDms(user: UserEntry, slackId: string): void {
-	void ensureTeamLinksForUser(user, slackId);
+/** Every Slack ID mapped to a user — rotation DMs reach all of them. */
+function slackIdsFor(userId: UserId): string[] {
+	return slackMappings.filter(m => m.userId === userId).map(m => m.slackId);
+}
+
+/**
+ * Make sure this user holds every link they're entitled to — one per team they
+ * belong to, plus a personal link if they're an approved member — and DM them,
+ * in a single message, any they haven't been sent yet. Covers first login,
+ * joining a team, becoming eligible and picking up a rotation, all through the
+ * same path.
+ *
+ * Never throws: logs failures so a Slack hiccup can't break login.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+async function ensureLinksForUser(user: UserEntry, slackId: string): Promise<void> {
+	const unsent: GateLink[] = [];
+	const wanted = (token: string) => !user.gateLinkSentTokens?.includes(token);
+
+	try {
+		if (isPersonalAccessEligible(user)) {
+			const entry = await ensureAccess(personalStore(user.id));
+			if (wanted(entry.token)) unsent.push({ kind: "personal", token: entry.token });
+		}
+
+		if (user.teams !== "admin") {
+			for (const team of user.teams) {
+				const entry = await ensureAccess(teamStore(team));
+				if (wanted(entry.token)) unsent.push({ kind: "team", team: entry.team, token: entry.token });
+			}
+		}
+	} catch (err) {
+		console.error(`Failed issuing gate links for user ${user.id}:`, err);
+		return;
+	}
+
+	if (unsent.length === 0) return;
+
+	const outcome = await sendLinksDm(slackId, unsent, "issued");
+	if (!outcome.sent) {
+		console.warn(
+			`Gate link DM not sent to user ${user.id} (slack ${slackId}): ${outcome.reason}${
+				outcome.error ? ` - ${outcome.error}` : ""
+			}`,
+		);
+		return;
+	}
+	await markLinksSent(
+		user,
+		unsent.map(l => l.token),
+	).catch(err => console.error(`Failed recording sent gate links for user ${user.id}:`, err));
+}
+
+/** Kick off {@link ensureLinksForUser} without blocking the login path. */
+function fireLinkDms(user: UserEntry, slackId: string): void {
+	void ensureLinksForUser(user, slackId);
 }
 
 /**
  * Fire-and-forget DMs to every member of the reservation's team (excluding the
- * creator). Best-effort - logs failures but never blocks the caller.
+ * creator), carrying the team's link — issued now if the team has none yet.
+ * Best-effort: logs failures but never blocks the caller.
+ *
+ * Must be called after the caller has released `changeLock`.
  */
 function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
-	const entry = findTeamAccess(reservation.team);
 	const { recipients } = selectTeamMemberRecipients(users, slackMappings, reservation.team, excludeUserId);
 	if (recipients.length === 0) return;
 
-	void notifyTeamOfReservation(reservation, recipients, entry?.token)
-		.then(outcomes => {
-			const failed = outcomes.filter(o => !o.sent);
-			if (failed.length > 0) {
-				console.warn(
-					`Reservation ${reservation.id}: ${failed.length}/${outcomes.length} DM(s) failed:`,
-					failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
-				);
-			}
-		})
-		.catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
+	void (async () => {
+		const entry = await ensureAccess(teamStore(reservation.team));
+		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token);
+
+		const failed = outcomes.filter(o => !o.sent);
+		if (failed.length > 0) {
+			console.warn(
+				`Reservation ${reservation.id}: ${failed.length}/${outcomes.length} DM(s) failed:`,
+				failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+			);
+		}
+
+		// The reminder carried the link, so the next login needn't send it again.
+		for (const o of outcomes.filter(o => o.sent)) {
+			const user = users.find(u => u.id === o.userId);
+			if (user) await markLinksSent(user, [entry.token]);
+		}
+	})().catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
 }
 
 /**
@@ -360,7 +418,7 @@ type LogUserEntry = LogCommon & {
 };
 
 /**
- * Gate-link administration. Worth auditing on its own: revealing a shared
+ * Team-link administration. Worth auditing on its own: revealing a shared
  * secret and invalidating a whole team's bookmarks are both things you want
  * to be able to attribute after the fact.
  */
@@ -369,7 +427,20 @@ type LogTeamAccessEntry = LogCommon & {
 	team: TeamFull;
 };
 
-type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | LogUserEntry | LogTeamAccessEntry;
+/** Personal-link administration, attributed to the admin who did it. */
+type LogPersonalAccessEntry = LogCommon & {
+	type: "personalLinkReveal" | "personalLinkRotate" | "personalLinkBlock" | "personalLinkUnblock";
+	targetUserId: UserId;
+	targetName: string;
+};
+
+type LogEntry =
+	| LogReservationEntry
+	| LogBlackoutEntry
+	| LogSiteEventEntry
+	| LogUserEntry
+	| LogTeamAccessEntry
+	| LogPersonalAccessEntry;
 
 export class PermissionError extends Error {
 	constructor(message: string) {
@@ -700,7 +771,7 @@ export class Context {
 				throw new PermissionError("User disabled");
 			}
 			await syncUserFromSession(user, sessionName, sessionDisplayName);
-			fireTeamLinkDms(user, slackId);
+			fireLinkDms(user, slackId);
 			return user;
 		}
 
@@ -724,7 +795,7 @@ export class Context {
 					.finally(release);
 
 				await syncUserFromSession(existingUser, sessionName, sessionDisplayName);
-				fireTeamLinkDms(existingUser, slackId);
+				fireLinkDms(existingUser, slackId);
 				return existingUser;
 			}
 		}
@@ -764,7 +835,7 @@ export class Context {
 			),
 		).then(release);
 
-		fireTeamLinkDms(newUser, slackId);
+		fireLinkDms(newUser, slackId);
 
 		return newUser;
 	}
@@ -835,14 +906,7 @@ export class Context {
 	 * team keeps its row even after its last member's Slack name breaks.
 	 */
 	async listTeamAccess(): Promise<
-		Array<{
-			team: TeamFull;
-			hasLink: boolean;
-			created: Date | null;
-			rotated: Date | null;
-			stale: boolean;
-			memberCount: number;
-		}>
+		Array<{ team: TeamFull; hasLink: boolean; created: Date | null; rotated: Date | null; memberCount: number }>
 	> {
 		await this.assertAdmin("Only admins can view team access");
 		await initialized();
@@ -859,17 +923,12 @@ export class Context {
 			.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
 			.map(team => {
 				const entry = findTeamAccess(team);
-				const issued = entry?.rotated ?? entry?.created ?? null;
 				return {
 					team,
 					hasLink: Boolean(entry),
 					created: entry?.created ?? null,
 					rotated: entry?.rotated ?? null,
-					// A link issued before this season should be rotated. Surfaced rather
-					// than auto-rotated so a year rollover doesn't silently kill every
-					// bookmark and fire a DM storm nobody asked for.
-					stale: issued !== null && issued.getFullYear().toString() !== YEAR,
-					memberCount: users.filter(u => !u.disabled && u.teams !== "admin" && u.teams.some(t => sameTeamKey(t, team)))
+					memberCount: users.filter(u => !u.disabled && u.teams !== "admin" && u.teams.some(t => sameTeam(t, team)))
 						.length,
 				};
 			});
@@ -886,7 +945,7 @@ export class Context {
 		await this.assertAdmin("Only admins can reveal team access links");
 		await initialized();
 
-		const { entry } = await ensureTeamAccess(team);
+		const entry = await ensureAccess(teamStore(team));
 
 		const ctx = await this.getContext();
 		await log({ ...ctx, type: "teamLinkReveal", team: entry.team });
@@ -905,7 +964,7 @@ export class Context {
 		await initialized();
 
 		const admin = await this.user;
-		const entry = await rotateTeamAccess(team, admin.id);
+		const entry = await rotateAccess(teamStore(team), admin.id);
 
 		const ctx = await this.getContext();
 		await log({ ...ctx, type: "teamLinkRotate", team: entry.team });
@@ -913,16 +972,12 @@ export class Context {
 		// DM the whole team, including the admin if they're on it — everyone's
 		// old bookmark just died.
 		const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, null);
-		const outcomes = await notifyTeamOfLink(entry.team, entry.token, recipients, "rotated");
+		const outcomes = await notifyTeamOfLink(entry.team, entry.token, recipients);
 
-		await Promise.all(
-			outcomes
-				.filter(o => o.sent)
-				.map(o => {
-					const user = users.find(u => u.id === o.userId);
-					return user ? markLinkSent(user, entry.token) : Promise.resolve();
-				}),
-		);
+		for (const o of outcomes.filter(o => o.sent)) {
+			const user = users.find(u => u.id === o.userId);
+			if (user) await markLinksSent(user, [entry.token]);
+		}
 
 		const failed = outcomes.filter(o => !o.sent);
 		if (failed.length > 0) {
@@ -933,6 +988,147 @@ export class Context {
 		}
 
 		return { team: entry.team, notified: outcomes.length - failed.length, failed: failed.length };
+	}
+
+	/**
+	 * Admin-only: personal-link status for every user, keyed by user ID. Like
+	 * the team listing, it never includes the token itself.
+	 */
+	async listPersonalAccess(): Promise<
+		Record<
+			UserId,
+			{
+				status: "active" | "not_issued" | "blocked" | "invalid_name" | "disabled";
+				created: Date | null;
+				rotated: Date | null;
+			}
+		>
+	> {
+		await this.assertAdmin("Only admins can view personal access");
+		await initialized();
+
+		const out: Awaited<ReturnType<Context["listPersonalAccess"]>> = {};
+		for (const user of users) {
+			const entry = findPersonalAccess(user.id);
+			const status = user.disabled
+				? "disabled"
+				: user.personalAccessBlocked
+					? "blocked"
+					: !isPersonalAccessEligible(user)
+						? "invalid_name"
+						: entry
+							? "active"
+							: "not_issued";
+			out[user.id] = { status, created: entry?.created ?? null, rotated: entry?.rotated ?? null };
+		}
+		return out;
+	}
+
+	/** Look up a user an admin action targets, refusing ones that can't hold a link. */
+	private eligibleTarget(userId: UserId): UserEntry {
+		const target = users.find(u => u.id === userId);
+		if (!target) throw new Error("User not found");
+		if (!isPersonalAccessEligible(target)) {
+			throw new Error(
+				target.personalAccessBlocked
+					? "This account is blocked from having a personal link"
+					: target.disabled
+						? "This account is disabled"
+						: "This account's Slack name isn't in the expected format, so it can't have a personal link",
+			);
+		}
+		return target;
+	}
+
+	/**
+	 * Admin-only: reveal one person's link, for handing over when Slack DMs
+	 * aren't reaching them. Issues it if needed. Logged.
+	 */
+	async revealPersonalAccessLink(userId: UserId): Promise<{ userId: UserId; token: string }> {
+		await this.assertAdmin("Only admins can reveal personal access links");
+		await initialized();
+
+		const target = this.eligibleTarget(userId);
+		const entry = await ensureAccess(personalStore(target.id));
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: "personalLinkReveal",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		return { userId: target.id, token: entry.token };
+	}
+
+	/**
+	 * Admin-only: rotate one person's link and DM them the replacement on every
+	 * Slack account mapped to them. The old link stops working immediately.
+	 */
+	async rotatePersonalAccessLink(userId: UserId): Promise<{ userId: UserId; notified: number; failed: number }> {
+		await this.assertAdmin("Only admins can rotate personal access links");
+		await initialized();
+
+		const target = this.eligibleTarget(userId);
+		const admin = await this.user;
+		const entry = await rotateAccess(personalStore(target.id), admin.id);
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: "personalLinkRotate",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		let notified = 0;
+		let failed = 0;
+		for (const slackId of slackIdsFor(target.id)) {
+			const outcome = await sendLinksDm(slackId, [{ kind: "personal", token: entry.token }], "rotated");
+			if (outcome.sent) notified++;
+			else {
+				failed++;
+				console.warn(`Personal link rotation DM to ${target.id}/${slackId} failed: ${outcome.error ?? outcome.reason}`);
+			}
+		}
+		if (notified > 0) await markLinksSent(target, [entry.token]);
+
+		return { userId: target.id, notified, failed };
+	}
+
+	/**
+	 * Admin-only: mark an account as shared/unverified (no personal link), or
+	 * clear that mark. Blocking deletes the existing link outright — a shared
+	 * account's link may have spread — so unblocking issues a fresh one on the
+	 * person's next login rather than resurrecting the old one.
+	 */
+	async setPersonalAccessBlocked(userId: UserId, blocked: boolean): Promise<void> {
+		await this.assertAdmin("Only admins can block personal access");
+		await initialized();
+
+		const target = users.find(u => u.id === userId);
+		if (!target) throw new Error("User not found");
+
+		if (Boolean(target.personalAccessBlocked) !== blocked) {
+			const release = await changeLock.acquire();
+			try {
+				target.personalAccessBlocked = blocked ? true : undefined;
+				target.updated = new Date();
+				await writeJsonFile(USERS_FILE, users);
+			} finally {
+				release();
+			}
+		}
+		if (blocked) await removePersonalAccess(target.id);
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: blocked ? "personalLinkBlock" : "personalLinkUnblock",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
 	}
 
 	/**
@@ -1012,8 +1208,10 @@ const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
 const SITE_EVENTS_FILE = join(DATA_DIR, YEAR, "events.json");
 const HOLIDAYS_FILE = join(DATA_DIR, YEAR, "holidays.json");
 const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
-// Per-season: rotating at the year boundary is as simple as starting a new file.
+// Access links are per season: the server restarts when the year changes, and
+// a new year's empty files mean everyone is issued (and DM'd) fresh links.
 const TEAM_ACCESS_FILE = join(DATA_DIR, YEAR, "teamAccess.json");
+const PERSONAL_ACCESS_FILE = join(DATA_DIR, YEAR, "personalAccess.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
 
@@ -1099,6 +1297,7 @@ function getFilePath(array: unknown[]) {
 	if (array === houseTeams) return HOUSE_TEAMS_FILE;
 	if (array === slackMappings) return SLACK_MAPPINGS_FILE;
 	if (array === teamAccess) return TEAM_ACCESS_FILE;
+	if (array === personalAccess) return PERSONAL_ACCESS_FILE;
 	throw new Error("Unknown array type");
 }
 
@@ -1124,7 +1323,13 @@ async function initializePart(array: unknown[]) {
 			array.length = 0;
 		}
 
-		if (array === teamAccess) teamAccessByToken.clear();
+		// Both link stores share one token index; drop only this store's entries.
+		const reloadingKind = array === teamAccess ? "team" : array === personalAccess ? "personal" : null;
+		if (reloadingKind) {
+			for (const [token, indexed] of accessByToken) {
+				if (indexed.kind === reloadingKind) accessByToken.delete(token);
+			}
+		}
 
 		let strippedDeadFields = false;
 
@@ -1158,15 +1363,24 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
-				// Team access records: revive dates and rebuild the token index that
+				// Access records: revive dates and rebuild the token index that
 				// /api/access/check reads on every call.
-				if (array === teamAccess) {
+				if (array === teamAccess || array === personalAccess) {
 					if (typeof item !== "object" || item === null) return false;
-					const entry = item as TeamAccess;
-					if (!entry.token || entry.team === undefined || entry.team === null) return false;
-					entry.created = new Date(entry.created);
-					if (entry.rotated) entry.rotated = new Date(entry.rotated);
-					teamAccessByToken.set(entry.token, entry);
+					const record = item as AccessRecord;
+					if (!record.token) return false;
+					record.created = new Date(record.created);
+					if (record.rotated) record.rotated = new Date(record.rotated);
+
+					if (array === teamAccess) {
+						const entry = item as TeamAccess;
+						if (entry.team === undefined || entry.team === null) return false;
+						accessByToken.set(entry.token, { kind: "team", entry });
+					} else {
+						const entry = item as PersonalAccess;
+						if (!entry.userId) return false;
+						accessByToken.set(entry.token, { kind: "personal", entry });
+					}
 				}
 
 				// Old per-reservation `token` field is dead since we switched to
@@ -1214,6 +1428,7 @@ function getArrayName(array: unknown[]): string {
 	if (array === houseTeams) return "houseTeams";
 	if (array === slackMappings) return "slackMappings";
 	if (array === teamAccess) return "teamAccess";
+	if (array === personalAccess) return "personalAccess";
 	return "unknown";
 }
 
@@ -1236,6 +1451,7 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
 	jobs.push(initializePart(teamAccess));
+	jobs.push(initializePart(personalAccess));
 
 	await Promise.all(jobs);
 
@@ -1248,17 +1464,24 @@ function getArrayName(array: unknown[]): string {
 
 // ===== Access (Tool Authorization) =====
 /**
- * Look up the team behind a shared access token and decide whether they
- * currently have access to the given tool. Gate Manager and other tool
- * integrations call this on every interaction via /api/access/check.
+ * Resolve an access token (team or personal) and decide whether it currently
+ * grants the given tool. Gate Manager and other tool integrations call this on
+ * every interaction via /api/access/check.
  *
  * Callers must already have authenticated themselves with the scheduler bearer
  * token before reaching here; this function trusts that and just runs policy.
  */
 export async function checkAccess(token: string, tool: string): Promise<AccessCheckResult> {
 	await initialized();
-	const entry = teamAccessByToken.get(token);
-	return evaluateTeamAccess(entry?.team, tool, reservations);
+	const indexed = accessByToken.get(token);
+	if (!indexed) return evaluateAccess(undefined, tool, reservations);
+
+	if (indexed.kind === "team") return evaluateAccess({ kind: "team", team: indexed.entry.team }, tool, reservations);
+
+	// Resolve the live user so disabling, blocking or a broken Slack name takes
+	// effect immediately. A link whose user has since expired grants nothing.
+	const user = users.find(u => u.id === indexed.entry.userId);
+	return evaluateAccess(user ? { kind: "personal", user } : undefined, tool, reservations);
 }
 
 // ===== Calendar Feed Helpers =====

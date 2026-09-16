@@ -42,11 +42,36 @@ reuse the same endpoint with a different `tool` identifier. See
 
 ## Decisions already made (don't re-ask)
 
-- **Per-TEAM tokens.** One link per team, shared among its members. _(User
-  decision, 2026-09-15 — this reversed an earlier per-user design that a
-  previous session had already built and committed in `70299a3`.)_ Keep the
-  code structured so **per-user can return later** without another rewrite —
-  hence the principal-based evaluator below.
+- **Two kinds of link** _(user decision, 2026-09-16 — prompted by mentors who
+  belong to two teams)_:
+  - **Team link** — one per team, shared among members, works only around
+    that team's reservations. _(Per-team replaced an earlier per-user design,
+    2026-09-15.)_
+  - **Personal link** — one per person, works any day within **site hours**,
+    no reservation needed. Not shared.
+- **Who gets a personal link:** any approved Slack member — "99% of people".
+  Approved = not disabled, Slack display name parses (a malformed name is
+  treated as unverified), and not flagged by an admin as a shared/unverified
+  account. Admins and `(TSL)` lab mates qualify like anyone else.
+- **Site hours 8am–11pm, field time, for ALL scheduler-issued access.** From
+  11pm to 8am only Gate Manager's own registered employees (~6 people, a
+  separate path that never asks the scheduler) can open the gate. Team windows
+  are clamped to site hours too; with today's slots (last one 7–10pm, +60 min)
+  the clamp is a no-op, but it keeps the rule true if slot borders move.
+- **Blackouts do not affect personal links** — blackouts only stop bookings.
+- **Contract change applied in both repos** (user chose this over a
+  scheduler-only fudge): successes/denials carry `grant: "team" | "personal"`;
+  personal successes have `team: null`, `reservation_id: null`, and a real
+  `user`. Gate Manager must be deployed **before** the scheduler — the current
+  Gate Manager dereferences `check.team.id` on every success. Do not commit in
+  the Gate Manager repo without asking: it has someone else's uncommitted
+  deploy-pipeline work.
+- **Season rollover is automatic.** Both link stores live in
+  `data/<year>/…`, and the server restarts at the year boundary, so a new
+  year starts with no links; new ones are issued (and DM'd) as people log in.
+  _(Correction: an earlier session built a "stale link, rotate manually" flag
+  and described rollover as prompted. That flag could never fire because the
+  files are per-year; it has been removed.)_
 - **Access window: `slot_start − 20 min` … `slot_end + 60 min`.** _(User
   decision, 2026-09-15.)_ Replaces the earlier 30 min / 6 h asymmetry.
 - **Gate only for now.** `bathroom` and friends come later; the endpoint is
@@ -57,8 +82,9 @@ reuse the same endpoint with a different `tool` identifier. See
   link is stranded and the old bookmark dies silently.
 - **Admin UI reveals the link on explicit action** (not shown by default) —
   so an admin can hand it over when Slack DMs aren't working for someone.
-- **Admins get no automatic gate access** by virtue of being admins; they'd
-  get it through team membership like anyone else.
+- **Being an admin grants nothing by itself.** Admins aren't on a team's
+  roster (`teams: "admin"`), so they get no team link; they get a personal
+  link as approved Slack members, same as everyone.
 - **Every answer is HTTP 200** with a `{valid, reason, …}` envelope; only
   auth/config/transport problems use non-2xx. Matches the Gate Manager brief.
 - **Fail-closed is Gate Manager's job**, not ours — we answer honestly.
@@ -140,30 +166,21 @@ consult the `home-assistant-best-practices` skill first.
 ## Plan / steps
 
 1. ✅ `/api/access/check` endpoint + bearer auth + zod validation.
-2. ✅ Slack client, welcome/reminder DMs, name parsing, `STRICT_SLACK_NAMES`,
-   `/login` bad-name UI, admin Slack-name audit panel. _(commit `70299a3`)_
-3. ✅ Per-user → **per-team** tokens; principal-based evaluator; grace 20/60;
-   `data/<year>/teamAccess.json`; per-user "link already sent" tracking so
-   rotation self-heals on next login. _(commit `5d4c1c1`)_
-4. ✅ Admin UI on `/users`: per-team status, reveal-on-demand, rotate (DMs the
-   team). Both reveal and rotate write audit-log entries.
-5. ✅ Season rollover — implemented as **flagged, not automatic**: a link
-   issued before the current season shows a "previous season" tag and a
-   warning banner, and an admin rotates with one click. Auto-rotating on
-   Jan 1 would kill every bookmark unannounced and fire a DM storm.
-6. ✅ Removed the `title=` tooltip from `NameAuditPanel.tsx`; the reason the
-   button is disabled is now inline text.
-7. ✅ README "Tool Access (gate)" section; `Gate Manager/docs/scheduler-integration.md`
-   rewritten for the per-team model. **That doc edit is uncommitted in the
-   Gate Manager repo** — that repo had unrelated uncommitted work already, so
-   nothing was committed there.
-
-### Next, when a second tool arrives
-
-- Tool catalog refactor (see "Home Assistant" above) — do this _before_
-  adding `bathroom`, not after.
-- Consider per-team tool allow-lists; `tool_not_authorized` already exists
-  as the denial reason.
+2. ✅ Slack client, DMs, name parsing, `STRICT_SLACK_NAMES`, `/login` bad-name
+   UI, admin Slack-name audit panel. _(commit `70299a3`)_
+3. ✅ Per-team links, admin reveal/rotate, 20/60 grace. _(commit `5d4c1c1`)_
+4. ⬅️ **CURRENT** — Personal links + site hours:
+   - `access.ts`: site-hours constants, clamp team windows, `personal`
+     principal (replaces the unused reservation-based per-user path),
+     `grant` in every response.
+   - `backend.ts`: `data/<year>/personalAccess.json`, one token index for
+     both kinds, issue + DM on login, admin reveal/rotate/block; remove the
+     dead `stale` flag; make sure a reservation DM always carries the team link.
+   - UI: per-user gate-link cell in the admin Users table; drop the stale
+     banner from the team panel; remove `title=` from `UsersTable`.
+   - Gate Manager: client types + `grant`-aware display in enroll, view, pulse.
+   - README, integration doc, tests.
+5. Tool catalog refactor before a second tool (see Home Assistant).
 
 ## Findings / gotchas
 

@@ -127,23 +127,6 @@
 	}
 }
 
-.staleTag {
-	margin-left: 0.5rem;
-	padding: 0.05rem 0.4rem;
-	border-radius: 999px;
-	background: #fef3c7;
-	color: #92400e;
-	font-size: 0.75rem;
-	white-space: nowrap;
-}
-
-@media (prefers-color-scheme: dark) {
-	.staleTag {
-		background: #4a3a1a;
-		color: #fcd34d;
-	}
-}
-
 .button {
 	padding: 0.3rem 0.65rem;
 	border-radius: 4px;

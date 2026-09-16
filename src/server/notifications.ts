@@ -1,10 +1,11 @@
 import { env } from "~/env";
 import type { Reservation, TeamFull, UserEntry, UserId } from "~/types";
+import { describeSiteHours, formatHour, SITE_CLOSE_HOUR, SITE_OPEN_HOUR, sameTeam } from "./access";
 import { isSlackConfigured, SlackApiError, SlackNotConfiguredError, sendDirectMessage } from "./slack";
 
 /**
- * Build a team's gate access URL. Returns null when GATE_BASE_URL isn't
- * configured (the URL is meaningless without it).
+ * Build a gate access URL (team or personal — same shape). Returns null when
+ * GATE_BASE_URL isn't configured (the URL is meaningless without it).
  */
 export function gateAccessUrl(token: string | undefined | null): string | null {
 	if (!token) return null;
@@ -17,55 +18,70 @@ export type DmOutcome =
 	| { sent: true }
 	| { sent: false; reason: "slack_not_configured" | "no_slack_id" | "slack_error"; error?: string };
 
-/** Why a team is being sent its link. Changes only the framing of the message. */
+/** One link to deliver. */
+export type GateLink = { kind: "personal"; token: string } | { kind: "team"; team: TeamFull; token: string };
+
+/** Why links are being sent. Changes only the framing of the message. */
 export type LinkDmKind = "issued" | "rotated";
 
-function teamLinkMessage(team: TeamFull, url: string | null, kind: LinkDmKind): string {
-	const link = url ?? "(gate URL not configured on the scheduler — ask an admin)";
+const NOT_CONFIGURED = "(gate URL not configured on the scheduler — ask an admin)";
 
+function linkLine(link: GateLink): string[] {
+	const url = gateAccessUrl(link.token) ?? NOT_CONFIGURED;
+	if (link.kind === "personal") {
+		return [
+			`*Your personal link* — works any day, ${describeSiteHours()}. It's yours alone: don't share it.`,
+			`<${url}>`,
+		];
+	}
+	return [
+		`*Team ${link.team}'s link* — works around Team ${link.team}'s reserved practice times. Share it with your team.`,
+		`<${url}>`,
+	];
+}
+
+/**
+ * Build the DM text for one or more links. Exported for tests.
+ */
+export function linksMessage(links: readonly GateLink[], kind: LinkDmKind): string {
+	const plural = links.length > 1;
 	const opening =
 		kind === "rotated"
 			? [
-					`Team ${team}'s practice-field gate link has been *rotated*. 🔄`,
-					"",
-					"The previous link no longer works — please replace your bookmark with this one:",
+					`Your practice-field gate link${plural ? "s have" : " has"} been *replaced*. 🔄`,
+					`The old link${plural ? "s no longer work" : " no longer works"} — please update your bookmark${plural ? "s" : ""}.`,
 				]
-			: [
-					`Here's Team ${team}'s practice-field gate link. 🔑`,
-					"",
-					"This is your team's shared link for opening the gate:",
-				];
+			: [`Here ${plural ? "are your practice-field gate links" : "is your practice-field gate link"}. 🔑`];
+
+	const body = links.flatMap(link => ["", ...linkLine(link)]);
 
 	return [
 		...opening,
+		...body,
 		"",
-		`<${link}>`,
-		"",
-		"How it works:",
-		"• Bookmark it on your phone — one link works all season.",
-		"• During your team's reserved practice time it will open the gate.",
-		"• Outside those times it will tell you when your next window is.",
-		"",
-		"It's shared by everyone on your team, so keep it within the team. If it gets out, ask an admin to rotate it.",
+		plural
+			? "Bookmark them on your phone — they work all season. Outside their hours they'll tell you when they next open."
+			: "Bookmark it on your phone — it works all season. Outside its hours it'll tell you when it next opens.",
+		`No link opens the gate between ${formatHour(SITE_CLOSE_HOUR)} and ${formatHour(SITE_OPEN_HOUR)}.`,
+		"If a link gets out, ask an admin to replace it.",
 	].join("\n");
 }
 
 /**
- * DM one user their team's gate link. Best-effort — never throws; returns a
- * structured outcome so callers can log without breaking the login flow.
+ * DM one Slack account some gate links, in a single message. Best-effort —
+ * never throws; returns a structured outcome so callers can log without
+ * breaking the login flow.
  */
-export async function sendTeamLinkDm(
-	_user: UserEntry,
+export async function sendLinksDm(
 	slackUserId: string | null | undefined,
-	team: TeamFull,
-	token: string,
-	kind: LinkDmKind = "issued",
+	links: readonly GateLink[],
+	kind: LinkDmKind,
 ): Promise<DmOutcome> {
 	if (!isSlackConfigured()) return { sent: false, reason: "slack_not_configured" };
 	if (!slackUserId) return { sent: false, reason: "no_slack_id" };
 
 	try {
-		await sendDirectMessage({ slackUserId, text: teamLinkMessage(team, gateAccessUrl(token), kind) });
+		await sendDirectMessage({ slackUserId, text: linksMessage(links, kind) });
 		return { sent: true };
 	} catch (err) {
 		if (err instanceof SlackNotConfiguredError) return { sent: false, reason: "slack_not_configured" };
@@ -110,17 +126,12 @@ export function selectTeamMemberRecipients(
 	team: TeamFull,
 	excludeUserId: UserId | null,
 ): { recipients: TeamMemberRecipient[] } {
-	const wanted = typeof team === "string" ? Number.parseInt(team, 10) : team;
-
 	const recipients: TeamMemberRecipient[] = [];
 	for (const user of users) {
 		if (excludeUserId !== null && user.id === excludeUserId) continue;
 		if (user.disabled) continue;
 		if (user.teams === "admin") continue;
-		const onTeam = user.teams.some(t =>
-			Number.isFinite(wanted) ? t === wanted : String(t).trim() === String(team).trim(),
-		);
-		if (!onTeam) continue;
+		if (!user.teams.some(t => sameTeam(t, team))) continue;
 		for (const mapping of slackMappings) {
 			if (mapping.userId !== user.id) continue;
 			recipients.push({ user, slackUserId: mapping.slackId });
@@ -184,15 +195,14 @@ export async function notifyTeamOfReservation(
 }
 
 /**
- * DM every recipient a team's gate link — used after a rotation, where every
+ * DM every recipient a team's replacement link after a rotation, where every
  * existing bookmark has just stopped working.
  */
 export async function notifyTeamOfLink(
 	team: TeamFull,
 	token: string,
 	recipients: readonly TeamMemberRecipient[],
-	kind: LinkDmKind,
 ): Promise<TeamDmOutcome[]> {
-	const text = teamLinkMessage(team, gateAccessUrl(token), kind);
+	const text = linksMessage([{ kind: "team", team, token }], "rotated");
 	return fanOut(recipients, () => text);
 }

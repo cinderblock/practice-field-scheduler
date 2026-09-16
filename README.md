@@ -130,46 +130,58 @@ https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fyour.domain.com%2Fapi%2
 
 ### Tool Access (gate)
 
-Teams can open the practice-field gate during their reserved slot without ever
-seeing the gate-controller credentials. The scheduler is the **authority** for
-who may use what and when; [Gate Manager](https://github.com/cinderblock/gate-manager)
-is a stateless proxy that asks on every interaction and pulses the gate if the
+Teams and mentors can open the practice-field gate without ever seeing the
+gate-controller credentials. The scheduler is the **authority** for who may use
+what and when; [Gate Manager](https://github.com/cinderblock/gate-manager) is a
+stateless proxy that asks on every interaction and pulses the gate if the
 answer is yes.
 
-#### How it works
+#### Two kinds of link
 
-- **One shared link per team.** Each team gets a single URL of the form
-  `${GATE_BASE_URL}/g/<token>`, shared among its members. Bookmark it once; it
-  works all season. The time-gating happens server-side on every request, so a
-  stable link is not a standing grant.
+Both have the shape `${GATE_BASE_URL}/g/<token>`, and both are checked live on
+every use, so a stable bookmark is not a standing grant.
+
+| Link         | Who gets one                       | When it works                                            | Share it?       |
+| ------------ | ---------------------------------- | -------------------------------------------------------- | --------------- |
+| **Team**     | one per team, sent to every member | the team's reserved slots, 20 min before to 60 min after | within the team |
+| **Personal** | every approved Slack member        | any day, within site hours                               | no              |
+
+- **Site hours are 8am–11pm** (field time) and bound _everything_ the scheduler
+  issues, team links included. Overnight, only Gate Manager's own registered
+  employees can open the gate; that path never asks the scheduler.
+- **Approved** means: not disabled, a Slack display name in the expected
+  format, and not marked by an admin as a shared/unverified account. Admins and
+  `(TSL)` lab mates qualify like anyone else. Being an admin grants nothing by
+  itself.
 - **Team membership comes from Slack display names** in the form
-  `First Last (1234)` (multi-team: `First Last (1234, 5678)`; lab mates who
-  aren't on a team: `First Last (TSL)`, which validates but grants no access).
-  Membership re-syncs on every login.
-- **The access window** is the reserved slot padded by 20 minutes before and
-  60 minutes after. Both are constants in `src/server/access.ts`.
-- **Delivery is over Slack DM** — on first issue, on rotation, and alongside
-  each new reservation for the team. Slack being down or unconfigured never
-  breaks login or booking; the failure is logged and the link is picked up on
-  the next login.
-- **Admins get no access by virtue of being admins** — they get it through team
-  membership like anyone else.
+  `First Last (1234)` (multi-team: `First Last (1234, 5678)`; lab mates:
+  `First Last (TSL)`). Membership re-syncs on every sign-in, and a malformed
+  name immediately stops that person's personal link working.
+- **Blackouts don't affect personal links** — they only stop bookings.
+- **Delivery is one Slack DM** listing whichever links someone hasn't been sent
+  yet (a mentor on two teams gets three links in one message), plus a DM when
+  a link is replaced, plus the team link alongside each new reservation. Slack
+  being down or unconfigured never breaks sign-in or booking; unsent links go
+  out at the next sign-in.
+- **Links reset each year.** They're stored under `data/<year>/`, so a new
+  season starts with fresh links, issued as people sign in.
+- Grace periods and site hours are constants in `src/server/access.ts`.
 
 #### Admin controls
 
-On `/users`, admins get two panels:
+On `/users`, admins get:
 
 - **Slack-name audit** — lists anyone whose display name doesn't match the
   convention and can DM them all fix-it instructions. Use this before turning
   on `STRICT_SLACK_NAMES`.
-- **Team gate links** — per-team link status, **Reveal link** (for handing a
-  link over when Slack isn't reaching someone), and **Rotate** (issues a new
-  link, invalidates every existing bookmark for that team, and DMs the team the
-  replacement). Both reveal and rotate are written to the audit log.
+- **Team gate links** — per-team status, **Reveal link** (to hand a link over
+  when Slack isn't reaching someone) and **Rotate** (new link, every old
+  bookmark for that team stops working, the team is DM'd the replacement).
+- **Per person, under each name** — personal-link status, **Reveal**,
+  **Replace** (DMs the new link) and **Mark as shared account** (deletes the
+  link; unblocking issues a fresh one at their next sign-in).
 
-Links issued before the current season are flagged as stale. Rotating is
-deliberately a manual click rather than something that happens automatically at
-the year boundary, so nobody's bookmark dies unannounced.
+Reveal, rotate/replace and block/unblock are all written to the audit log.
 
 #### The check endpoint
 
@@ -181,10 +193,12 @@ Content-Type: application/json
 { "token": "<opaque>", "tool": "gate" }
 ```
 
-Every decision — allow or deny — is `200` with a `{ "valid": …, "reason": … }`
-envelope; non-2xx means a config, auth or transport problem (`401` bad secret,
-`503` `SCHEDULER_API_KEY` unset, `500` unexpected). Consumers are expected to
-fail closed on those.
+Every decision — allow or deny — is `200` with a
+`{ "valid": …, "grant": "team" | "personal", "reason": … }` envelope. Team
+successes carry `team` and `reservation_id`; personal successes carry `user`
+instead, with `team` and `reservation_id` null. Non-2xx means a config, auth or
+transport problem (`401` bad secret, `503` `SCHEDULER_API_KEY` unset, `500`
+unexpected); consumers are expected to fail closed on those.
 
 `tool` is currently only `"gate"`; anything else answers `tool_not_authorized`.
 The full contract, including every denial reason, lives in

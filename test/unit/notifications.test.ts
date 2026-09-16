@@ -12,8 +12,14 @@ vi.mock("~/env", () => ({
 	env: envState,
 }));
 
-const { gateAccessUrl, notifyTeamOfLink, notifyTeamOfReservation, selectTeamMemberRecipients, sendTeamLinkDm } =
-	await import("~/server/notifications");
+const {
+	gateAccessUrl,
+	linksMessage,
+	notifyTeamOfLink,
+	notifyTeamOfReservation,
+	selectTeamMemberRecipients,
+	sendLinksDm,
+} = await import("~/server/notifications");
 
 const fetchMock = vi.fn();
 
@@ -62,53 +68,100 @@ describe("gateAccessUrl", () => {
 	});
 });
 
-describe("sendTeamLinkDm", () => {
-	it("sends the DM with the team's shared gate link", async () => {
+describe("linksMessage", () => {
+	it("describes a personal link as private and bounded by site hours", () => {
+		const text = linksMessage([{ kind: "personal", token: "tok-me" }], "issued");
+		expect(text).toContain("https://gate.example.test/g/tok-me");
+		expect(text).toContain("personal link");
+		expect(text).toContain("8am–11pm");
+		expect(text).toContain("don't share");
+	});
+
+	it("describes a team link as shared and tied to reservations", () => {
+		const text = linksMessage([{ kind: "team", team: 1234, token: "tok-team" }], "issued");
+		expect(text).toContain("https://gate.example.test/g/tok-team");
+		expect(text).toContain("Team 1234");
+		expect(text).toContain("reserved practice times");
+		expect(text).toContain("Share it with your team");
+	});
+
+	it("puts every link a multi-team mentor is owed in one message", () => {
+		const text = linksMessage(
+			[
+				{ kind: "personal", token: "tok-me" },
+				{ kind: "team", team: 1234, token: "tok-a" },
+				{ kind: "team", team: 5678, token: "tok-b" },
+			],
+			"issued",
+		);
+		expect(text).toContain("gate links");
+		expect(text).toContain("/g/tok-me");
+		expect(text).toContain("/g/tok-a");
+		expect(text).toContain("/g/tok-b");
+		expect(text).toContain("Bookmark them");
+	});
+
+	it("says when nothing opens the gate", () => {
+		expect(linksMessage([{ kind: "personal", token: "t" }], "issued")).toContain("between 11pm and 8am");
+	});
+
+	it("frames a rotation as a replacement and warns the old link is dead", () => {
+		const text = linksMessage([{ kind: "personal", token: "tok-new" }], "rotated");
+		expect(text).toContain("replaced");
+		expect(text).toContain("no longer works");
+		expect(text).toContain("Bookmark it");
+	});
+
+	it("falls back to a placeholder when the gate URL isn't configured", () => {
+		envState.GATE_BASE_URL = undefined;
+		const text = linksMessage([{ kind: "personal", token: "tok" }], "issued");
+		expect(text).toContain("(gate URL not configured");
+		expect(text).not.toContain("https://");
+	});
+});
+
+describe("sendLinksDm", () => {
+	it("sends one DM to the given Slack account", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true, channel: "D1", ts: "0" })));
-		const result = await sendTeamLinkDm(user, "U999", 1234, "tok-team-1234");
+		const result = await sendLinksDm(
+			"U999",
+			[
+				{ kind: "personal", token: "tok-me" },
+				{ kind: "team", team: 1234, token: "tok-team" },
+			],
+			"issued",
+		);
 		expect(result).toEqual({ sent: true });
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		const body = bodyOf();
-		expect(body.channel).toBe("U999");
-		expect(body.text).toContain("https://gate.example.test/g/tok-team-1234");
-		expect(body.text).toContain("Team 1234");
-	});
-
-	it("frames a rotation differently and warns the old link is dead", async () => {
-		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
-		await sendTeamLinkDm(user, "U999", 1234, "tok-new", "rotated");
-		const body = bodyOf();
-		expect(body.text).toContain("rotated");
-		expect(body.text).toContain("no longer works");
-	});
-
-	it("falls back to a placeholder when the gate URL isn't configured", async () => {
-		envState.GATE_BASE_URL = undefined;
-		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
-		const result = await sendTeamLinkDm(user, "U999", 1234, "tok-team-1234");
-		expect(result).toEqual({ sent: true });
-		const body = bodyOf();
-		expect(body.text).toContain("(gate URL not configured");
-		expect(body.text).not.toContain("https://");
+		expect(bodyOf().channel).toBe("U999");
+		expect(bodyOf().text).toContain("/g/tok-me");
+		expect(bodyOf().text).toContain("/g/tok-team");
 	});
 
 	it("returns slack_not_configured when SLACK_BOT_TOKEN is unset", async () => {
 		envState.SLACK_BOT_TOKEN = undefined;
-		const result = await sendTeamLinkDm(user, "U999", 1234, "tok");
-		expect(result).toEqual({ sent: false, reason: "slack_not_configured" });
+		expect(await sendLinksDm("U999", [{ kind: "personal", token: "t" }], "issued")).toEqual({
+			sent: false,
+			reason: "slack_not_configured",
+		});
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("returns no_slack_id when the slack ID is missing", async () => {
-		const result = await sendTeamLinkDm(user, null, 1234, "tok");
-		expect(result).toEqual({ sent: false, reason: "no_slack_id" });
+		expect(await sendLinksDm(null, [{ kind: "personal", token: "t" }], "issued")).toEqual({
+			sent: false,
+			reason: "no_slack_id",
+		});
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it("returns slack_error when chat.postMessage fails", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: false, error: "user_not_found" })));
-		const result = await sendTeamLinkDm(user, "U999", 1234, "tok");
-		expect(result).toEqual({ sent: false, reason: "slack_error", error: "user_not_found" });
+		expect(await sendLinksDm("U999", [{ kind: "personal", token: "t" }], "issued")).toEqual({
+			sent: false,
+			reason: "slack_error",
+			error: "user_not_found",
+		});
 	});
 });
 
@@ -189,15 +242,10 @@ describe("notifyTeamOfReservation", () => {
 describe("notifyTeamOfLink", () => {
 	it("DMs the whole team the rotated link", async () => {
 		fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true })));
-		const outcomes = await notifyTeamOfLink(
-			1234,
-			"tok-rotated",
-			[
-				{ user, slackUserId: "U111" },
-				{ user: { ...user, id: "user-2" }, slackUserId: "U222" },
-			],
-			"rotated",
-		);
+		const outcomes = await notifyTeamOfLink(1234, "tok-rotated", [
+			{ user, slackUserId: "U111" },
+			{ user: { ...user, id: "user-2" }, slackUserId: "U222" },
+		]);
 		expect(outcomes.every(o => o.sent)).toBe(true);
 		expect(bodyOf(0).text).toContain("https://gate.example.test/g/tok-rotated");
 		expect(bodyOf(0).text).toContain("no longer works");
@@ -206,7 +254,7 @@ describe("notifyTeamOfLink", () => {
 
 	it("reports slack_not_configured rather than throwing", async () => {
 		envState.SLACK_BOT_TOKEN = undefined;
-		const outcomes = await notifyTeamOfLink(1234, "tok", [{ user, slackUserId: "U111" }], "rotated");
+		const outcomes = await notifyTeamOfLink(1234, "tok", [{ user, slackUserId: "U111" }]);
 		expect(outcomes).toEqual([{ userId: "user-1", slackUserId: "U111", sent: false, reason: "slack_not_configured" }]);
 	});
 });

@@ -52,10 +52,13 @@ export type UserEntry = {
 	teams: Team[] | "admin";
 	email: string;
 	image: string;
-	// Team access tokens we've already DM'd this user. Lets rotation self-heal:
-	// if a team's current token isn't in here, the next login DMs the new link.
-	// Not a secret store — these are the same tokens the whole team shares.
+	// Access tokens (team and personal) we've already DM'd this user. Lets
+	// rotation self-heal: if a current token isn't in here, the next login DMs
+	// the new link.
 	gateLinkSentTokens?: string[];
+	// Set by an admin for shared or unverified accounts: no personal gate link,
+	// even though the account can otherwise sign in.
+	personalAccessBlocked?: boolean;
 };
 
 /**
@@ -63,10 +66,26 @@ export type UserEntry = {
  *
  * One link per team, shared among its members: anyone holding the URL can
  * use the tool during that team's reservation windows. Rotated on request
- * (team or admin) or at season rollover — see `plans/gate-access-integration.md`.
+ * (team or admin); stored per season, so a new year starts with fresh links.
  */
 export type TeamAccess = {
 	team: TeamFull;
+	/** Opaque URL-safe token; goes in `${GATE_BASE_URL}/g/<token>`. */
+	token: string;
+	created: Date;
+	/** When the token was last rotated (absent if never). */
+	rotated?: Date;
+	/** Admin who performed the last rotation (absent for the initial issue). */
+	rotatedBy?: UserId;
+};
+
+/**
+ * Per-person access token. Unlike a team link it isn't tied to reservations:
+ * it works any day within site hours (see `src/server/access.ts`), so it is
+ * issued only to approved members and must not be shared.
+ */
+export type PersonalAccess = {
+	userId: UserId;
 	/** Opaque URL-safe token; goes in `${GATE_BASE_URL}/g/<token>`. */
 	token: string;
 	created: Date;

@@ -70,16 +70,17 @@ describe("POST /api/access/check", () => {
 	});
 
 	it("returns 200 and the checkAccess result on success", async () => {
-		const payload = {
+		const payload: Awaited<ReturnType<typeof checkAccess>> = {
 			valid: true,
+			grant: "personal",
 			tool: "gate",
 			user: { id: "user-1", name: "Jane Doe (1234)" },
-			team: { id: "1234", name: "Team 1234" },
-			reservation_id: "res-1",
-			window_starts_at: "2026-05-23T16:30:00.000Z",
-			window_ends_at: "2026-05-24T05:00:00.000Z",
+			team: null,
+			reservation_id: null,
+			window_starts_at: "2026-05-23T15:00:00.000Z",
+			window_ends_at: "2026-05-24T06:00:00.000Z",
 		};
-		checkAccessMock.mockResolvedValue(payload as Awaited<ReturnType<typeof checkAccess>>);
+		checkAccessMock.mockResolvedValue(payload);
 		const res = await POST(makeRequest({ body: { token: "tok", tool: "gate" }, auth: `Bearer ${TEST_KEY}` }));
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual(payload);
@@ -90,6 +91,7 @@ describe("POST /api/access/check", () => {
 		const payload = {
 			valid: false as const,
 			reason: "unknown_token" as const,
+			grant: null,
 			tool: "gate",
 			user: null,
 			team: null,

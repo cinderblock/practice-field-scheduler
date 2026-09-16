@@ -4,7 +4,9 @@ import Image from "next/image";
 import { useState } from "react";
 import { TeamAvatar } from "~/app/_components/TeamAvatar";
 import { dateToDateString } from "~/server/util/timeUtils";
+import { api } from "~/trpc/react";
 import type { UserEntry } from "~/types";
+import { PersonalLinkControls } from "./PersonalLinkControls";
 import styles from "./UsersTable.module.css";
 
 type User = Omit<Pick<UserEntry, "id" | "name" | "displayName" | "image" | "created" | "teams">, "teams"> & {
@@ -20,6 +22,10 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 	const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 	const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
 	const [showAdmins, setShowAdmins] = useState(true);
+
+	// Admin-only: personal gate-link status per user.
+	const personalLinks = api.access.personal.list.useQuery(undefined, { enabled: isAdmin });
+	const accessConfig = api.access.config.useQuery(undefined, { enabled: isAdmin });
 
 	// Get unique teams from all users
 	const allTeams = Array.from(
@@ -70,10 +76,12 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 						type="button"
 						className={`${styles.teamFilterButton} ${showAdmins ? styles.teamFilterButtonSelected : ""}`}
 						onClick={() => setShowAdmins(!showAdmins)}
-						title={showAdmins ? "Hide Admins" : "Show Admins"}
+						aria-label={showAdmins ? "Hide admins" : "Show admins"}
+						aria-pressed={showAdmins}
 						data-team="Admins"
 					>
 						<div className={styles.adminIcon}>{showAdmins ? "👾" : "⭐"}</div>
+						<span className={styles.filterText}>Admins</span>
 					</button>
 					{allTeams.map(team => (
 						<button
@@ -81,10 +89,12 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 							type="button"
 							className={`${styles.teamFilterButton} ${selectedTeam === team ? styles.teamFilterButtonSelected : ""}`}
 							onClick={() => setSelectedTeam(selectedTeam === team ? null : team)}
-							title={selectedTeam === team ? `Hide Team ${team}` : `Show Team ${team}`}
+							aria-label={selectedTeam === team ? "Show all teams" : `Show only Team ${team}`}
+							aria-pressed={selectedTeam === team}
 							data-team={`Team ${team}`}
 						>
 							<TeamAvatar teamNumber={team} size="2em" />
+							<span className={styles.filterText}>{team}</span>
 						</button>
 					))}
 				</div>
@@ -125,12 +135,20 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 									</div>
 								</td>
 								<td>
-									<div className={styles.userName} title={user.displayName && user.name ? user.name : undefined}>
+									<div className={styles.userName}>
 										{user.displayName ?? user.name}
 										{user.displayName && user.name && (
 											<div style={{ fontSize: "0.85em", color: "var(--text-secondary)", fontWeight: "normal" }}>
 												{user.name}
 											</div>
+										)}
+										{isAdmin && personalLinks.data?.[user.id] && (
+											<PersonalLinkControls
+												userId={user.id}
+												status={personalLinks.data[user.id]?.status ?? "not_issued"}
+												gateUrlConfigured={accessConfig.data?.gateUrlConfigured ?? false}
+												onChanged={() => personalLinks.refetch()}
+											/>
 										)}
 									</div>
 								</td>

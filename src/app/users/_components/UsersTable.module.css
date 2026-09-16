@@ -224,6 +224,17 @@
 	color: var(--background-primary);
 }
 
+.filterText {
+	margin-left: 0.35rem;
+	font-size: 0.8rem;
+	font-weight: 500;
+	color: var(--text-secondary);
+}
+
+.teamFilterButtonSelected .filterText {
+	color: var(--background-primary);
+}
+
 .adminIcon {
 	font-size: 2em;
 	font-weight: bold;

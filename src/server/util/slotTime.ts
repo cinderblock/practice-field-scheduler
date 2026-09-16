@@ -27,14 +27,11 @@ export function getReservationWindow(date: string, slot: string): ReservationWin
 	if (ampm === "pm" && hour !== 12) hour += 12;
 	if (ampm === "am" && hour === 12) hour = 0;
 
-	const dateParts = date.split("-");
-	if (dateParts.length !== 3) return null;
-	const year = Number.parseInt(dateParts[0] as string, 10);
-	const month = Number.parseInt(dateParts[1] as string, 10);
-	const day = Number.parseInt(dateParts[2] as string, 10);
-	if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+	const parts = parseEventDate(date);
+	if (!parts) return null;
+	const { year, month, day } = parts;
 
-	const start = toUtc(year, month, day, hour, minute);
+	const start = atFieldTime(year, month, day, hour, minute);
 
 	// NEXT_PUBLIC_TIME_SLOT_BORDERS is in hours relative to noon; convert to 24h.
 	const borders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS.map(b => b + 12);
@@ -43,7 +40,7 @@ export function getReservationWindow(date: string, slot: string): ReservationWin
 	if (idx !== -1 && idx < borders.length - 1) {
 		const nextHour = borders[idx + 1];
 		if (nextHour !== undefined) {
-			end = toUtc(year, month, day, nextHour, minute);
+			end = atFieldTime(year, month, day, nextHour, minute);
 		} else {
 			end = new Date(start.getTime() + 3 * 60 * 60 * 1000);
 		}
@@ -54,6 +51,30 @@ export function getReservationWindow(date: string, slot: string): ReservationWin
 	return { start, end };
 }
 
-function toUtc(year: number, month: number, day: number, hour: number, minute: number): Date {
+export type FieldDate = { year: number; month: number; day: number };
+
+/** Split an `EventDate` ("YYYY-MM-DD") into numbers. Returns null if malformed. */
+export function parseEventDate(date: string): FieldDate | null {
+	const dateParts = date.split("-");
+	if (dateParts.length !== 3) return null;
+	const year = Number.parseInt(dateParts[0] as string, 10);
+	const month = Number.parseInt(dateParts[1] as string, 10);
+	const day = Number.parseInt(dateParts[2] as string, 10);
+	if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+	return { year, month, day };
+}
+
+/** The calendar date, in NEXT_PUBLIC_TIME_ZONE, that `moment` falls on. */
+export function fieldDateOf(moment: Date): FieldDate {
+	const local = new TZDateMini(moment.getTime(), env.NEXT_PUBLIC_TIME_ZONE);
+	return { year: local.getFullYear(), month: local.getMonth() + 1, day: local.getDate() };
+}
+
+/**
+ * The absolute moment of a wall-clock time on a field-local date. `month` is
+ * 1-based. An out-of-range `day` rolls over like `Date` does, so `day + 1` is
+ * a safe way to say "tomorrow".
+ */
+export function atFieldTime(year: number, month: number, day: number, hour: number, minute = 0): Date {
 	return new Date(new TZDateMini(year, month - 1, day, hour, minute, 0, env.NEXT_PUBLIC_TIME_ZONE).getTime());
 }

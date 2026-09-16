@@ -1041,3 +1041,184 @@
 	font-style: italic;
 	opacity: 0.7;
 }
+
+/* ===== Weather ===== */
+
+/* One cell beneath each time slot, as a second row of the slots' own grid, so each slot's forecast
+   lines up with it at any width. A sparkline on top, captions underneath. */
+.weatherCell {
+	--weather-temperature: var(--accent-color);
+	--weather-rain: #60a5fa;
+	/* Distance to the next cell. Each cell's lines carry on across it to meet the next one, and the
+	   temperature at the border is centered in it. */
+	--weather-gap: 0.5rem;
+	/* Roughly half a temperature caption: how far in from the outer edges the first and last
+	   temperatures are centered, so they sit flush with the edge */
+	--weather-edge-inset: 0.75rem;
+	position: relative;
+	user-select: none;
+}
+
+/* Beats `.timeSlotRow > *`, which would clip whatever crosses into the gap */
+.timeSlotRow > .weatherCell {
+	overflow: visible;
+}
+
+@media (prefers-color-scheme: light) {
+	.weatherCell {
+		--weather-rain: #2563eb;
+	}
+}
+
+.weatherCellOver {
+	opacity: 0.5;
+}
+
+/* Positions the current-time line (.timeSlotProgress, as in the slot above) over the sparkline */
+.weatherChart {
+	position: relative;
+	height: 1.25rem;
+}
+
+.weatherSparkline {
+	display: block;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	/* The negative right inset lets the lines show across the gap, and no further */
+	clip-path: inset(-2px calc(-1 * var(--weather-gap)) -2px 0);
+}
+
+.weatherRainArea {
+	fill: var(--weather-rain);
+	fill-opacity: 0.2;
+}
+
+.weatherRainLine {
+	fill: none;
+	stroke: var(--weather-rain);
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+
+.weatherTemperatureLine {
+	fill: none;
+	stroke: var(--weather-temperature);
+	stroke-width: 1.5;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+
+/* Captions are placed between two anchors: the slot's start and end borders. Inner borders are the
+   middle of the gap, where the temperature there is centered. */
+.weatherCaptions {
+	--start: calc(var(--weather-gap) / -2);
+	--end: calc(100% + var(--weather-gap) / 2);
+	position: relative;
+	height: 1.1rem;
+	font-size: 0.7rem;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.weatherCellFirst .weatherCaptions {
+	--start: var(--weather-edge-inset);
+}
+
+.weatherCellLast .weatherCaptions {
+	--end: calc(100% - var(--weather-edge-inset));
+}
+
+.weatherCaption {
+	position: absolute;
+	top: 50%;
+	transform: translate(-50%, -50%);
+}
+
+.weatherCaptionStart {
+	left: var(--start);
+}
+
+.weatherCaptionFirstHalf {
+	left: calc((3 * var(--start) + var(--end)) / 4);
+}
+
+.weatherCaptionMiddle {
+	left: calc((var(--start) + var(--end)) / 2);
+}
+
+.weatherCaptionSecondHalf {
+	left: calc((var(--start) + 3 * var(--end)) / 4);
+}
+
+.weatherCaptionEnd {
+	left: var(--end);
+}
+
+/* The outermost temperatures line up with the slots' outer edges instead of overhanging them */
+.weatherCellFirst .weatherCaptionStart {
+	left: 0;
+	transform: translate(0, -50%);
+}
+
+.weatherCellLast .weatherCaptionEnd {
+	left: auto;
+	right: 0;
+	transform: translate(0, -50%);
+}
+
+.weatherTemperature {
+	color: var(--weather-temperature);
+}
+
+.weatherRain {
+	color: var(--weather-rain);
+}
+
+.weatherRainUnlikely {
+	opacity: 0.55;
+}
+
+.weatherIcon {
+	font-size: 0.85rem;
+}
+
+@media (prefers-color-scheme: light) {
+	/* White clouds and a pale moon would all but vanish on a light background */
+	.weatherIcon {
+		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6));
+	}
+}
+
+.weatherAttribution {
+	font-size: 0.75rem;
+	color: var(--text-secondary);
+}
+
+.weatherAttribution a {
+	text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+	.weatherCell {
+		/* The grid gap on phones. (The slots' own right margin there doesn't narrow them, since they're
+		   also width: 100%, so the cells don't copy it.) */
+		--weather-gap: 0.25rem;
+		--weather-edge-inset: 0.6rem;
+	}
+
+	.weatherChart {
+		height: 1rem;
+	}
+
+	.weatherCaptions {
+		height: 1rem;
+		font-size: 0.65rem;
+	}
+
+	.weatherIcon {
+		font-size: 0.75rem;
+	}
+}

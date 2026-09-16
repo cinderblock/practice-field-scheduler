@@ -65,6 +65,23 @@ export type UserEntry = {
 	image: string;
 };
 
+/** One point of the hourly forecast. Values are null where the provider has no data. */
+export type WeatherSample = {
+	time: number; // Epoch milliseconds
+	temperature: number | null; // Celsius
+	precipitationProbability: number | null; // 0-100, over the hour before `time`
+	weatherCode: number | null; // WMO weather interpretation code
+	isDay: boolean | null; // Whether it's daylight at `time`
+};
+
+export type WeatherForecast = {
+	/** Resolved place, for display. Coordinates when the location was configured as coordinates. */
+	location: string;
+	updated: Date; // When the forecast was fetched
+	/** Hourly samples in chronological order, limited to the hours around reservation time */
+	samples: WeatherSample[];
+};
+
 export type Holiday = {
 	id: string;
 	name: string;

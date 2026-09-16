@@ -13,6 +13,7 @@ import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { Context } from "~/server/backend";
 import { dateToDateString } from "~/server/util/timeUtils";
+import { getWeatherForecast } from "~/server/weather";
 import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 import { RenderTime } from "./_components/RenderTime";
@@ -130,9 +131,12 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
-	// Get holidays and blackouts for the calendar
-	const holidays = await ctx.getHolidays();
-	const blackouts = await ctx.getBlackouts();
+	// Get holidays, blackouts, and weather for the calendar
+	const [holidays, blackouts, weather] = await Promise.all([
+		ctx.getHolidays(),
+		ctx.getBlackouts(),
+		getWeatherForecast(),
+	]);
 
 	return (
 		<div className={styles.reservationCalendar}>
@@ -180,6 +184,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				initialReservations={reservationsByDate}
 				initialHolidays={holidays}
 				initialBlackouts={blackouts}
+				initialWeather={weather}
 				isAdmin={isAdmin}
 			/>
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />

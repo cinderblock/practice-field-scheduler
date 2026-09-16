@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getTimeSlots, hourToTimeSlot } from "~/server/util/timeSlots";
+import {
+	createDateFromDateStringHour,
+	formatHour,
+	getSlotWindows,
+	getTimeSlots,
+	hourToTimeSlot,
+} from "~/server/util/timeSlots";
 
 describe("hourToTimeSlot", () => {
 	it("formats morning hours", () => {
@@ -45,5 +51,51 @@ describe("getTimeSlots", () => {
 		for (const [i, slot] of slots.slice(1).entries()) {
 			expect(slot.startHour).toBe(slots[i]?.endHour);
 		}
+	});
+});
+
+describe("formatHour", () => {
+	it("formats whole hours in 12-hour form", () => {
+		expect(formatHour(10)).toBe("10am");
+		expect(formatHour(16)).toBe("4pm");
+		expect(formatHour(22)).toBe("10pm");
+	});
+
+	it("treats noon and midnight conventionally", () => {
+		expect(formatHour(12)).toBe("12pm");
+		expect(formatHour(0)).toBe("12am");
+		expect(formatHour(24)).toBe("12am");
+	});
+
+	it("includes minutes for fractional hours", () => {
+		expect(formatHour(9.5)).toBe("9:30am");
+		expect(formatHour(13.25)).toBe("1:15pm");
+	});
+});
+
+describe("createDateFromDateStringHour", () => {
+	// Driven by NEXT_PUBLIC_TIME_ZONE in .env.test: "America/Los_Angeles"
+
+	it("finds the instant an hour occurs at the site", () => {
+		expect(createDateFromDateStringHour("2026-09-16", 10).toISOString()).toBe("2026-09-16T17:00:00.000Z");
+	});
+
+	it("handles fractional hours", () => {
+		expect(createDateFromDateStringHour("2026-09-16", 9.5).toISOString()).toBe("2026-09-16T16:30:00.000Z");
+	});
+
+	it("follows daylight saving time", () => {
+		// Clocks fall back at 2am on 2026-11-01, so 10am that day is PST
+		expect(createDateFromDateStringHour("2026-11-01", 10).toISOString()).toBe("2026-11-01T18:00:00.000Z");
+	});
+});
+
+describe("getSlotWindows", () => {
+	it("gives each slot's start and end as instants", () => {
+		expect(getSlotWindows("2026-09-16")).toEqual([
+			{ start: Date.parse("2026-09-16T17:00:00Z"), end: Date.parse("2026-09-16T23:00:00Z") },
+			{ start: Date.parse("2026-09-16T23:00:00Z"), end: Date.parse("2026-09-17T02:00:00Z") },
+			{ start: Date.parse("2026-09-17T02:00:00Z"), end: Date.parse("2026-09-17T05:00:00Z") },
+		]);
 	});
 });

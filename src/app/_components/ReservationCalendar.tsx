@@ -1,13 +1,13 @@
 "use client";
 
-import { TZDateMini } from "@date-fns/tz";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { env } from "~/env";
 import { findBlackoutForSlot, isWholeDayBlackedOut } from "~/server/util/blackout";
-import { hourToTimeSlot } from "~/server/util/timeSlots";
+import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Blackout, Holiday, Reservation } from "~/types";
+import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
+import { DayWeather } from "./DayWeather";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
@@ -27,23 +27,6 @@ type InitialReservations = {
  */
 function getToday(): string {
 	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
-}
-
-function createDateFromDateStringHour(date: string, hour: number): Date {
-	const [year, month, day] = date.split("-").map(Number);
-
-	if (year === undefined || month === undefined || day === undefined) throw new Error("Invalid date");
-
-	// // Handle fractional hours
-	const wholeHours = Math.floor(hour);
-	const minutes = Math.round((hour - wholeHours) * 60);
-
-	const wholeMinutes = Math.floor(minutes);
-	const seconds = Math.round((minutes - wholeMinutes) * 60);
-
-	const tzDate = new TZDateMini(year, month - 1, day, wholeHours, wholeMinutes, seconds, TimeZone);
-
-	return new Date(tzDate.getTime());
 }
 
 function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {
@@ -266,11 +249,14 @@ export function ReservationCalendar({
 	initialReservations,
 	initialHolidays,
 	initialBlackouts,
+	initialWeather,
 	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	initialBlackouts: Blackout[];
+	/** Null when weather is disabled or no forecast is available */
+	initialWeather: WeatherForecast | null;
 	/** Admins may book over a blackout, so they still get the add button on a closed slot */
 	isAdmin?: boolean;
 }) {
@@ -307,6 +293,12 @@ export function ReservationCalendar({
 	// passed down rather than queried per slot
 	const { data: blackouts = initialBlackouts } = api.blackout.list.useQuery(undefined, {
 		initialData: initialBlackouts,
+	});
+
+	// The server refreshes its cached forecast on its own schedule; this just picks up the latest
+	const { data: weather = initialWeather } = api.weather.forecast.useQuery(undefined, {
+		initialData: initialWeather,
+		refetchInterval: 15 * 60 * 1000,
 	});
 
 	// Use refs to store current values to avoid dependency issues
@@ -373,6 +365,7 @@ export function ReservationCalendar({
 					initialReservations={allReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					weather={weather}
 					isAdmin={isAdmin}
 				/>
 			</div>
@@ -381,6 +374,15 @@ export function ReservationCalendar({
 				<br />
 				Please check back later for more availability.
 			</p>
+			{weather && (
+				// Open-Meteo's data is CC BY 4.0, which requires this credit
+				<p className={styles.weatherAttribution}>
+					Weather for {weather.location}, from{" "}
+					<a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">
+						Open-Meteo.com
+					</a>
+				</p>
+			)}
 		</>
 	);
 }
@@ -423,6 +425,7 @@ function Days({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	weather,
 	isAdmin,
 }: {
 	start: string;
@@ -431,6 +434,7 @@ function Days({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	weather: WeatherForecast | null;
 	isAdmin: boolean;
 }) {
 	// Ensure good type
@@ -449,6 +453,7 @@ function Days({
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					weather={weather}
 					isAdmin={isAdmin}
 					isHistory={true}
 				/>
@@ -484,6 +489,7 @@ function Days({
 					initialReservations={initialReservations}
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
+					weather={weather}
 					isAdmin={isAdmin}
 				/>
 			))}
@@ -496,6 +502,7 @@ function DayWrapper({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	weather,
 	isAdmin,
 	isHistory = false,
 }: {
@@ -503,6 +510,7 @@ function DayWrapper({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	weather: WeatherForecast | null;
 	isAdmin: boolean;
 	isHistory?: boolean;
 }) {
@@ -513,6 +521,7 @@ function DayWrapper({
 				initialReservations={initialReservations}
 				initialHolidays={initialHolidays}
 				blackouts={blackouts}
+				weather={weather}
 				isAdmin={isAdmin}
 			/>
 		</div>
@@ -524,12 +533,14 @@ function Day({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	weather,
 	isAdmin,
 }: {
 	date: string;
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	weather: WeatherForecast | null;
 	isAdmin: boolean;
 }) {
 	const closedAllDay = isWholeDayBlackedOut(blackouts, date);
@@ -580,6 +591,8 @@ function Day({
 						/>
 					);
 				})}
+				{/* A second row in the same grid, so each slot's forecast sits directly beneath it */}
+				<DayWeather date={date} forecast={weather} />
 			</div>
 		</div>
 	);

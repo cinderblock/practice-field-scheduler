@@ -26,6 +26,24 @@ export const env = createEnv({
 		FIRST_API_AUTH_TOKEN: z.string().length(36),
 		DATA_DIR: z.string().min(1),
 		STAGING: z.string().min(6).optional(),
+
+		// Weather is optional; it is enabled by setting a location.
+		// Either "latitude,longitude" (exact) or a place name / postal code to look up.
+		WEATHER_LOCATION: z.string().trim().min(2).optional(),
+		// Only needed for Open-Meteo's commercial tier
+		WEATHER_API_KEY: z.string().min(1).optional(),
+		WEATHER_UPDATES_PER_DAY: z.coerce
+			.number()
+			.int()
+			.min(1, "Weather must update at least once per day")
+			.max(24 * 60, "Weather can update at most once per minute")
+			.default(24 * 4),
+		WEATHER_FORECAST_DAYS: z.coerce
+			.number()
+			.int()
+			.min(1, "Weather forecast must cover at least one day")
+			.max(16, "Open-Meteo forecasts at most 16 days")
+			.default(10),
 	},
 
 	/**
@@ -80,6 +98,10 @@ export const env = createEnv({
 		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
 		DATA_DIR: process.env.DATA_DIR,
 		STAGING: process.env.STAGING,
+		WEATHER_LOCATION: process.env.WEATHER_LOCATION,
+		WEATHER_API_KEY: process.env.WEATHER_API_KEY,
+		WEATHER_UPDATES_PER_DAY: process.env.WEATHER_UPDATES_PER_DAY,
+		WEATHER_FORECAST_DAYS: process.env.WEATHER_FORECAST_DAYS,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

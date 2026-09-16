@@ -52,9 +52,28 @@ export type UserEntry = {
 	teams: Team[] | "admin";
 	email: string;
 	image: string;
-	// Opaque URL-safe token a user enrolls in their browser for tool integrations
-	// (e.g. the gate). Issued lazily on first login and reused for the whole season.
-	accessToken?: string;
+	// Team access tokens we've already DM'd this user. Lets rotation self-heal:
+	// if a team's current token isn't in here, the next login DMs the new link.
+	// Not a secret store — these are the same tokens the whole team shares.
+	gateLinkSentTokens?: string[];
+};
+
+/**
+ * Per-team access token for tool integrations (currently just the gate).
+ *
+ * One link per team, shared among its members: anyone holding the URL can
+ * use the tool during that team's reservation windows. Rotated on request
+ * (team or admin) or at season rollover — see `plans/gate-access-integration.md`.
+ */
+export type TeamAccess = {
+	team: TeamFull;
+	/** Opaque URL-safe token; goes in `${GATE_BASE_URL}/g/<token>`. */
+	token: string;
+	created: Date;
+	/** When the token was last rotated (absent if never). */
+	rotated?: Date;
+	/** Admin who performed the last rotation (absent for the initial issue). */
+	rotatedBy?: UserId;
 };
 
 export type Holiday = {

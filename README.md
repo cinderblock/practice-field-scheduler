@@ -127,3 +127,80 @@ webcal://your.domain.com/api/calendar/all.ics            # Apple / Outlook one-c
 https://your.domain.com/api/calendar/all.ics             # Google "From URL"
 https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fyour.domain.com%2Fapi%2Fcalendar%2Fall.ics  # Google shortcut
 ```
+
+### Tool Access (gate)
+
+Teams can open the practice-field gate during their reserved slot without ever
+seeing the gate-controller credentials. The scheduler is the **authority** for
+who may use what and when; [Gate Manager](https://github.com/cinderblock/gate-manager)
+is a stateless proxy that asks on every interaction and pulses the gate if the
+answer is yes.
+
+#### How it works
+
+- **One shared link per team.** Each team gets a single URL of the form
+  `${GATE_BASE_URL}/g/<token>`, shared among its members. Bookmark it once; it
+  works all season. The time-gating happens server-side on every request, so a
+  stable link is not a standing grant.
+- **Team membership comes from Slack display names** in the form
+  `First Last (1234)` (multi-team: `First Last (1234, 5678)`; lab mates who
+  aren't on a team: `First Last (TSL)`, which validates but grants no access).
+  Membership re-syncs on every login.
+- **The access window** is the reserved slot padded by 20 minutes before and
+  60 minutes after. Both are constants in `src/server/access.ts`.
+- **Delivery is over Slack DM** — on first issue, on rotation, and alongside
+  each new reservation for the team. Slack being down or unconfigured never
+  breaks login or booking; the failure is logged and the link is picked up on
+  the next login.
+- **Admins get no access by virtue of being admins** — they get it through team
+  membership like anyone else.
+
+#### Admin controls
+
+On `/users`, admins get two panels:
+
+- **Slack-name audit** — lists anyone whose display name doesn't match the
+  convention and can DM them all fix-it instructions. Use this before turning
+  on `STRICT_SLACK_NAMES`.
+- **Team gate links** — per-team link status, **Reveal link** (for handing a
+  link over when Slack isn't reaching someone), and **Rotate** (issues a new
+  link, invalidates every existing bookmark for that team, and DMs the team the
+  replacement). Both reveal and rotate are written to the audit log.
+
+Links issued before the current season are flagged as stale. Rotating is
+deliberately a manual click rather than something that happens automatically at
+the year boundary, so nobody's bookmark dies unannounced.
+
+#### The check endpoint
+
+```http
+POST /api/access/check
+Authorization: Bearer <SCHEDULER_API_KEY>
+Content-Type: application/json
+
+{ "token": "<opaque>", "tool": "gate" }
+```
+
+Every decision — allow or deny — is `200` with a `{ "valid": …, "reason": … }`
+envelope; non-2xx means a config, auth or transport problem (`401` bad secret,
+`503` `SCHEDULER_API_KEY` unset, `500` unexpected). Consumers are expected to
+fail closed on those.
+
+`tool` is currently only `"gate"`; anything else answers `tool_not_authorized`.
+The full contract, including every denial reason, lives in
+`docs/scheduler-integration.md` in the Gate Manager repo.
+
+#### Required configuration
+
+| Variable             | Purpose                                                         | If unset                   |
+| -------------------- | --------------------------------------------------------------- | -------------------------- |
+| `SCHEDULER_API_KEY`  | Shared bearer secret consumers present (≥32 chars)              | endpoint returns `503`     |
+| `SLACK_BOT_TOKEN`    | Slack bot token (`xoxb-…`, scope `chat:write`) used to DM links | DMs become logged no-ops   |
+| `GATE_BASE_URL`      | Public Gate Manager base URL, used to build `${base}/g/<token>` | link omitted from DMs      |
+| `STRICT_SLACK_NAMES` | `"true"`/`"1"` rejects logins whose display name doesn't parse  | soft mode — warn but allow |
+
+Generate the API key with:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```

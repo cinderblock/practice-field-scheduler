@@ -65,11 +65,11 @@ export function NameAuditPanel() {
 							type="button"
 							onClick={() => setConfirmingSend(true)}
 							disabled={nudge.isPending || !slackReady}
-							title={slackReady ? "Send nudges" : "SLACK_BOT_TOKEN is not configured"}
 							className={`${styles.button} ${styles.buttonPrimary}`}
 						>
 							Send DMs…
 						</button>
+						{!slackReady && <span className={styles.noSlackId}>SLACK_BOT_TOKEN is not configured</span>}
 					</div>
 				)}
 				{count > 0 && confirmingSend && (

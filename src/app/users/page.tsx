@@ -8,6 +8,7 @@ import { Context } from "~/server/backend";
 import type { UserEntry } from "~/types";
 import styles from "../index.module.css";
 import { NameAuditPanel } from "./_components/NameAuditPanel";
+import { TeamAccessPanel } from "./_components/TeamAccessPanel";
 import { UsersTable } from "./_components/UsersTable";
 
 export default async function UsersPage() {
@@ -46,6 +47,7 @@ export default async function UsersPage() {
 				<h1 className={styles.title}>Users</h1>
 			</div>
 			{isAdmin && <NameAuditPanel />}
+			{isAdmin && <TeamAccessPanel />}
 			<UsersTable users={users} isAdmin={isAdmin} />
 		</div>
 	);

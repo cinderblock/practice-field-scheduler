@@ -10,6 +10,7 @@ import styles from "../index.module.css";
 import { NameAuditPanel } from "./_components/NameAuditPanel";
 import { TeamAccessPanel } from "./_components/TeamAccessPanel";
 import { UsersTable } from "./_components/UsersTable";
+import page from "./users.module.css";
 
 export default async function UsersPage() {
 	const session = await auth();
@@ -37,11 +38,9 @@ export default async function UsersPage() {
 	}));
 
 	return (
-		<div style={{ width: "100%", maxWidth: "1200px", margin: "0 auto", padding: "2rem" }}>
-			<div
-				style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}
-			>
-				<div style={{ maxWidth: "100px", width: "100%" }}>
+		<div className={page.page}>
+			<div className={page.header}>
+				<div className={page.logo}>
 					<TSLLogo />
 				</div>
 				<h1 className={styles.title}>Users</h1>

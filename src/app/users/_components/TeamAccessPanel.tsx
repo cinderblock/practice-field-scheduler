@@ -2,9 +2,28 @@
 
 import { useState } from "react";
 import { api } from "~/trpc/react";
+import ui from "./adminUi.module.css";
 import styles from "./TeamAccessPanel.module.css";
 
 type RevealState = { team: string; url: string | null; token: string };
+type Rotation = { team: string; notified: number; failed: number; slackConfigured: boolean };
+
+const cx = (...names: Array<string | false | undefined>) => names.filter(Boolean).join(" ");
+
+function issuedText(t: { hasLink: boolean; created: Date | null; rotated: Date | null }): string {
+	if (!t.hasLink) return "no link yet";
+	const when = t.rotated ?? t.created;
+	const date = when ? new Date(when).toLocaleDateString() : "";
+	return t.rotated ? `replaced ${date}` : `issued ${date}`;
+}
+
+function rotationText(r: Rotation): string {
+	if (!r.slackConfigured) return "Slack isn't configured, so nobody was DM'd — reveal the link and pass it on.";
+	if (r.notified === 0 && r.failed === 0)
+		return "No members with a Slack account to DM — reveal the link and pass it on.";
+	const dmd = `DM'd ${r.notified} member${r.notified === 1 ? "" : "s"}`;
+	return `${dmd}${r.failed > 0 ? `, ${r.failed} failed` : ""}. Anyone missed gets the new link at their next sign-in.`;
+}
 
 /**
  * Admin panel for the per-team gate links.
@@ -23,12 +42,7 @@ export function TeamAccessPanel() {
 	const [confirmingRotate, setConfirmingRotate] = useState<string | null>(null);
 	const [busyTeam, setBusyTeam] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [lastRotation, setLastRotation] = useState<{
-		team: string;
-		notified: number;
-		failed: number;
-		slackConfigured: boolean;
-	} | null>(null);
+	const [lastRotation, setLastRotation] = useState<Rotation | null>(null);
 	const [copied, setCopied] = useState(false);
 
 	async function doReveal(team: string) {
@@ -52,8 +66,7 @@ export function TeamAccessPanel() {
 		setRevealed(null);
 		setBusyTeam(team);
 		try {
-			const result = await rotate.mutateAsync({ team });
-			setLastRotation(result);
+			setLastRotation(await rotate.mutateAsync({ team }));
 			await list.refetch();
 		} catch (e) {
 			setError((e as Error).message);
@@ -67,166 +80,135 @@ export function TeamAccessPanel() {
 			await navigator.clipboard.writeText(url);
 			setCopied(true);
 		} catch {
-			setError("Couldn't copy to the clipboard — select the link and copy it manually.");
+			setError("Couldn't copy — select the link and copy it manually.");
 		}
 	}
 
-	if (list.isLoading || config.isLoading) return <div className={styles.panel}>Loading team gate links…</div>;
+	if (list.isLoading || config.isLoading) return <div className={ui.panel}>Loading team gate links…</div>;
 	const loadError = list.error ?? config.error;
-	if (loadError) return <div className={styles.panel}>Couldn't load team gate links: {loadError.message}</div>;
+	if (loadError) return <div className={ui.panel}>Couldn't load team gate links: {loadError.message}</div>;
 
 	const teams = list.data;
 	const cfg = config.data;
 	if (!teams || !cfg) return null;
 
 	return (
-		<div className={styles.panel}>
-			<div className={styles.headerRow}>
-				<strong>Team gate links</strong>
-				<span className={styles.subtle}>
-					One shared link per team, working around that team's reservations (never outside {cfg.siteHours}). Links reset
-					each new year.
-				</span>
+		<section className={ui.panel}>
+			<div className={ui.panelHeader}>
+				<h2 className={ui.panelTitle}>Team gate links</h2>
+				<p className={ui.panelSubtitle}>
+					One shared link per team, working around its reservations ({cfg.siteHours} only). Links reset each year.
+				</p>
 			</div>
 
 			{!cfg.gateUrlConfigured && (
-				<div className={styles.warning}>
-					<code>GATE_BASE_URL</code> isn't configured, so links can't be built or sent. Set it on the scheduler.
-				</div>
+				<p className={ui.warning}>
+					<code>GATE_BASE_URL</code> isn't configured, so links can't be built or sent.
+				</p>
 			)}
 			{!cfg.slackConfigured && (
-				<div className={styles.warning}>
-					<code>SLACK_BOT_TOKEN</code> isn't configured, so rotating won't DM anyone the new link. Reveal it and pass it
-					along manually.
-				</div>
+				<p className={ui.warning}>
+					<code>SLACK_BOT_TOKEN</code> isn't configured, so nobody is DM'd — reveal links and pass them on.
+				</p>
 			)}
 
 			{teams.length === 0 ? (
-				<div className={styles.emptyState}>
-					No teams yet. Teams appear here once someone logs in with a team number in their Slack display name.
-				</div>
+				<p className={ui.note}>
+					No teams yet. Teams appear once someone signs in with a team number in their Slack display name.
+				</p>
 			) : (
-				<table className={styles.table}>
-					<thead>
-						<tr>
-							<th>Team</th>
-							<th>Members</th>
-							<th>Link</th>
-							<th>Last issued</th>
-							<th />
-						</tr>
-					</thead>
-					<tbody>
-						{teams.map(t => {
-							const issued = t.rotated ?? t.created;
-							const busy = busyTeam === t.team;
-							return (
-								<tr key={t.team}>
-									<td>
-										<strong>{t.team}</strong>
-									</td>
-									<td data-label="Members">{t.memberCount}</td>
-									<td data-label="Link">
-										{t.hasLink ? (
-											<span className={styles.issued}>issued</span>
-										) : (
-											<span className={styles.notIssued}>not issued yet</span>
-										)}
-									</td>
-									<td className={styles.dateCell} data-label="Last issued">
-										{issued ? new Date(issued).toLocaleDateString() : "—"}
-										{t.rotated && <span className={styles.subtle}> (rotated)</span>}
-									</td>
-									<td className={styles.actionCell}>
-										{confirmingRotate === t.team ? (
-											<span className={styles.confirmBar}>
-												<span>Rotate? Every current bookmark for team {t.team} stops working.</span>
+				<ul className={styles.list}>
+					{teams.map(t => {
+						const busy = busyTeam === t.team;
+						const confirming = confirmingRotate === t.team;
+						return (
+							<li key={t.team} className={styles.row}>
+								<div className={styles.summary}>
+									<span className={styles.team}>{t.team}</span>
+									<span className={ui.note}>
+										{t.memberCount} member{t.memberCount === 1 ? "" : "s"} · {issuedText(t)}
+									</span>
+								</div>
+
+								{confirming ? (
+									<div className={styles.confirm}>
+										<p className={ui.note}>Rotate? Every current bookmark for team {t.team} stops working.</p>
+										<div className={ui.buttonRow}>
+											<button
+												type="button"
+												onClick={() => doRotate(t.team)}
+												disabled={busy}
+												className={cx(ui.button, ui.danger)}
+											>
+												{busy ? "Rotating…" : "Yes, rotate"}
+											</button>
+											<button
+												type="button"
+												onClick={() => setConfirmingRotate(null)}
+												disabled={busy}
+												className={ui.button}
+											>
+												Cancel
+											</button>
+										</div>
+									</div>
+								) : (
+									<div className={cx(ui.buttonRow, styles.actions)}>
+										<button
+											type="button"
+											onClick={() => doReveal(t.team)}
+											disabled={busy || !cfg.gateUrlConfigured}
+											className={ui.button}
+										>
+											{busy && reveal.isPending ? "Revealing…" : "Reveal link"}
+										</button>
+										<button
+											type="button"
+											onClick={() => setConfirmingRotate(t.team)}
+											disabled={busy}
+											className={ui.button}
+										>
+											Rotate
+										</button>
+									</div>
+								)}
+
+								{revealed?.team === t.team && (
+									<div className={styles.reveal}>
+										<p className={ui.note}>Treat it like a key — anyone with it can open the gate in-window.</p>
+										<code className={ui.linkBox}>{revealed.url ?? revealed.token}</code>
+										<div className={ui.buttonRow}>
+											{revealed.url && (
 												<button
 													type="button"
-													onClick={() => doRotate(t.team)}
-													disabled={busy}
-													className={`${styles.button} ${styles.buttonDanger}`}
+													onClick={() => copyRevealed(revealed.url as string)}
+													className={ui.button}
 												>
-													{busy ? "Rotating…" : "Yes, rotate"}
+													{copied ? "Copied" : "Copy"}
 												</button>
-												<button
-													type="button"
-													onClick={() => setConfirmingRotate(null)}
-													disabled={busy}
-													className={styles.button}
-												>
-													Cancel
-												</button>
-											</span>
-										) : (
-											<span className={styles.actions}>
-												<button
-													type="button"
-													onClick={() => doReveal(t.team)}
-													disabled={busy || !cfg.gateUrlConfigured}
-													className={styles.button}
-												>
-													{busy && reveal.isPending ? "Revealing…" : "Reveal link"}
-												</button>
-												<button
-													type="button"
-													onClick={() => setConfirmingRotate(t.team)}
-													disabled={busy}
-													className={styles.button}
-												>
-													Rotate
-												</button>
-											</span>
-										)}
-									</td>
-								</tr>
-							);
-						})}
-					</tbody>
-				</table>
+											)}
+											<button
+												type="button"
+												onClick={() => {
+													setRevealed(null);
+													setCopied(false);
+												}}
+												className={ui.button}
+											>
+												Hide
+											</button>
+										</div>
+									</div>
+								)}
+
+								{lastRotation?.team === t.team && <p className={ui.success}>Rotated. {rotationText(lastRotation)}</p>}
+							</li>
+						);
+					})}
+				</ul>
 			)}
 
-			{revealed && (
-				<div className={styles.revealBlock}>
-					<div className={styles.revealHeader}>
-						<strong>Team {revealed.team}'s link</strong>
-						<span className={styles.subtle}>Treat it like a key — anyone with it can open the gate in-window.</span>
-					</div>
-					<div className={styles.revealRow}>
-						<code className={styles.revealUrl}>{revealed.url ?? revealed.token}</code>
-						{revealed.url && (
-							<button type="button" onClick={() => copyRevealed(revealed.url as string)} className={styles.button}>
-								{copied ? "Copied" : "Copy"}
-							</button>
-						)}
-						<button
-							type="button"
-							onClick={() => {
-								setRevealed(null);
-								setCopied(false);
-							}}
-							className={styles.button}
-						>
-							Hide
-						</button>
-					</div>
-				</div>
-			)}
-
-			{lastRotation && (
-				<div className={styles.resultBlock}>
-					Team {lastRotation.team} rotated.{" "}
-					{!lastRotation.slackConfigured
-						? "Slack isn't configured, so nobody was DM'd — reveal the link and pass it on."
-						: lastRotation.notified === 0 && lastRotation.failed === 0
-							? "No members with a Slack account to DM — reveal the link and pass it on."
-							: `DM'd ${lastRotation.notified} member${lastRotation.notified === 1 ? "" : "s"}${
-									lastRotation.failed > 0 ? `, ${lastRotation.failed} failed` : ""
-								}. Anyone missed picks up the new link at their next sign-in.`}
-				</div>
-			)}
-
-			{error && <div className={styles.errorText}>Error: {error}</div>}
-		</div>
+			{error && <p className={ui.error}>Error: {error}</p>}
+		</section>
 	);
 }

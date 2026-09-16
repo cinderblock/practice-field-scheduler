@@ -70,9 +70,11 @@ export function PersonalLinkControls({
 			const result = await rotate.mutateAsync({ userId });
 			await onChanged();
 			if (result.notified > 0) return "Replaced and DM'd the new link.";
-			return result.failed > 0
-				? "Replaced, but the DM failed — reveal the link and pass it on."
-				: "Replaced. No Slack account to DM — reveal the link and pass it on.";
+			if (result.skipped === "slack_not_configured")
+				return "Replaced. Slack isn't configured, so nobody was DM'd — reveal the link and pass it on.";
+			if (result.skipped === "no_slack_account")
+				return "Replaced. There's no Slack account on file to DM — reveal the link and pass it on.";
+			return "Replaced, but the DM failed — reveal the link and pass it on.";
 		});
 
 	const doSetBlocked = (blocked: boolean) =>

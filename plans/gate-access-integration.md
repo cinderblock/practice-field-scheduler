@@ -169,18 +169,19 @@ consult the `home-assistant-best-practices` skill first.
 2. ✅ Slack client, DMs, name parsing, `STRICT_SLACK_NAMES`, `/login` bad-name
    UI, admin Slack-name audit panel. _(commit `70299a3`)_
 3. ✅ Per-team links, admin reveal/rotate, 20/60 grace. _(commit `5d4c1c1`)_
-4. ⬅️ **CURRENT** — Personal links + site hours:
-   - `access.ts`: site-hours constants, clamp team windows, `personal`
-     principal (replaces the unused reservation-based per-user path),
-     `grant` in every response.
-   - `backend.ts`: `data/<year>/personalAccess.json`, one token index for
-     both kinds, issue + DM on login, admin reveal/rotate/block; remove the
-     dead `stale` flag; make sure a reservation DM always carries the team link.
-   - UI: per-user gate-link cell in the admin Users table; drop the stale
-     banner from the team panel; remove `title=` from `UsersTable`.
-   - Gate Manager: client types + `grant`-aware display in enroll, view, pulse.
-   - README, integration doc, tests.
-5. Tool catalog refactor before a second tool (see Home Assistant).
+4. ✅ Personal links + site hours (8am–11pm), `grant` in every response,
+   per-person admin controls, one-DM delivery, end-to-end backend test.
+   _(commit `b5ed307`, plus a follow-up from the UI pass)_
+5. ✅ Gate Manager side: `linkHolder()` / `deniedActor()` in
+   `src/scheduler-client.ts` (tolerates responses without `grant`), enroll
+   page and main view show the holder, pulses logged as `team` or `personal`,
+   contract doc rewritten, 7 new tests. **Edited but NOT committed** — that
+   repo has someone else's uncommitted deploy-pipeline work; waiting on the
+   user to say how to land it.
+6. ⬅️ **NEXT** — Ship: land the Gate Manager change and deploy it **first**,
+   then merge/deploy the scheduler branch. Then drive a real link through
+   `/g/:token` on a phone, in and out of site hours.
+7. Later: tool catalog refactor before a second tool (see Home Assistant).
 
 ## Findings / gotchas
 
@@ -195,40 +196,77 @@ consult the `home-assistant-best-practices` skill first.
 - `git stash create` does **not** capture untracked files — a safety stash is
   not sufficient protection when new files are in play. Commit early.
 - Gate Manager does _not_ use Home Assistant for the gate; it uses pigate.
-  Don't assume HA is already in that path.
 - There is no `lock` domain in HA yet — door-lock control is genuinely future
   work, not just un-wired.
-- Baseline at takeover: typecheck ✅, 89 unit tests ✅, biome+prettier ✅.
+- **Gate Manager reads `check.team.id` on every success** (enroll, main view,
+  pulse). A scheduler returning `team: null` to the _old_ Gate Manager makes
+  personal links fail closed. Hence the deploy order.
+- **Link stores are per-year files**, and the server exits when the year
+  changes, so rollover is automatic. An earlier "stale link" flag could never
+  fire and was removed.
+- **The backend is testable end to end**: point `DATA_DIR` at a temp dir
+  before importing, stub `fetch` for Slack, and fake only `Date`
+  (`vi.useFakeTimers({ toFake: ["Date"] })`) so the change lock still works.
+  See `test/unit/gateAccessBackend.test.ts`.
+- **Local visual-check recipe** (no real Slack needed): `TEST_AUTH_BYPASS` in
+  `.env.test` isn't implemented anywhere. Instead, seed a temp `DATA_DIR`,
+  mint a session with `encode()` from `next-auth/jwt` (secret = the test
+  `AUTH_SECRET`, salt = the cookie name `next-auth.session-token`, `sub` = a
+  Slack ID mapped in `slack.json`), set it with `document.cookie`, and run
+  `next dev` with `.env.test` sourced plus `SLACK_BOT_TOKEN=""`. There's no
+  local `.env`, so nothing real is reachable. Kill the `node.exe` child
+  afterwards — stopping the shell task leaves it holding the port.
+- Avatars and team logos render blank locally; that's the fake avatar URLs
+  and the FIRST API test credentials, not a bug.
+- **Pre-existing issues noticed, not fixed** (outside this task):
+  - `initializePart` auto-disables any user whose account was **created**
+    more than 18 months ago (not last seen), and disabled users can't sign in.
+    Long-standing mentors will lose sign-in _and_ their personal link.
+  - `Context.getUsers()` checks `if (!this.isAdmin())` without `await`; the
+    Promise is always truthy, so the non-admin filter never runs.
+  - `restrictTimeframe` compares `new Date("YYYY-MM-DD")` (UTC midnight) with
+    local midnight, so on a server west of UTC a non-admin can't book today.
 
 ## Progress log
 
 - [x] Read WIP `89578d5` + the uncommitted follow-on work.
 - [x] Confirmed `/g/:token` exists in Gate Manager — DM'd links resolve.
-- [x] Confirmed baseline checks pass before adding anything.
-- [x] Safety snapshot `stash@{0}` (tracked files only).
-- [x] Committed the per-user implementation as `70299a3` — superseded in part
-      by the per-team rework, but keeps the Slack/name/audit work reviewable.
+- [x] Committed per-user work (`70299a3`), then per-team (`5d4c1c1`).
 - [x] Surveyed Home Assistant for gate / bathroom / lock / music entities.
-- [x] Per-team rework, admin reveal + rotate, season-stale flagging,
-      README, contract doc. _(commit `5d4c1c1`)_
-- [x] Verified: `typecheck` ✅, `check` (biome+prettier) ✅, 100 unit tests ✅,
-      `next build` ✅ (confirmed `teamAccess.json` initializes).
-- [ ] Not done: no end-to-end test against a live Gate Manager. The contract
-      is unchanged in shape, but nobody has driven a real token through
-      `/g/:token` → `/api/access/check` since the per-team switch.
+- [x] Personal links + site hours + contract change (`b5ed307`).
+- [x] Verified scheduler: typecheck ✅, biome+prettier ✅, 136 unit tests ✅
+      (incl. a 13-step backend end-to-end), and `/users` exercised in a real
+      browser at desktop and iPhone 12 Pro widths (reveal, replace, rotate,
+      all five personal-link states).
+- [x] UI-pass fixes: "DM failed" was shown when Slack simply isn't
+      configured (now says why nobody was DM'd); the team-links table
+      overflowed on phones (now stacks as cards); long names pushed the users
+      table off-screen on phones (cells now wrap).
+- [x] Verified Gate Manager: `bun run typecheck` ✅, `bun test src/` 86 ✅.
+      Did not run its `build` (it would overwrite another session's local
+      `build/`, and no client-side imports were added).
+- [ ] Gate Manager change committed and deployed (waiting on user).
+- [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user
 
-1. **House/special teams** — `houseTeams` exists and team ids can be
-   non-numeric strings. The implementation treats them like any other team
-   (they get a link, compared as strings). Flag if they shouldn't.
-2. **Departing members.** Removing someone from a team stops them receiving
-   _future_ links but does not invalidate the shared one they already have —
-   that's inherent to a shared link. Rotating is the remedy. Worth deciding
-   whether admins should be prompted to rotate when someone leaves a team.
-3. **Gate Manager may want a tweak**: `user` is now always `null` on success.
-   Its existing logic switches on `valid` + `reason`, so it should be fine,
-   but if any UI says "Opening gate for <name>", that string is now empty.
+1. **Landing the Gate Manager change** — its tree has someone else's
+   uncommitted deploy work. Recommendation: commit only
+   `src/scheduler-client.ts`, `src/scheduler-client.test.ts`,
+   `app/routes/_index.tsx`, `app/routes/team-enroll.tsx` and
+   `docs/scheduler-integration.md` as one commit, leave everything else
+   alone, and deploy it before the scheduler.
+2. **People who never sign in to the scheduler get no links.** The scheduler
+   only knows people who've signed in once; enumerating the Slack workspace
+   would need the `users:read` scope. Recommendation: fine for now, since
+   mentors book through the scheduler anyway.
+3. **The 18-month auto-disable** (above) will bite long-standing mentors.
+   Recommendation: base it on last sign-in rather than creation — a separate
+   change.
+4. **House/special teams** get a link like any team (ids compared as
+   strings). Flag if they shouldn't.
+5. **Departing members** keep a shared team link until it's rotated; their
+   personal link can be blocked immediately.
 
 ## Things not to do
 

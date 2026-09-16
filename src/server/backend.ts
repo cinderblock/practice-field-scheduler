@@ -36,6 +36,7 @@ import {
 	selectTeamMemberRecipients,
 	sendLinksDm,
 } from "./notifications";
+import { isSlackConfigured } from "./slack";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
@@ -959,7 +960,9 @@ export class Context {
 	 * right away. Anyone the DM misses picks it up on their next login, because
 	 * the new token won't be in their `gateLinkSentTokens`.
 	 */
-	async rotateTeamAccessLink(team: TeamFull): Promise<{ team: TeamFull; notified: number; failed: number }> {
+	async rotateTeamAccessLink(
+		team: TeamFull,
+	): Promise<{ team: TeamFull; notified: number; failed: number; slackConfigured: boolean }> {
 		await this.assertAdmin("Only admins can rotate team access links");
 		await initialized();
 
@@ -979,7 +982,7 @@ export class Context {
 			if (user) await markLinksSent(user, [entry.token]);
 		}
 
-		const failed = outcomes.filter(o => !o.sent);
+		const failed = outcomes.filter(o => !o.sent && o.reason !== "slack_not_configured");
 		if (failed.length > 0) {
 			console.warn(
 				`Team ${team} link rotation: ${failed.length}/${outcomes.length} DM(s) failed:`,
@@ -987,7 +990,12 @@ export class Context {
 			);
 		}
 
-		return { team: entry.team, notified: outcomes.length - failed.length, failed: failed.length };
+		return {
+			team: entry.team,
+			notified: outcomes.filter(o => o.sent).length,
+			failed: failed.length,
+			slackConfigured: isSlackConfigured(),
+		};
 	}
 
 	/**
@@ -1066,7 +1074,13 @@ export class Context {
 	 * Admin-only: rotate one person's link and DM them the replacement on every
 	 * Slack account mapped to them. The old link stops working immediately.
 	 */
-	async rotatePersonalAccessLink(userId: UserId): Promise<{ userId: UserId; notified: number; failed: number }> {
+	async rotatePersonalAccessLink(userId: UserId): Promise<{
+		userId: UserId;
+		notified: number;
+		failed: number;
+		/** Why nothing was attempted, if nothing was. */
+		skipped: "slack_not_configured" | "no_slack_account" | null;
+	}> {
 		await this.assertAdmin("Only admins can rotate personal access links");
 		await initialized();
 
@@ -1082,9 +1096,13 @@ export class Context {
 			targetName: target.displayName ?? target.name,
 		});
 
+		const slackIds = slackIdsFor(target.id);
+		if (!isSlackConfigured()) return { userId: target.id, notified: 0, failed: 0, skipped: "slack_not_configured" };
+		if (slackIds.length === 0) return { userId: target.id, notified: 0, failed: 0, skipped: "no_slack_account" };
+
 		let notified = 0;
 		let failed = 0;
-		for (const slackId of slackIdsFor(target.id)) {
+		for (const slackId of slackIds) {
 			const outcome = await sendLinksDm(slackId, [{ kind: "personal", token: entry.token }], "rotated");
 			if (outcome.sent) notified++;
 			else {
@@ -1094,7 +1112,7 @@ export class Context {
 		}
 		if (notified > 0) await markLinksSent(target, [entry.token]);
 
-		return { userId: target.id, notified, failed };
+		return { userId: target.id, notified, failed, skipped: null };
 	}
 
 	/**

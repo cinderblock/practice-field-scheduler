@@ -23,7 +23,12 @@ export function TeamAccessPanel() {
 	const [confirmingRotate, setConfirmingRotate] = useState<string | null>(null);
 	const [busyTeam, setBusyTeam] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [lastRotation, setLastRotation] = useState<{ team: string; notified: number; failed: number } | null>(null);
+	const [lastRotation, setLastRotation] = useState<{
+		team: string;
+		notified: number;
+		failed: number;
+		slackConfigured: boolean;
+	} | null>(null);
 	const [copied, setCopied] = useState(false);
 
 	async function doReveal(team: string) {
@@ -120,15 +125,15 @@ export function TeamAccessPanel() {
 									<td>
 										<strong>{t.team}</strong>
 									</td>
-									<td>{t.memberCount}</td>
-									<td>
+									<td data-label="Members">{t.memberCount}</td>
+									<td data-label="Link">
 										{t.hasLink ? (
 											<span className={styles.issued}>issued</span>
 										) : (
 											<span className={styles.notIssued}>not issued yet</span>
 										)}
 									</td>
-									<td className={styles.dateCell}>
+									<td className={styles.dateCell} data-label="Last issued">
 										{issued ? new Date(issued).toLocaleDateString() : "—"}
 										{t.rotated && <span className={styles.subtle}> (rotated)</span>}
 									</td>
@@ -210,10 +215,14 @@ export function TeamAccessPanel() {
 
 			{lastRotation && (
 				<div className={styles.resultBlock}>
-					Team {lastRotation.team} rotated. DM'd {lastRotation.notified} member
-					{lastRotation.notified === 1 ? "" : "s"}
-					{lastRotation.failed > 0 && `, ${lastRotation.failed} failed`}. Anyone missed picks up the new link on their
-					next login.
+					Team {lastRotation.team} rotated.{" "}
+					{!lastRotation.slackConfigured
+						? "Slack isn't configured, so nobody was DM'd — reveal the link and pass it on."
+						: lastRotation.notified === 0 && lastRotation.failed === 0
+							? "No members with a Slack account to DM — reveal the link and pass it on."
+							: `DM'd ${lastRotation.notified} member${lastRotation.notified === 1 ? "" : "s"}${
+									lastRotation.failed > 0 ? `, ${lastRotation.failed} failed` : ""
+								}. Anyone missed picks up the new link at their next sign-in.`}
 				</div>
 			)}
 

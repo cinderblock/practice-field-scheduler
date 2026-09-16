@@ -89,6 +89,63 @@
 	white-space: nowrap;
 }
 
+/* Phones: one card per team instead of a five-column table. The column
+   headers are hidden, so each value carries its own visible label. */
+@media (max-width: 600px) {
+	.table thead {
+		display: none;
+	}
+
+	.table,
+	.table tbody {
+		display: block;
+	}
+
+	.table tr {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.9rem;
+		padding: 0.6rem 0;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.table td {
+		display: block;
+		padding: 0;
+		border-bottom: none;
+	}
+
+	.table td[data-label]::before {
+		content: attr(data-label) ": ";
+		color: #6b7280;
+	}
+
+	.dateCell {
+		white-space: normal;
+	}
+
+	.actionCell {
+		flex-basis: 100%;
+		text-align: left;
+	}
+
+	.actions,
+	.confirmBar {
+		justify-content: flex-start;
+	}
+}
+
+@media (max-width: 600px) and (prefers-color-scheme: dark) {
+	.table tr {
+		border-bottom-color: #3a4657;
+	}
+
+	.table td[data-label]::before {
+		color: #a0aec0;
+	}
+}
+
 .actionCell {
 	text-align: right;
 }

@@ -14,11 +14,13 @@ import { resolve } from "node:path";
 const envFile = resolve(import.meta.dirname, "..", ".env.test");
 
 if (existsSync(envFile)) {
-	const before = { ...process.env };
-
-	process.loadEnvFile(envFile);
-
-	for (const [key, value] of Object.entries(before)) {
-		if (value !== undefined) process.env[key] = value;
+	// An empty value counts as absent, matching `emptyStringAsUndefined` in src/env.js. CI forwards
+	// some values from repository vars/secrets, and an unset one arrives as "" rather than missing;
+	// left in place it would fail validation instead of falling back to the test value.
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value === "") delete process.env[key];
 	}
+
+	// Variables already set are left alone by loadEnvFile, so a real environment wins for free.
+	process.loadEnvFile(envFile);
 }

@@ -142,18 +142,28 @@ consult the `home-assistant-best-practices` skill first.
 1. ✅ `/api/access/check` endpoint + bearer auth + zod validation.
 2. ✅ Slack client, welcome/reminder DMs, name parsing, `STRICT_SLACK_NAMES`,
    `/login` bad-name UI, admin Slack-name audit panel. _(commit `70299a3`)_
-3. ⬅️ **CURRENT** — Rework per-user → **per-team** tokens:
-   - `TeamAccess` record + `data/<year>/teamAccess.json`; drop
-     `UserEntry.accessToken` (scrub on load, as was done for the old
-     per-reservation `token`).
-   - Principal-based evaluator so per-user stays one small step away.
-   - Grace → 20 min / 60 min.
-   - Track which link each user was last DM'd, so rotation self-heals on
-     next login instead of needing separate bookkeeping.
-4. Admin UI: list teams, reveal-on-demand, rotate (DMs the team).
-5. Season-rollover rotation.
-6. Remove the `title=` tooltip in `NameAuditPanel.tsx`.
-7. README section; re-sync `Gate Manager/docs/scheduler-integration.md`.
+3. ✅ Per-user → **per-team** tokens; principal-based evaluator; grace 20/60;
+   `data/<year>/teamAccess.json`; per-user "link already sent" tracking so
+   rotation self-heals on next login. _(commit `5d4c1c1`)_
+4. ✅ Admin UI on `/users`: per-team status, reveal-on-demand, rotate (DMs the
+   team). Both reveal and rotate write audit-log entries.
+5. ✅ Season rollover — implemented as **flagged, not automatic**: a link
+   issued before the current season shows a "previous season" tag and a
+   warning banner, and an admin rotates with one click. Auto-rotating on
+   Jan 1 would kill every bookmark unannounced and fire a DM storm.
+6. ✅ Removed the `title=` tooltip from `NameAuditPanel.tsx`; the reason the
+   button is disabled is now inline text.
+7. ✅ README "Tool Access (gate)" section; `Gate Manager/docs/scheduler-integration.md`
+   rewritten for the per-team model. **That doc edit is uncommitted in the
+   Gate Manager repo** — that repo had unrelated uncommitted work already, so
+   nothing was committed there.
+
+### Next, when a second tool arrives
+
+- Tool catalog refactor (see "Home Assistant" above) — do this _before_
+  adding `bathroom`, not after.
+- Consider per-team tool allow-lists; `tool_not_authorized` already exists
+  as the denial reason.
 
 ## Findings / gotchas
 
@@ -179,23 +189,29 @@ consult the `home-assistant-best-practices` skill first.
 - [x] Confirmed `/g/:token` exists in Gate Manager — DM'd links resolve.
 - [x] Confirmed baseline checks pass before adding anything.
 - [x] Safety snapshot `stash@{0}` (tracked files only).
-- [x] Committed the per-user implementation as `70299a3` (superseded in part
-      by step 3, but keeps the Slack/name/audit work safe and reviewable).
+- [x] Committed the per-user implementation as `70299a3` — superseded in part
+      by the per-team rework, but keeps the Slack/name/audit work reviewable.
 - [x] Surveyed Home Assistant for gate / bathroom / lock / music entities.
-- [ ] Per-team rework (step 3).
-- [ ] Admin rotate + reveal UI (step 4).
-- [ ] Season rollover (step 5).
-- [ ] `title=` removal, README, contract re-sync (steps 6–7).
+- [x] Per-team rework, admin reveal + rotate, season-stale flagging,
+      README, contract doc. _(commit `5d4c1c1`)_
+- [x] Verified: `typecheck` ✅, `check` (biome+prettier) ✅, 100 unit tests ✅,
+      `next build` ✅ (confirmed `teamAccess.json` initializes).
+- [ ] Not done: no end-to-end test against a live Gate Manager. The contract
+      is unchanged in shape, but nobody has driven a real token through
+      `/g/:token` → `/api/access/check` since the per-team switch.
 
 ## Open questions for the user
 
-1. **Season rollover rotation — automatic or prompted?** Recommendation:
-   **prompted**. Silently rotating on Jan 1 would break every team's bookmark
-   with no warning and fire a DM storm. Better: detect that a token predates
-   the current season, show "new season — rotate recommended" in the admin UI,
-   and let an admin do it (one click, all teams).
-2. **Do house/special teams need links too?** `houseTeams` exists and team ids
-   can be non-numeric strings. Assuming yes, same treatment — flag if not.
+1. **House/special teams** — `houseTeams` exists and team ids can be
+   non-numeric strings. The implementation treats them like any other team
+   (they get a link, compared as strings). Flag if they shouldn't.
+2. **Departing members.** Removing someone from a team stops them receiving
+   _future_ links but does not invalidate the shared one they already have —
+   that's inherent to a shared link. Rotating is the remedy. Worth deciding
+   whether admins should be prompted to rotate when someone leaves a team.
+3. **Gate Manager may want a tweak**: `user` is now always `null` on success.
+   Its existing logic switches on `valid` + `reason`, so it should be fine,
+   but if any UI says "Opening gate for <name>", that string is now empty.
 
 ## Things not to do
 

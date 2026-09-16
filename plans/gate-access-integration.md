@@ -49,10 +49,20 @@ reuse the same endpoint with a different `tool` identifier. See
     2026-09-15.)_
   - **Personal link** — one per person, works any day within **site hours**,
     no reservation needed. Not shared.
-- **Who gets a personal link:** any approved Slack member — "99% of people".
-  Approved = not disabled, Slack display name parses (a malformed name is
-  treated as unverified), and not flagged by an admin as a shared/unverified
-  account. Admins and `(TSL)` lab mates qualify like anyone else.
+- **Who gets a personal link: only people an admin has approved for general
+  gate access** _(user decision, 2026-09-16: "'Mark as shared account' is
+  wrong. It should be the inverse")_. Nobody is approved by default, so
+  shared/unverified accounts simply never get approved. On top of approval,
+  the account must be enabled and its Slack display name must parse. Admins
+  and `(TSL)` lab mates need approval like anyone else.
+  - Stored as `UserEntry.generalAccessApproved` (replaced the earlier
+    default-allow `personalAccessBlocked` flag, which never shipped).
+  - **Approve** issues the link and DMs it immediately (with "you've been
+    approved" wording). **Revoke** deletes the link outright, so approving
+    again always issues a fresh token.
+  - At startup, any personal link whose owner isn't approved (or no longer
+    exists) is deleted, so an old token can never be revived by approval.
+  - Admin UI wording: "Approve general gate access" / "Revoke access".
 - **Site hours 8am–11pm, field time, for ALL scheduler-issued access.** From
   11pm to 8am only Gate Manager's own registered employees (~6 people, a
   separate path that never asks the scheduler) can open the gate. Team windows
@@ -84,7 +94,11 @@ reuse the same endpoint with a different `tool` identifier. See
   so an admin can hand it over when Slack DMs aren't working for someone.
 - **Being an admin grants nothing by itself.** Admins aren't on a team's
   roster (`teams: "admin"`), so they get no team link; they get a personal
-  link as approved Slack members, same as everyone.
+  link only once approved, same as everyone.
+- **`/users` must work well on a phone** _(user feedback, 2026-09-16: "it
+  looks like crap on a phone")_. Under 600px each person is a card, buttons
+  are 44px in a two-column grid, and team links are compact rows. Shared
+  styles live in `src/app/users/_components/adminUi.module.css`.
 - **Every answer is HTTP 200** with a `{valid, reason, …}` envelope; only
   auth/config/transport problems use non-2xx. Matches the Gate Manager brief.
 - **Fail-closed is Gate Manager's job**, not ours — we answer honestly.
@@ -175,19 +189,45 @@ consult the `home-assistant-best-practices` skill first.
 5. ✅ Gate Manager side: `linkHolder()` / `deniedActor()` in
    `src/scheduler-client.ts` (tolerates responses without `grant`), enroll
    page and main view show the holder, pulses logged as `team` or `personal`,
-   contract doc rewritten, 7 new tests. **Edited but NOT committed** — that
-   repo has someone else's uncommitted deploy-pipeline work; waiting on the
-   user to say how to land it.
-6. ⬅️ **NEXT** — Ship: land the Gate Manager change and deploy it **first**,
-   then merge/deploy the scheduler branch. Then drive a real link through
-   `/g/:token` on a phone, in and out of site hours.
-7. Later: tool catalog refactor before a second tool (see Home Assistant).
+   contract doc rewritten, 7 new tests. The revoked-personal-link copy and
+   the contract doc also describe explicit approval. Committed as one
+   commit, Gate Manager `3916779` _(user: "one logical commit per feature
+   usually")_, leaving that repo's other uncommitted deploy-pipeline work
+   alone. **Not pushed yet.**
+6. ✅ General gate access became an explicit admin grant _(commit
+   `1358a90`)_, with the startup prune of unapproved links _(`eeb035c`)_.
+7. ✅ `/users` reworked for phones _(the people table and per-person
+   controls in `1358a90`, the rest in `84123b0`)_.
+8. ⬅️ **NEXT** — Ship, in this order, each push only with the user's
+   go-ahead (pushes deploy):
+   1. Push Gate Manager `master`. Its `Deploy` workflow builds, tests and
+      deploys **production** on steamboat on every push to `master`.
+      Local `master` was `ahead 1` (just `3916779`) when committed.
+   2. Push the scheduler branch. Any non-`master` push deploys **staging**.
+      Check staging with a real link.
+   3. Merge the scheduler branch to `master`. Production deploys after the
+      `Test` workflow passes.
+   4. Approve the people who should have general access. Nobody has it
+      until then.
+   5. Drive a real link through `/g/:token` on a phone, in and out of site
+      hours.
+9. Later: tool catalog refactor before a second tool (see Home Assistant).
 
 ## Findings / gotchas
 
 - **`git status` shows ~75 modified files; only a handful actually differ.**
-  The rest is CRLF noise from `core.autocrlf`. Use `git diff --numstat`.
-  Don't "fix" line endings.
+  The rest is CRLF/stat noise from `core.autocrlf` (`git diff --stat` on
+  them is empty). Use `git diff --numstat`. Don't "fix" line endings.
+- **Typecheck one commit on its own** (when a change is split across
+  commits): `git archive HEAD | tar -x -C <tmp>`, junction the repo's
+  `node_modules` into it, then run `npx tsc --noEmit` there. When cleaning
+  up, **delete the junction on its own first**
+  (`[System.IO.Directory]::Delete(<junction>, $false)`). A recursive delete
+  of the temp dir could otherwise follow it into the real `node_modules`.
+- **Backend state lives in module globals**, so startup behaviour can't be
+  tested by "restarting" inside the end-to-end suite. Use a separate test
+  file that writes the data files before importing the backend. See
+  `test/unit/gateAccessStartup.test.ts`.
 - **`Lock` is not reentrant** (see `src/server/util/Lock.ts`). Acquiring twice
   on one path deadlocks. This is why `restrictToTeam` / `restrictToAdmin` /
   `restrictTimeframe` are `await`ed: they resolve `this.user` (which may take
@@ -244,18 +284,30 @@ consult the `home-assistant-best-practices` skill first.
       table off-screen on phones (cells now wrap).
 - [x] Verified Gate Manager: `bun run typecheck` ✅, `bun test src/` 86 ✅.
       Did not run its `build` (it would overwrite another session's local
-      `build/`, and no client-side imports were added).
-- [ ] Gate Manager change committed and deployed (waiting on user).
+      `build/`, and no client-side imports were added). Re-verified
+      2026-09-16 on top of that repo's newer commits (`804db21`); none of
+      them touch the files edited here.
+- [x] Explicit "Approve general gate access" model (`1358a90`), plus the
+      startup prune of unapproved links (`eeb035c`), which was confirmed to
+      fail its test when disabled.
+- [x] `/users` phone redesign (`1358a90`, `84123b0`). Checked in a browser at
+      iPhone 12 Pro size (no horizontal overflow, 44px targets, card layout,
+      reveal/confirm states) and at 1280×900 (table columns sensible, no
+      overflow). `1358a90` typechecks on its own.
+- [x] Scheduler checks after all of the above: typecheck ✅, biome+prettier
+      ✅, 144 unit tests ✅.
+- [x] Gate Manager change committed (`3916779`). Before committing,
+      re-checked on top of its newer HEAD: typecheck ✅, 86 tests ✅.
+- [ ] Gate Manager pushed/deployed (needs the user's go-ahead).
+- [ ] Scheduler branch pushed to staging, then merged to `master`.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user
 
-1. **Landing the Gate Manager change** — its tree has someone else's
-   uncommitted deploy work. Recommendation: commit only
-   `src/scheduler-client.ts`, `src/scheduler-client.test.ts`,
-   `app/routes/_index.tsx`, `app/routes/team-enroll.tsx` and
-   `docs/scheduler-integration.md` as one commit, leave everything else
-   alone, and deploy it before the scheduler.
+1. **Deploying** — may I push Gate Manager `master` (production deploy),
+   then push the scheduler branch (staging deploy)? Recommendation: yes,
+   in that order. The Gate Manager change is backward compatible, so it's
+   safe to have live before the scheduler changes.
 2. **People who never sign in to the scheduler get no links.** The scheduler
    only knows people who've signed in once; enumerating the Slack workspace
    would need the `users:read` scope. Recommendation: fine for now, since
@@ -266,11 +318,15 @@ consult the `home-assistant-best-practices` skill first.
 4. **House/special teams** get a link like any team (ids compared as
    strings). Flag if they shouldn't.
 5. **Departing members** keep a shared team link until it's rotated; their
-   personal link can be blocked immediately.
+   personal link can be revoked immediately.
 
 ## Things not to do
 
 - Don't do blackout-days work in this tree — another session owns that branch.
+- Don't bring back default-allow personal links or a "mark as shared
+  account" opt-out. General gate access is an explicit grant.
+- Don't run `npm run check:write` without checking `git diff --stat`
+  afterwards. It formats the whole repo, and this tree is shared.
 - Don't give the scheduler Home Assistant credentials (see above).
 - Don't change HA automations/scripts without explicit per-change approval.
 - Don't switch this project to Bun.

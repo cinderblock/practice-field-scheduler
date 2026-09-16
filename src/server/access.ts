@@ -172,15 +172,19 @@ export function computeAccessWindow(reservation: Reservation): Window | null {
 }
 
 /**
- * Whether a user is an approved member who should hold a personal link:
- * not disabled, not flagged by an admin as a shared/unverified account, and
- * with a Slack display name in the expected format (a malformed name is how
- * we tell an unverified account apart). Team membership isn't required —
- * admins and `(TSL)` lab mates qualify too.
+ * Whether a user should hold a working personal link: an admin has approved
+ * them for general gate access, the account isn't disabled, and their Slack
+ * display name is still in the expected format. Team membership isn't
+ * required — admins and `(TSL)` lab mates can be approved too.
  */
 export function isPersonalAccessEligible(user: UserEntry): boolean {
 	if (user.disabled) return false;
-	if (user.personalAccessBlocked) return false;
+	if (!user.generalAccessApproved) return false;
+	return hasValidSlackName(user);
+}
+
+/** Whether a user's Slack display name parses in the expected format. */
+export function hasValidSlackName(user: UserEntry): boolean {
 	return parseSlackName(pickNameForValidation(user)) !== null;
 }
 

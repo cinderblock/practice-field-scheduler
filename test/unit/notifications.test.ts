@@ -105,6 +105,13 @@ describe("linksMessage", () => {
 		expect(linksMessage([{ kind: "personal", token: "t" }], "issued")).toContain("between 11pm and 8am");
 	});
 
+	it("frames an approval as newly granted general gate access", () => {
+		const text = linksMessage([{ kind: "personal", token: "tok-new" }], "approved");
+		expect(text).toContain("approved for general gate access");
+		expect(text).toContain("/g/tok-new");
+		expect(text).not.toContain("no longer works");
+	});
+
 	it("frames a rotation as a replacement and warns the old link is dead", () => {
 		const text = linksMessage([{ kind: "personal", token: "tok-new" }], "rotated");
 		expect(text).toContain("replaced");

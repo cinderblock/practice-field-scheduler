@@ -22,6 +22,7 @@ const mentor: UserEntry = {
 	teams: [1234, 5678],
 	email: "jane@example.com",
 	image: "",
+	generalAccessApproved: true,
 };
 
 const teamReservation: Reservation = {
@@ -233,24 +234,26 @@ describe("team links", () => {
 });
 
 describe("isPersonalAccessEligible", () => {
-	it("accepts an approved member", () => {
+	it("accepts a member an admin approved", () => {
 		expect(isPersonalAccessEligible(mentor)).toBe(true);
 	});
 
-	it("accepts admins and lab mates with a valid name — no team needed", () => {
+	it("refuses everyone by default — general gate access must be granted", () => {
+		const { generalAccessApproved: _, ...unapproved } = mentor;
+		expect(isPersonalAccessEligible(unapproved)).toBe(false);
+		expect(isPersonalAccessEligible({ ...mentor, generalAccessApproved: false })).toBe(false);
+	});
+
+	it("accepts approved admins and lab mates with a valid name — no team needed", () => {
 		expect(isPersonalAccessEligible({ ...mentor, teams: "admin", displayName: "Ada Admin (1234)" })).toBe(true);
 		expect(isPersonalAccessEligible({ ...mentor, teams: [], displayName: "Lab Mate (TSL)" })).toBe(true);
 	});
 
-	it("refuses disabled accounts", () => {
+	it("refuses disabled accounts, even if approved", () => {
 		expect(isPersonalAccessEligible({ ...mentor, disabled: true })).toBe(false);
 	});
 
-	it("refuses accounts an admin marked as shared", () => {
-		expect(isPersonalAccessEligible({ ...mentor, personalAccessBlocked: true })).toBe(false);
-	});
-
-	it("refuses unverified accounts, identified by a malformed Slack name", () => {
+	it("refuses an approved account whose Slack name no longer parses", () => {
 		expect(isPersonalAccessEligible({ ...mentor, displayName: "Robotics Laptop", name: "Robotics Laptop" })).toBe(
 			false,
 		);
@@ -294,10 +297,10 @@ describe("personal links", () => {
 		});
 	});
 
-	it("are revoked for an account that isn't approved", () => {
+	it("are revoked for an account that isn't (or is no longer) eligible", () => {
 		for (const user of [
 			{ ...mentor, disabled: true },
-			{ ...mentor, personalAccessBlocked: true },
+			{ ...mentor, generalAccessApproved: false },
 			{ ...mentor, displayName: "Shared iPad", name: "Shared iPad" },
 		]) {
 			expect(personal(user, inside)).toMatchObject({ valid: false, reason: "revoked", grant: "personal" });

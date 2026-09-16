@@ -58,12 +58,12 @@ export const accessRouter = createTRPCRouter({
 			.input(z.object({ userId: userInput }))
 			.mutation(({ input, ctx }) => ctx.context.rotatePersonalAccessLink(input.userId)),
 
-		/** Mark a shared/unverified account: no personal link. Blocking deletes the current one. */
-		setBlocked: protectedProcedure
-			.input(z.object({ userId: userInput, blocked: z.boolean() }))
-			.mutation(async ({ input, ctx }) => {
-				await ctx.context.setPersonalAccessBlocked(input.userId, input.blocked);
-				return { userId: input.userId, blocked: input.blocked };
-			}),
+		/**
+		 * Approve someone for general gate access (issues and DMs their personal
+		 * link), or revoke it (deletes the link).
+		 */
+		setApproved: protectedProcedure
+			.input(z.object({ userId: userInput, approved: z.boolean() }))
+			.mutation(({ input, ctx }) => ctx.context.setGeneralAccessApproved(input.userId, input.approved)),
 	}),
 });

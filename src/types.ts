@@ -56,9 +56,10 @@ export type UserEntry = {
 	// rotation self-heal: if a current token isn't in here, the next login DMs
 	// the new link.
 	gateLinkSentTokens?: string[];
-	// Set by an admin for shared or unverified accounts: no personal gate link,
-	// even though the account can otherwise sign in.
-	personalAccessBlocked?: boolean;
+	// Granted by an admin ("Approve general gate access"). Only approved people
+	// hold a personal gate link; nobody has one by default, so shared or
+	// unverified accounts simply never get approved.
+	generalAccessApproved?: boolean;
 };
 
 /**
@@ -94,6 +95,16 @@ export type PersonalAccess = {
 	/** Admin who performed the last rotation (absent for the initial issue). */
 	rotatedBy?: UserId;
 };
+
+/**
+ * Where a person stands with general gate access, as shown to admins:
+ * - `active`: approved, and their personal link exists
+ * - `not_issued`: approved, link not created yet (issued on approval or sign-in)
+ * - `not_approved`: no general gate access (the default)
+ * - `invalid_name`: approved, but their Slack name doesn't parse, so the link is inactive
+ * - `disabled`: the account is disabled
+ */
+export type PersonalAccessStatus = "active" | "not_issued" | "not_approved" | "invalid_name" | "disabled";
 
 export type Holiday = {
 	id: string;

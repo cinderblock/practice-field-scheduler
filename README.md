@@ -141,18 +141,20 @@ answer is yes.
 Both have the shape `${GATE_BASE_URL}/g/<token>`, and both are checked live on
 every use, so a stable bookmark is not a standing grant.
 
-| Link         | Who gets one                       | When it works                                            | Share it?       |
-| ------------ | ---------------------------------- | -------------------------------------------------------- | --------------- |
-| **Team**     | one per team, sent to every member | the team's reserved slots, 20 min before to 60 min after | within the team |
-| **Personal** | every approved Slack member        | any day, within site hours                               | no              |
+| Link         | Who gets one                                         | When it works                                            | Share it?       |
+| ------------ | ---------------------------------------------------- | -------------------------------------------------------- | --------------- |
+| **Team**     | one per team, sent to every member                   | the team's reserved slots, 20 min before to 60 min after | within the team |
+| **Personal** | people an admin has approved for general gate access | any day, within site hours                               | no              |
 
 - **Site hours are 8am–11pm** (field time) and bound _everything_ the scheduler
   issues, team links included. Overnight, only Gate Manager's own registered
   employees can open the gate; that path never asks the scheduler.
-- **Approved** means: not disabled, a Slack display name in the expected
-  format, and not marked by an admin as a shared/unverified account. Admins and
-  `(TSL)` lab mates qualify like anyone else. Being an admin grants nothing by
-  itself.
+- **General gate access is an explicit grant.** Nobody has it by default —
+  an admin approves each person, which issues their personal link and DMs it
+  right away. Shared or unverified Slack accounts simply never get approved.
+  The link also stops working if the person is disabled or their Slack name
+  stops parsing. Admins and `(TSL)` lab mates can be approved like anyone
+  else; being an admin grants nothing by itself.
 - **Team membership comes from Slack display names** in the form
   `First Last (1234)` (multi-team: `First Last (1234, 5678)`; lab mates:
   `First Last (TSL)`). Membership re-syncs on every sign-in, and a malformed
@@ -177,11 +179,12 @@ On `/users`, admins get:
 - **Team gate links** — per-team status, **Reveal link** (to hand a link over
   when Slack isn't reaching someone) and **Rotate** (new link, every old
   bookmark for that team stops working, the team is DM'd the replacement).
-- **Per person, under each name** — personal-link status, **Reveal**,
-  **Replace** (DMs the new link) and **Mark as shared account** (deletes the
-  link; unblocking issues a fresh one at their next sign-in).
+- **Per person, under each name** — general gate access status, **Approve
+  general gate access** (issues and DMs their personal link), and for approved
+  people **Reveal link**, **Replace link** (DMs the new one) and **Revoke
+  access** (deletes the link; approving again issues a fresh one).
 
-Reveal, rotate/replace and block/unblock are all written to the audit log.
+Approvals, revocations, reveals and rotations are all written to the audit log.
 
 #### The check endpoint
 

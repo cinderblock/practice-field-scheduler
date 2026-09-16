@@ -18,6 +18,7 @@ import type {
 	EventDate,
 	Holiday,
 	PersonalAccess,
+	PersonalAccessStatus,
 	RemoveReservationArgs,
 	Reservation,
 	SiteEvent,
@@ -28,9 +29,16 @@ import type {
 	UserEntry,
 	UserId,
 } from "~/types";
-import { type AccessCheckResult, evaluateAccess, isPersonalAccessEligible, sameTeam } from "./access";
+import {
+	type AccessCheckResult,
+	evaluateAccess,
+	hasValidSlackName,
+	isPersonalAccessEligible,
+	sameTeam,
+} from "./access";
 import {
 	type GateLink,
+	type LinkDmKind,
 	notifyTeamOfLink,
 	notifyTeamOfReservation,
 	selectTeamMemberRecipients,
@@ -199,9 +207,9 @@ async function rotateAccess<T extends AccessRecord>(store: AccessStore<T>, rotat
 }
 
 /**
- * Delete a person's link outright. Used when an admin blocks an account: a
- * shared account's link may have spread, so unblocking later must not bring
- * the same token back.
+ * Delete a person's link outright. Used when an admin revokes general gate
+ * access: the link may have spread, so approving again later must issue a new
+ * token rather than bring the old one back.
  *
  * Takes `changeLock`. Must NOT be called while already holding it.
  */
@@ -237,9 +245,42 @@ async function markLinksSent(user: UserEntry, tokens: readonly string[]): Promis
 	}
 }
 
-/** Every Slack ID mapped to a user — rotation DMs reach all of them. */
+/** Every Slack ID mapped to a user — admin-triggered DMs reach all of them. */
 function slackIdsFor(userId: UserId): string[] {
 	return slackMappings.filter(m => m.userId === userId).map(m => m.slackId);
+}
+
+/** What happened when we tried to DM someone their personal link. */
+export type LinkDelivery = {
+	notified: number;
+	failed: number;
+	/** Why nothing was attempted, if nothing was. */
+	skipped: "slack_not_configured" | "no_slack_account" | null;
+};
+
+/**
+ * DM a person their personal link on every Slack account mapped to them, and
+ * record it as sent if any DM got through.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+async function deliverPersonalLink(user: UserEntry, token: string, kind: LinkDmKind): Promise<LinkDelivery> {
+	if (!isSlackConfigured()) return { notified: 0, failed: 0, skipped: "slack_not_configured" };
+	const slackIds = slackIdsFor(user.id);
+	if (slackIds.length === 0) return { notified: 0, failed: 0, skipped: "no_slack_account" };
+
+	let notified = 0;
+	let failed = 0;
+	for (const slackId of slackIds) {
+		const outcome = await sendLinksDm(slackId, [{ kind: "personal", token }], kind);
+		if (outcome.sent) notified++;
+		else {
+			failed++;
+			console.warn(`Personal link DM to ${user.id}/${slackId} failed: ${outcome.error ?? outcome.reason}`);
+		}
+	}
+	if (notified > 0) await markLinksSent(user, [token]);
+	return { notified, failed, skipped: null };
 }
 
 /**
@@ -428,9 +469,9 @@ type LogTeamAccessEntry = LogCommon & {
 	team: TeamFull;
 };
 
-/** Personal-link administration, attributed to the admin who did it. */
+/** General-access and personal-link administration, attributed to the admin who did it. */
 type LogPersonalAccessEntry = LogCommon & {
-	type: "personalLinkReveal" | "personalLinkRotate" | "personalLinkBlock" | "personalLinkUnblock";
+	type: "generalAccessApprove" | "generalAccessRevoke" | "personalLinkReveal" | "personalLinkRotate";
 	targetUserId: UserId;
 	targetName: string;
 };
@@ -1006,7 +1047,7 @@ export class Context {
 		Record<
 			UserId,
 			{
-				status: "active" | "not_issued" | "blocked" | "invalid_name" | "disabled";
+				status: PersonalAccessStatus;
 				created: Date | null;
 				rotated: Date | null;
 			}
@@ -1018,11 +1059,11 @@ export class Context {
 		const out: Awaited<ReturnType<Context["listPersonalAccess"]>> = {};
 		for (const user of users) {
 			const entry = findPersonalAccess(user.id);
-			const status = user.disabled
+			const status: PersonalAccessStatus = user.disabled
 				? "disabled"
-				: user.personalAccessBlocked
-					? "blocked"
-					: !isPersonalAccessEligible(user)
+				: !user.generalAccessApproved
+					? "not_approved"
+					: !hasValidSlackName(user)
 						? "invalid_name"
 						: entry
 							? "active"
@@ -1038,11 +1079,11 @@ export class Context {
 		if (!target) throw new Error("User not found");
 		if (!isPersonalAccessEligible(target)) {
 			throw new Error(
-				target.personalAccessBlocked
-					? "This account is blocked from having a personal link"
-					: target.disabled
-						? "This account is disabled"
-						: "This account's Slack name isn't in the expected format, so it can't have a personal link",
+				target.disabled
+					? "This account is disabled"
+					: !target.generalAccessApproved
+						? "This account isn't approved for general gate access"
+						: "This account's Slack name isn't in the expected format, so its link is inactive",
 			);
 		}
 		return target;
@@ -1074,13 +1115,7 @@ export class Context {
 	 * Admin-only: rotate one person's link and DM them the replacement on every
 	 * Slack account mapped to them. The old link stops working immediately.
 	 */
-	async rotatePersonalAccessLink(userId: UserId): Promise<{
-		userId: UserId;
-		notified: number;
-		failed: number;
-		/** Why nothing was attempted, if nothing was. */
-		skipped: "slack_not_configured" | "no_slack_account" | null;
-	}> {
+	async rotatePersonalAccessLink(userId: UserId): Promise<{ userId: UserId } & LinkDelivery> {
 		await this.assertAdmin("Only admins can rotate personal access links");
 		await initialized();
 
@@ -1096,57 +1131,63 @@ export class Context {
 			targetName: target.displayName ?? target.name,
 		});
 
-		const slackIds = slackIdsFor(target.id);
-		if (!isSlackConfigured()) return { userId: target.id, notified: 0, failed: 0, skipped: "slack_not_configured" };
-		if (slackIds.length === 0) return { userId: target.id, notified: 0, failed: 0, skipped: "no_slack_account" };
-
-		let notified = 0;
-		let failed = 0;
-		for (const slackId of slackIds) {
-			const outcome = await sendLinksDm(slackId, [{ kind: "personal", token: entry.token }], "rotated");
-			if (outcome.sent) notified++;
-			else {
-				failed++;
-				console.warn(`Personal link rotation DM to ${target.id}/${slackId} failed: ${outcome.error ?? outcome.reason}`);
-			}
-		}
-		if (notified > 0) await markLinksSent(target, [entry.token]);
-
-		return { userId: target.id, notified, failed, skipped: null };
+		return { userId: target.id, ...(await deliverPersonalLink(target, entry.token, "rotated")) };
 	}
 
 	/**
-	 * Admin-only: mark an account as shared/unverified (no personal link), or
-	 * clear that mark. Blocking deletes the existing link outright — a shared
-	 * account's link may have spread — so unblocking issues a fresh one on the
-	 * person's next login rather than resurrecting the old one.
+	 * Admin-only: approve someone for general gate access, or revoke it.
+	 *
+	 * Approving issues their personal link and DMs it straight away, so they
+	 * don't have to sign in again to get it. If their Slack name doesn't parse
+	 * the approval is still recorded, but no link is issued until it's fixed.
+	 *
+	 * Revoking deletes the link outright — it may have spread — so approving
+	 * again later issues a fresh token rather than reviving the old one.
 	 */
-	async setPersonalAccessBlocked(userId: UserId, blocked: boolean): Promise<void> {
-		await this.assertAdmin("Only admins can block personal access");
+	async setGeneralAccessApproved(
+		userId: UserId,
+		approved: boolean,
+	): Promise<{ userId: UserId; approved: boolean; linkIssued: boolean } & LinkDelivery> {
+		await this.assertAdmin("Only admins can approve general gate access");
 		await initialized();
 
 		const target = users.find(u => u.id === userId);
 		if (!target) throw new Error("User not found");
+		if (approved && target.disabled) throw new Error("This account is disabled");
 
-		if (Boolean(target.personalAccessBlocked) !== blocked) {
+		if (Boolean(target.generalAccessApproved) !== approved) {
 			const release = await changeLock.acquire();
 			try {
-				target.personalAccessBlocked = blocked ? true : undefined;
+				target.generalAccessApproved = approved ? true : undefined;
 				target.updated = new Date();
 				await writeJsonFile(USERS_FILE, users);
 			} finally {
 				release();
 			}
 		}
-		if (blocked) await removePersonalAccess(target.id);
 
 		const ctx = await this.getContext();
 		await log({
 			...ctx,
-			type: blocked ? "personalLinkBlock" : "personalLinkUnblock",
+			type: approved ? "generalAccessApprove" : "generalAccessRevoke",
 			targetUserId: target.id,
 			targetName: target.displayName ?? target.name,
 		});
+
+		const nothingSent: LinkDelivery = { notified: 0, failed: 0, skipped: null };
+		if (!approved) {
+			await removePersonalAccess(target.id);
+			return { userId: target.id, approved, linkIssued: false, ...nothingSent };
+		}
+		if (!isPersonalAccessEligible(target)) {
+			return { userId: target.id, approved, linkIssued: false, ...nothingSent };
+		}
+
+		const entry = await ensureAccess(personalStore(target.id));
+		const delivery = target.gateLinkSentTokens?.includes(entry.token)
+			? nothingSent
+			: await deliverPersonalLink(target, entry.token, "approved");
+		return { userId: target.id, approved, linkIssued: true, ...delivery };
 	}
 
 	/**

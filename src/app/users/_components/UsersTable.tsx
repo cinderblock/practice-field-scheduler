@@ -6,7 +6,7 @@ import { TeamAvatar } from "~/app/_components/TeamAvatar";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { api } from "~/trpc/react";
 import type { UserEntry } from "~/types";
-import { PersonalLinkControls } from "./PersonalLinkControls";
+import { GeneralAccessControls } from "./GeneralAccessControls";
 import styles from "./UsersTable.module.css";
 
 type User = Omit<Pick<UserEntry, "id" | "name" | "displayName" | "image" | "created" | "teams">, "teams"> & {
@@ -23,7 +23,7 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 	const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
 	const [showAdmins, setShowAdmins] = useState(true);
 
-	// Admin-only: personal gate-link status per user.
+	// Admin-only: general gate access status per user.
 	const personalLinks = api.access.personal.list.useQuery(undefined, { enabled: isAdmin });
 	const accessConfig = api.access.config.useQuery(undefined, { enabled: isAdmin });
 
@@ -103,14 +103,15 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 				<table className={styles.usersTable}>
 					<thead>
 						<tr>
-							<th style={{ width: "1%" }} />
-							<th>
+							<th className={styles.avatarCol} />
+							<th className={styles.nameCol}>
 								<button type="button" onClick={() => toggleSort("name")}>
 									Name {sortField === "name" && (sortDirection === "asc" ? "↑" : "↓")}
 								</button>
 							</th>
-							{isAdmin && <th>Teams</th>}
-							<th>
+							{isAdmin && <th className={styles.gateCol}>General gate access</th>}
+							{isAdmin && <th className={styles.teamsCol}>Teams</th>}
+							<th className={styles.createdCol}>
 								<button type="button" onClick={() => toggleSort("created")}>
 									Created {sortField === "created" && (sortDirection === "asc" ? "↑" : "↓")}
 								</button>
@@ -118,58 +119,51 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 						</tr>
 					</thead>
 					<tbody>
-						{filteredUsers.map(user => (
-							<tr key={user.id}>
-								<td>
-									<div className={styles.userCell}>
-										<div style={{ position: "relative", width: "40px", height: "40px" }}>
-											<Image
-												src={user.image}
-												alt={`${user.displayName ?? user.name}'s profile`}
-												className={styles.userImage}
-												fill
-												sizes="40px"
-												unoptimized
-											/>
-										</div>
-									</div>
-								</td>
-								<td>
-									<div className={styles.userName}>
-										{user.displayName ?? user.name}
-										{user.displayName && user.name && (
-											<div style={{ fontSize: "0.85em", color: "var(--text-secondary)", fontWeight: "normal" }}>
-												{user.name}
-											</div>
-										)}
-										{isAdmin && personalLinks.data?.[user.id] && (
-											<PersonalLinkControls
-												userId={user.id}
-												status={personalLinks.data[user.id]?.status ?? "not_issued"}
-												gateUrlConfigured={accessConfig.data?.gateUrlConfigured ?? false}
-												onChanged={() => personalLinks.refetch()}
-											/>
-										)}
-									</div>
-								</td>
-								{isAdmin && (
-									<td>
-										<div className={styles.teamsCell}>
-											{user.teams === "admin"
-												? "Admin"
-												: user.teams.map(team => (
-														<div key={team} className={styles.teamAvatar} data-team={`Team ${team}`}>
-															<TeamAvatar teamNumber={team} size="1.5em" />
-														</div>
-													))}
+						{filteredUsers.map(user => {
+							const access = personalLinks.data?.[user.id];
+							return (
+								<tr key={user.id}>
+									<td className={styles.avatarCol}>
+										<div className={styles.avatar}>
+											<Image src={user.image} alt="" className={styles.userImage} fill sizes="40px" unoptimized />
 										</div>
 									</td>
-								)}
-								<td>
-									<div className={styles.dateCell}>{dateToDateString(user.created)}</div>
-								</td>
-							</tr>
-						))}
+									<td className={styles.nameCol}>
+										<div className={styles.displayName}>{user.displayName ?? user.name}</div>
+										{user.displayName && user.name && <div className={styles.realName}>{user.name}</div>}
+									</td>
+									{isAdmin && (
+										<td className={styles.gateCol}>
+											{access && (
+												<GeneralAccessControls
+													userId={user.id}
+													status={access.status}
+													gateUrlConfigured={accessConfig.data?.gateUrlConfigured ?? false}
+													onChanged={() => personalLinks.refetch()}
+												/>
+											)}
+										</td>
+									)}
+									{isAdmin && (
+										<td className={styles.teamsCol}>
+											<div className={styles.teamChips}>
+												{user.teams === "admin" ? (
+													<span className={styles.teamChip}>Admin</span>
+												) : (
+													user.teams.map(team => (
+														<span key={team} className={styles.teamChip}>
+															<TeamAvatar teamNumber={team} size="1.1em" />
+															{team}
+														</span>
+													))
+												)}
+											</div>
+										</td>
+									)}
+									<td className={styles.createdCol}>{dateToDateString(user.created)}</td>
+								</tr>
+							);
+						})}
 					</tbody>
 				</table>
 			</div>

@@ -22,7 +22,7 @@ export type DmOutcome =
 export type GateLink = { kind: "personal"; token: string } | { kind: "team"; team: TeamFull; token: string };
 
 /** Why links are being sent. Changes only the framing of the message. */
-export type LinkDmKind = "issued" | "rotated";
+export type LinkDmKind = "issued" | "approved" | "rotated";
 
 const NOT_CONFIGURED = "(gate URL not configured on the scheduler — ask an admin)";
 
@@ -51,7 +51,9 @@ export function linksMessage(links: readonly GateLink[], kind: LinkDmKind): stri
 					`Your practice-field gate link${plural ? "s have" : " has"} been *replaced*. 🔄`,
 					`The old link${plural ? "s no longer work" : " no longer works"} — please update your bookmark${plural ? "s" : ""}.`,
 				]
-			: [`Here ${plural ? "are your practice-field gate links" : "is your practice-field gate link"}. 🔑`];
+			: kind === "approved"
+				? ["You've been approved for general gate access at the practice field. 🔑"]
+				: [`Here ${plural ? "are your practice-field gate links" : "is your practice-field gate link"}. 🔑`];
 
 	const body = links.flatMap(link => ["", ...linkLine(link)]);
 

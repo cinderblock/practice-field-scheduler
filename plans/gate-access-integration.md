@@ -477,6 +477,15 @@ the bot scope **`users:read`**.
     route per-request; check with `ls .next/server/app/*.html` (none).
   - Both found by the ops plan's owner reviewing `3a3615b`, and fixed in
     `46149d3`.
+- **Proof the image is deployment-agnostic** — the premise of the whole
+  migration, so worth re-running if anything near settings changes. Build
+  with no `.env`, assemble the standalone output the way the Dockerfile
+  does (`.next/standalone` + `.next/static` + `public`), then run
+  `node server.js` with the settings passed **only** as process
+  environment, e.g. `SITE_TITLE="Runtime Title Proof"`. Fetch `/login`:
+  200, and the document head carries that title. Verified twice on
+  `46149d3`, independently by both sessions. A regression to build-time
+  inlining shows up here as the wrong title or none.
 - **Python heredocs in the Bash tool read the script in the Windows code
   page**, so a literal `•` or `—` in a replacement string won't match the
   UTF-8 file. The replacement then fails its "found once" assert, and

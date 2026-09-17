@@ -464,6 +464,19 @@ the bot scope **`users:read`**.
        directory".
   5. Afterwards, kill the `node.exe` child: stopping the shell task leaves it
      holding the port.
+- **Build the image's way — no `.env` at all — or two faults hide.** Running
+  `env -u DATA_DIR SKIP_ENV_VALIDATION=1 npx next build` is what CI does;
+  sourcing `.env.test` first (as I did) passes while the image build fails.
+  - `next build` loads `backend.ts` while collecting page data, and it
+    resolves `DATA_DIR` at module scope, so an unset one aborts the build.
+    The build stage sets a throwaway `DATA_DIR`, never `/data`: the build
+    writes empty JSON files into whatever it points at.
+  - Next prerendered `/login` and `/_not-found` at build time, when no
+    settings exist. The emitted `login.html` had **no document `<title>`**.
+    `export const dynamic = "force-dynamic"` in the root layout makes every
+    route per-request; check with `ls .next/server/app/*.html` (none).
+  - Both found by the ops plan's owner reviewing `3a3615b`, and fixed in
+    `46149d3`.
 - **Python heredocs in the Bash tool read the script in the Windows code
   page**, so a literal `•` or `—` in a replacement string won't match the
   UTF-8 file. The replacement then fails its "found once" assert, and

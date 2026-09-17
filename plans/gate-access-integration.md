@@ -601,32 +601,24 @@ having a runner on `steamboat`. Half done:
   read-only, merge commit; report publishing is push-only. No fork ever
   triggered the old one (checked every `pull_request_target` run), so nothing
   leaked and `FIRST_API_AUTH_TOKEN` doesn't need rotating.
-- **Not done: the runner is still registered and online.** `id=2`,
-  name `steamboat`, labels `self-hosted,Linux,X64,tomsawyerlabs`, at
-  `/opt/actions-runner`, service
-  `actions.runner.cinderblock-practice-field-scheduler.steamboat.service`. Last
-  job was the `deploy` at 2026-09-17 10:45 PDT. While it is registered, a PR
-  from a fork can supply its own workflow with `runs-on: self-hosted` and run
-  code on the box. The repo has 2 forks.
-- `gate-manager` (`steamboat-gate`) and `ops` (7 runners incl. `steamboat`) also
-  have runners, but both repos are **private**, which is the supported case.
-  Only the scheduler's runner is the problem.
+- Done 2026-09-17 16:17 PDT, with the user's explicit yes: the runner is
+  **removed**. `svc.sh stop` + `svc.sh uninstall` + `config.sh remove` (which
+  deleted `.credentials` and `.runner`), then `rm /etc/sudoers.d/github-actions`.
+  `gh api repos/cinderblock/practice-field-scheduler/actions/runners` now reports
+  `total_count: 0`. The empty `/opt/actions-runner` tree is still on disk and can
+  be deleted whenever; it holds no credentials.
+- Untouched, and correctly so: steamboat's other three runners are separate
+  registrations with their own services, tokens and work folders --
+  `cinderblock-ops.steamboat` (`/root/actions-runner`),
+  `gate-manager.steamboat-gate` (`/root/actions-runner-gate`) and
+  `tomsawyerlabs.com-internal.steamboat-internal` (`/root/actions-runner-internal`).
+  All three repos are **private**, which is the supported case for a self-hosted
+  runner. Ops deploys to steamboat are unaffected; verified all still online
+  afterwards.
 
-Removal, when authorized (server change — needs the user's explicit yes):
-
-```bash
-# 1. removal token from GitHub
-gh api -X POST repos/cinderblock/practice-field-scheduler/actions/runners/remove-token --jq .token
-# 2. on steamboat
-cd /opt/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
-sudo -u github ./config.sh remove --token <TOKEN>
-# 3. leftover from the old deploy: passwordless systemctl restart for `github`
-sudo rm /etc/sudoers.d/github-actions
-```
-
-Consequence: no automatic deploy at all until the ops pin is live. Deploys are
-the manual recipe (see `plans/booking-regression.md`, Deploy notes) in the
-meantime. That is strictly safer than leaving the runner registered.
+The runner's removal cost nothing, because the ops-pinned container had taken
+over deploys the same hour (see `plans/booking-regression.md`). If a future
+deploy ever has to happen by hand, the recipe is there.
 
 ## Open questions for the user
 

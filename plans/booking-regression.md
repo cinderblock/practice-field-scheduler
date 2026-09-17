@@ -129,18 +129,29 @@ false` in `src/server/backend.ts`. Enforcing a rule that has never actually
       `allowed despite team mismatch` is present in `.next/server`, so the new
       code really is what is serving.
 - [ ] Confirm a real non-admin booking works (needs the reporting user to retry;
-      `journalctl -u practice-field-scheduler -g "refused|mismatch"` will say
-      what happened either way)
-- [x] Handed the published image digest to the ops session for the eventual pin:
+      `docker logs practice-field-scheduler | grep -E "refused|mismatch"` will
+      say what happened either way -- it is a container now, not a unit)
+- [x] Handed the published image digest to the ops session:
       `ghcr.io/cinderblock/practice-field-scheduler@sha256:8a48be6e05a00ddaf7516db28f3190dcec979dbceae48aa3e8a7d41046715412`,
-      revision `4f28f1f`, verified pullable anonymously. Production is **not**
-      running that image -- steamboat is still the systemd path built from
-      source. Note `build.yml`'s concurrency group cancels an in-flight build on
-      the next push, so the `a33d200` image never published; a plan-only commit
-      wants `[skip ci]`.
-- [ ] Decide whether `SLACK_BOT_TOKEN`, `SCHEDULER_API_KEY` and `GATE_BASE_URL`
-      go into the box's `.env` now or wait for the ops stack to own them (see
-      Deploy notes)
+      revision `4f28f1f`, verified pullable anonymously. Note `build.yml`'s
+      concurrency group cancels an in-flight build on the next push, so the
+      `a33d200` image never published; a plan-only commit wants `[skip ci]`.
+- [x] **The ops cutover happened the same hour.** Systemd unit stopped and
+      disabled at 16:04 PDT; container `practice-field-scheduler` up at 16:08
+      from exactly that digest (`org.opencontainers.image.revision` =
+      `4f28f1f`), `127.0.0.1:9002->3000`, data bind-mounted
+      `/srv/practice-field-scheduler-data -> /data` owned by `10001:10001`.
+      Reservations file identical to the old one (157203 bytes, same mtime as
+      the last write at 14:56), so nothing was lost in the copy. `/login` 200
+      through Caddy, `/api/access/check` 401 without a key. So the booking fix
+      is live on the _new_ path -- the manual systemd deploy earlier in the day
+      is moot, though it did deliver the fix for the ~20 minutes in between.
+- [x] Resolved: `SLACK_BOT_TOKEN`, `SCHEDULER_API_KEY` and `GATE_BASE_URL` are
+      all present in the container's environment, supplied by the ops stack.
+      Gate links and the Slack DMs are live in production for the first time.
+      Nothing to add to the box's `.env` -- that file is now unused.
+- [x] Retired the public repo's self-hosted runner (see
+      `plans/gate-access-integration.md`).
 
 ## Deploy notes (2026-09-17)
 

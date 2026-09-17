@@ -12,7 +12,9 @@
  * (the 18th) disagree. That makes the test fail on the old code whatever zone the test host is in,
  * which is the point: CI runs in UTC and a developer's machine here does not.
  *
- * Only `Date` is faked; the real timers keep running so the backend's locks and writes behave.
+ * Only `Date` is faked, and only *after* the backend is imported: `@date-fns/tz` subclasses
+ * whatever `Date` is global when it loads, and a subclass of vitest's mock quietly falls back to
+ * the host's zone instead of TIME_ZONE. That passed here (Pacific) and failed on CI (UTC).
  *
  * Like test/unit/blackoutEnforcement.test.ts, this seeds users.json and points DATA_DIR at a
  * scratch directory before importing the backend, which resolves both at import time.
@@ -28,11 +30,14 @@ import type { Context as ContextClass } from "~/server/backend";
 const MemberTeam = "1234";
 const Slot = "10:00am";
 
+// The backend files data by the real calendar year, so the pinned date tracks it: 17 September,
+// which is in PDT whatever year this runs in.
+const Year = new Date().getFullYear();
 /** 22:30 on 17 September in Los Angeles; 05:30 on the 18th in UTC. */
-const FieldToday = "2026-09-17";
-const PinnedNow = new Date("2026-09-18T05:30:00Z");
+const PinnedNow = new Date(Date.UTC(Year, 8, 18, 5, 30));
 /** 08:00 the same field morning, for proving the window doesn't slide during the day. */
-const PinnedMorning = new Date("2026-09-17T15:00:00Z");
+const PinnedMorning = new Date(Date.UTC(Year, 8, 17, 15, 0));
+const FieldToday = day(0);
 
 let dataDir: string;
 let Context: typeof ContextClass;
@@ -41,17 +46,16 @@ let PermissionError: typeof import("~/server/backend").PermissionError;
 function session(id: string): Session {
 	return {
 		user: { id, name: id, email: `${id}@example.test`, image: "" },
-		expires: new Date(PinnedNow.getTime() + 60_000).toISOString(),
+		expires: new Date(PinnedNow.getTime() + 3_600_000).toISOString(),
 	} as unknown as Session;
 }
 
 const admin = () => new Context(session("admin"), "vitest", "127.0.0.1");
 const member = () => new Context(session("member"), "vitest", "127.0.0.1");
 
-/** A date `n` days from the field's today. Plain string arithmetic on a known date. */
+/** A date `n` days from the field's today, worked out independently of the code under test. */
 function day(n: number): string {
-	const d = new Date(Date.UTC(2026, 8, 17 + n));
-	return d.toISOString().slice(0, 10);
+	return new Date(Date.UTC(Year, 8, 17 + n)).toISOString().slice(0, 10);
 }
 
 function book(ctx: ContextClass, date: string, slot = Slot, team = MemberTeam) {
@@ -59,9 +63,6 @@ function book(ctx: ContextClass, date: string, slot = Slot, team = MemberTeam) {
 }
 
 beforeAll(async () => {
-	vi.useFakeTimers({ toFake: ["Date"] });
-	vi.setSystemTime(PinnedNow);
-
 	dataDir = mkdtempSync(join(tmpdir(), "pfs-window-"));
 	const now = PinnedNow.toISOString();
 
@@ -93,10 +94,17 @@ beforeAll(async () => {
 	mkdirSync(join(dataDir, new Date().getFullYear().toString()), { recursive: true });
 
 	process.env.DATA_DIR = dataDir;
+	// The window is evaluated in TIME_ZONE, so the test pins it rather than depending on whatever
+	// the environment supplies.
+	process.env.TIME_ZONE = "America/Los_Angeles";
 
 	const backend = await import("~/server/backend");
 	Context = backend.Context;
 	PermissionError = backend.PermissionError;
+
+	// Only now that everything has loaded against the real Date.
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(PinnedNow);
 });
 
 afterEach(() => {

@@ -208,7 +208,25 @@ consult the `home-assistant-best-practices` skill first.
    `1358a90`)_, with the startup prune of unapproved links _(`eeb035c`)_.
 7. ✅ `/users` reworked for phones _(the people table and per-person
    controls in `1358a90`, the rest in `84123b0`)_.
-8. Ship, in this order, each push only with the user's go-ahead (pushes
+8. ✅ **Slack name rules** _(user request, 2026-09-16: "check Slack
+   member's names and to ensure they all follow a standard format. Names
+   should just be names. display names must include team affiliation(s)
+   after name in parens. Don't enable gate access links for that user until
+   they fix their names.")_ Landed on this branch before the merge ("part of
+   this upgrade"). Design in "Slack name rules" below.
+   - Name rules, issues and suggested fixes: `src/server/util/slackName.ts`.
+   - `users.info` / `users.list`: `src/server/slack.ts`.
+   - Backend sync, holds, nudges and admin report: `src/server/backend.ts`,
+     "Slack names" section.
+   - Admin "Slack names" panel, per-person "Gate links on hold", login copy.
+   - README, ops plan (`users:read`), tests (306), browser check.
+   - **Needs `users:read` on the bot token** before any gate link goes out
+     in production.
+   - Gate Manager copy and contract doc updated to match, as Gate Manager
+     `d9afa7e`. **Committed, not pushed**: pushing its `master` deploys
+     production, so it needs the user's go-ahead. It's wording only, so it
+     can ship any time.
+9. Ship, in this order, each push only with the user's go-ahead (pushes
    deploy). The user approved steps 1–2 on 2026-09-16.
    1. ✅ Push Gate Manager `master`. Its `Deploy` workflow builds, tests and
       deploys **production** on steamboat on every push to `master`.
@@ -229,7 +247,8 @@ consult the `home-assistant-best-practices` skill first.
       - **This session owns that plan's "Gate access settings" section**,
         which holds everything the scheduler needs:
         - production-only secrets `SCHEDULER_API_KEY` (must equal Gate
-          Manager's) and `SLACK_BOT_TOKEN` (`xoxb-…`, `chat:write`);
+          Manager's) and `SLACK_BOT_TOKEN` (`xoxb-…`, bot scopes
+          `chat:write` **and `users:read`**, see step 8);
         - `GATE_BASE_URL=https://gate.tomsawyerlabs.com` in the shared
           `common.env`;
         - `STRICT_SLACK_NAMES` left unset.
@@ -255,7 +274,80 @@ consult the `home-assistant-best-practices` skill first.
    6. Drive a real link through `/g/:token` on a phone, in and out of site
       hours.
 
-9. Later: tool catalog refactor before a second tool (see Home Assistant).
+10. Later: tool catalog refactor before a second tool (see Home Assistant).
+
+## Slack name rules (step 8 design)
+
+**Root problem found first:** the scheduler has never seen anyone's Slack
+display name.
+
+- `src/server/auth/config.ts` reads the claim `https://slack.com/user_name`,
+  but Slack's OpenID Connect response has no such claim.
+  - Slack's `openid.connect.userInfo` fields: `sub`, `https://slack.com/user_id`,
+    `https://slack.com/team_id`, `email`, `email_verified`, `name`, `picture`,
+    `given_name`, `family_name`, `locale`, and team and image claims.
+  - Checked against docs.slack.dev on 2026-09-16.
+- Even if the claim existed, the `jwt` callback reads `profile.displayName`,
+  and Auth.js passes the _raw_ provider profile there
+  (`@auth/core` 0.37.2, `lib/actions/callback/index.js`), not what
+  `profile()` returned.
+- So `UserEntry.displayName` is always empty for real users. Every check so
+  far ran on the OIDC `name` claim alone.
+
+Only the Web API returns both fields (`profile.real_name`,
+`profile.display_name`), through `users.info` / `users.list`, and both need
+the bot scope **`users:read`**.
+
+**Rules** (defaults chosen here; the user can change them):
+
+- **Full name** (`real_name`): not empty, and "just a name". That means no
+  parentheses or brackets, and no digits.
+- **Display name** (`display_name`): `<name> (<affiliations>)`.
+  - `<name>` follows the full-name rule.
+  - `<affiliations>` is one or more team numbers, comma-separated, or the
+    approved marker `TSL`.
+  - The two names don't have to match (nicknames are fine).
+- Teams still come from the display name, and only when it passes.
+  Otherwise the last known teams stay, so booking is unaffected.
+
+**Gate links while names are wrong:**
+
+- The personal link is refused live (`revoked`) and isn't DM'd. Admins
+  can't reveal or replace it.
+- Team links aren't DM'd to that person at sign-in or on rotation.
+- Reservation notices still go out, but without the link, plus a line about
+  fixing names.
+- Admin reveal of a _team_ link is unaffected; handing it over is a
+  deliberate admin act.
+- **Names that can't be verified count as wrong.** That covers no bot token,
+  no `users:read`, or Slack erroring before a person was ever checked.
+  Staging has no bot token, so nobody's links are live there.
+
+**Checks:**
+
+- **At sign-in:** `users.info` for that person, in the background, at most
+  once every 5 minutes per person. Every tRPC request resolves the user, so
+  this must be throttled. It also dedupes in-flight calls.
+- **Workspace-wide:** `users.list` every 10 minutes, plus an admin "Check
+  now" button. Skips deleted users, bots, app users and Slackbot.
+  - A response without `members` is an error, never "nobody".
+  - It doesn't run during `next build`, which loads the real data dir on
+    the box, or under Vitest.
+- When a signed-in person's names go from wrong to right, their links go
+  out right away. A person checked for the first time gets nothing
+  automatically, so the first sync after deploy doesn't DM everyone.
+- Once a person's names have come from Slack, sign-in no longer overwrites
+  them with the OIDC `name`.
+
+**Telling people:**
+
+- **Automatic:** one DM per distinct (full name, display name) pair, and
+  only when links would otherwise go out (sign-in or approval). It says what
+  is wrong, suggests fixed values, and says where to edit them. Recorded on
+  the user, so restarts don't repeat it.
+- **Admin, workspace-wide:** the "Slack names" panel lists every member with
+  problems, including people who never signed in. It can preview and then
+  send personalised DMs.
 
 ## Findings / gotchas
 
@@ -325,13 +417,42 @@ consult the `home-assistant-best-practices` skill first.
   (`vi.useFakeTimers({ toFake: ["Date"] })`) so the change lock still works.
   See `test/unit/gateAccessBackend.test.ts`.
 - **Local visual-check recipe** (no real Slack needed): `TEST_AUTH_BYPASS` in
-  `.env.test` isn't implemented anywhere. Instead, seed a temp `DATA_DIR`,
-  mint a session with `encode()` from `next-auth/jwt` (secret = the test
-  `AUTH_SECRET`, salt = the cookie name `next-auth.session-token`, `sub` = a
-  Slack ID mapped in `slack.json`), set it with `document.cookie`, and run
-  `next dev` with `.env.test` sourced plus `SLACK_BOT_TOKEN=""`. There's no
-  local `.env`, so nothing real is reachable. Kill the `node.exe` child
-  afterwards — stopping the shell task leaves it holding the port.
+  `.env.test` isn't implemented anywhere.
+  1. Seed a temp `DATA_DIR`. Users need `slackNamesSyncedAt` for their
+     names to count.
+  2. Mint a session with `encode()` from `next-auth/jwt`: secret = the test
+     `AUTH_SECRET`, salt = the cookie name `next-auth.session-token`,
+     `sub` = a Slack ID mapped in `slack.json`. The seed script must sit in
+     the repo root to resolve `next-auth`; delete it afterwards.
+  3. Set the session with `document.cookie`.
+  4. Run `node node_modules/next/dist/bin/next dev --turbo -p <port>` with
+     `.env.test` sourced.
+     - **To see Slack-backed UI** (the names panel), fake Slack in-process:
+       set `SLACK_BOT_TOKEN` to any `xoxb-…` value, and
+       `NODE_OPTIONS=--import=file:///C:/…/mock-slack.mjs`. That script
+       swaps `globalThis.fetch` for `https://slack.com/api/*`, answering
+       `users.list` / `users.info` from a fixed directory and logging
+       `chat.postMessage`. Nothing real is reachable.
+     - Otherwise set `SLACK_BOT_TOKEN=""`.
+     - Use a literal forward-slash path in `NODE_OPTIONS`; building it with
+       `sed` in the Bash tool mangled the backslashes. Through `npx`, a bad
+       `NODE_OPTIONS` fails as "Could not determine Node.js install
+       directory".
+  5. Afterwards, kill the `node.exe` child: stopping the shell task leaves it
+     holding the port.
+- **Python heredocs in the Bash tool read the script in the Windows code
+  page**, so a literal `•` or `—` in a replacement string won't match the
+  UTF-8 file. The replacement then fails its "found once" assert, and
+  nothing is written. Use the Edit tool for edits containing non-ASCII.
+- **The scheduler never saw Slack display names before step 8.** Sign in with
+  Slack (OIDC) has no display-name claim. The code read a made-up
+  `https://slack.com/user_name` claim through the wrong callback argument.
+  Every earlier name check ran on the OIDC `name` claim alone.
+- **`Context` resolves the user in its constructor, and `getUser` may now
+  wait up to 3 s** for a newcomer's first Slack read, which takes the change
+  lock to save. Every `Context` method already resolves the user (via
+  `restrictTo*` / `assertAdmin`) before taking the lock, so that can't
+  deadlock. Keep it that way in new methods.
 - Avatars and team logos render blank locally; that's the fake avatar URLs
   and the FIRST API test credentials, not a bug.
 - **Pre-existing issues noticed, not fixed** (outside this task):
@@ -380,8 +501,16 @@ consult the `home-assistant-best-practices` skill first.
 - [x] `master` merged into the branch (`e82e1ec`) and pushed. CI `Test` ✅.
       Staging is serving it. Main tree fast-forwarded (check, typecheck,
       267 tests ✅).
+- [x] Slack name rules (step 8). Checks: typecheck ✅, biome+prettier ✅,
+      306 unit tests ✅. Four deliberate breaks each failed the end-to-end
+      suite. Browser check with a faked Slack at 1280×900 and iPhone 12 Pro:
+      the panel lists 4 of 7 members with reasons and suggestions, Preview
+      and Send work (personalised DMs), per-person "Gate links on hold" shows,
+      and nothing scrolls sideways. Fixed on the way: an empty avatar `src`
+      warning. The ops plan's gate section now asks for `users:read`.
 - [ ] Staging/production server settings (`SCHEDULER_API_KEY`,
-      `SLACK_BOT_TOKEN`, `GATE_BASE_URL`), needing the user's authorization.
+      `SLACK_BOT_TOKEN` with `chat:write` + `users:read`, `GATE_BASE_URL`),
+      via the ops plan.
 - [ ] Branch merged to `master` (production deploy).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
@@ -391,7 +520,7 @@ consult the `home-assistant-best-practices` skill first.
    steamboat into the ops secret `PRACTICE_FIELD_SCHEDULER_API_KEY`
    (piped, never printed): may a session do it? Recommendation: yes. It's
    the only way to get the value without rotating the key in both places.
-   The other settings questions are answered (step 8.3).
+   The other settings questions are answered (step 9.3).
 2. **Merging to `master`** (production deploy): when? Recommendation:
    right after the production settings are in place, then approve people
    on `/users`.
@@ -415,7 +544,7 @@ consult the `home-assistant-best-practices` skill first.
 - Don't run `npm run check:write` without checking `git diff --stat`
   afterwards. It formats the whole repo, and this tree is shared.
 - Don't hand-edit the scheduler's `.env` on steamboat. Ops renders it now
-  (see step 8.3), and ops changes still need the user's per-change yes.
+  (see step 9.3), and ops changes still need the user's per-change yes.
 - Don't push plan-only commits to this branch casually. Every push
   redeploys staging.
 - Don't give the scheduler Home Assistant credentials (see above).

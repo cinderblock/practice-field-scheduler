@@ -207,10 +207,10 @@ async function updateForecast(setting: string) {
 		console.log(`🌤️ Weather forecasts for ${name} (${latitude}, ${longitude})`);
 	}
 
-	const timeZone = env.NEXT_PUBLIC_TIME_ZONE;
+	const timeZone = env.TIME_ZONE;
 	const samples = await fetchForecast(state.location, { ...options, days: env.WEATHER_FORECAST_DAYS, timeZone });
 
-	const slots = getTimeSlots();
+	const slots = getTimeSlots(env.TIME_SLOT_BORDERS);
 	const startHour = slots[0]?.startHour;
 	const endHour = slots[slots.length - 1]?.endHour;
 	if (startHour === undefined || endHour === undefined) throw new Error("TimeSlotBorders is empty");

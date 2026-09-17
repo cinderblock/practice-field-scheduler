@@ -1,7 +1,7 @@
 "use client";
 
-import { env } from "~/env";
 import styles from "../index.module.css";
+import { useAppConfig } from "./AppConfig";
 import { useInterval } from "./useInterval";
 
 const enablePride = false;
@@ -12,11 +12,12 @@ function isPride() {
 }
 
 export function Title() {
+	const { siteTitle } = useAppConfig();
 	const showRainbow = useInterval(isPride, 1000) && enablePride;
 
 	const classes = [styles.title];
 
 	if (showRainbow) classes.push(styles.rainbowText, styles.rainbowTextAnimated);
 
-	return <h1 className={classes.join(" ")}>{env.NEXT_PUBLIC_SITE_TITLE}</h1>;
+	return <h1 className={classes.join(" ")}>{siteTitle}</h1>;
 }

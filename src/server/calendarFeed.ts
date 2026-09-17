@@ -27,8 +27,8 @@ function parseSlotToDate(date: string, slot: string): { start: Date; end: Date }
 
 	const start = new Date(`${date}T${hour.toString().padStart(2, "0")}:${mStr}:00`);
 
-	// Determine end based on NEXT_PUBLIC_TIME_SLOT_BORDERS
-	const borders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS.map(b => b + 12); // convert to 24-hour absolute hours
+	// Determine end based on TIME_SLOT_BORDERS
+	const borders = env.TIME_SLOT_BORDERS.map(b => b + 12); // convert to 24-hour absolute hours
 	const idx = borders.indexOf(hour);
 	let end: Date;
 	if (idx !== -1 && idx < borders.length - 1) {
@@ -50,7 +50,7 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 
 	const { reservations, blackouts, siteEvents } = await getPublicFeedData();
 
-	const tz = env.NEXT_PUBLIC_TIME_ZONE;
+	const tz = env.TIME_ZONE;
 
 	const prefix = process.env.NODE_ENV !== "production" ? "DEV " : "";
 	const cal: ICalCalendar = ical({

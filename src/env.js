@@ -55,19 +55,16 @@ export const env = createEnv({
 			.min(1, "Weather forecast must cover at least one day")
 			.max(16, "Open-Meteo forecasts at most 16 days")
 			.default(10),
-	},
 
-	/**
-	 * Specify your client-side environment variables schema here. This way you can ensure the app
-	 * isn't built with invalid env vars. To expose them to the client, prefix them with
-	 * `NEXT_PUBLIC_`.
-	 */
-	client: {
-		NEXT_PUBLIC_RESERVATION_DAYS: z
+		// Settings the browser needs too. They are read here, on the server, and handed to
+		// client components by the provider in the root layout — NOT with a NEXT_PUBLIC_
+		// prefix, which Next.js would bake into the bundle at build time. The image is built
+		// once by CI and must work for any deployment; see the README's Deployment section.
+		RESERVATION_DAYS: z
 			.string()
 			.transform(val => Number.parseInt(val, 10))
 			.refine(num => num > 0, "Reservation days must be a positive number"),
-		NEXT_PUBLIC_TIME_SLOT_BORDERS: z
+		TIME_SLOT_BORDERS: z
 			.string()
 			.transform(val => val.split(/[^\d.-]/)) // Split by non-numeric characters
 			.transform(numbers => numbers.filter(Boolean)) // Filter out empty strings
@@ -82,8 +79,8 @@ export const env = createEnv({
 				numbers => numbers.every((n, i, a) => !i || n > a[i - 1]),
 				"Time slot borders must be in ascending order",
 			),
-		NEXT_PUBLIC_TIME_ZONE: z.string().refine(isValidTimeZone, "Invalid timezone"),
-		NEXT_PUBLIC_SITE_TITLE: z
+		TIME_ZONE: z.string().refine(isValidTimeZone, "Invalid timezone"),
+		SITE_TITLE: z
 			.string()
 			.transform(val => val.trim())
 			.refine(val => val.length > 0, "Site title cannot be empty"),
@@ -91,7 +88,7 @@ export const env = createEnv({
 
 	/**
 	 * You can't destruct `process.env` as a regular object in the Next.js edge runtimes (e.g.
-	 * middlewares) or client-side so we need to destruct manually.
+	 * middlewares) so we need to destruct manually.
 	 */
 	runtimeEnv: {
 		AUTH_SECRET: process.env.AUTH_SECRET,
@@ -103,10 +100,10 @@ export const env = createEnv({
 		NODE_ENV: process.env.NODE_ENV,
 		FIRST_API_USERNAME: process.env.FIRST_API_USERNAME,
 		FIRST_API_AUTH_TOKEN: process.env.FIRST_API_AUTH_TOKEN,
-		NEXT_PUBLIC_TIME_SLOT_BORDERS: process.env.NEXT_PUBLIC_TIME_SLOT_BORDERS,
-		NEXT_PUBLIC_RESERVATION_DAYS: process.env.NEXT_PUBLIC_RESERVATION_DAYS,
-		NEXT_PUBLIC_TIME_ZONE: process.env.NEXT_PUBLIC_TIME_ZONE,
-		NEXT_PUBLIC_SITE_TITLE: process.env.NEXT_PUBLIC_SITE_TITLE,
+		TIME_SLOT_BORDERS: process.env.TIME_SLOT_BORDERS,
+		RESERVATION_DAYS: process.env.RESERVATION_DAYS,
+		TIME_ZONE: process.env.TIME_ZONE,
+		SITE_TITLE: process.env.SITE_TITLE,
 		DATA_DIR: process.env.DATA_DIR,
 		STAGING: process.env.STAGING,
 		SCHEDULER_API_KEY: process.env.SCHEDULER_API_KEY,

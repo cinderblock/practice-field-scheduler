@@ -12,6 +12,7 @@ import {
 } from "~/server/util/weather";
 import type { EventDate, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
+import { useAppConfig } from "./AppConfig";
 import { formatTemperature, Temperature } from "./Temperature";
 
 // Coordinate space of each slot's sparkline. The rendered size comes from CSS; the drawing
@@ -38,8 +39,9 @@ const RainWorthMentioning = 10;
  * linearly from the slot's start to its end, just like the slot's progress line.
  */
 export function DayWeather({ date, forecast }: { date: EventDate; forecast: WeatherForecast | null }) {
-	const slots = useMemo(() => getTimeSlots(), []);
-	const windows = useMemo(() => getSlotWindows(date), [date]);
+	const { timeSlotBorders, timeZone } = useAppConfig();
+	const slots = useMemo(() => getTimeSlots(timeSlotBorders), [timeSlotBorders]);
+	const windows = useMemo(() => getSlotWindows(date, timeSlotBorders, timeZone), [date, timeSlotBorders, timeZone]);
 	const day = useMemo(
 		() => (forecast ? summarizeDayWeather(forecast.samples, windows) : undefined),
 		[forecast, windows],

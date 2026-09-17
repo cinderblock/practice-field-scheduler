@@ -10,9 +10,9 @@ export type ReservationWindow = {
  * Convert a reservation date ("YYYY-MM-DD") and slot ("9:00am", "10:00pm")
  * into the absolute UTC moments that bound the reservation.
  *
- * The slot is interpreted in NEXT_PUBLIC_TIME_ZONE so the result is correct
+ * The slot is interpreted in TIME_ZONE so the result is correct
  * regardless of the server's local timezone. The end is taken from the next
- * entry in NEXT_PUBLIC_TIME_SLOT_BORDERS, falling back to start + 3h when the
+ * entry in TIME_SLOT_BORDERS, falling back to start + 3h when the
  * slot doesn't line up with a configured border (matches the calendar feed).
  *
  * Returns null if the inputs are malformed.
@@ -33,8 +33,8 @@ export function getReservationWindow(date: string, slot: string): ReservationWin
 
 	const start = atFieldTime(year, month, day, hour, minute);
 
-	// NEXT_PUBLIC_TIME_SLOT_BORDERS is in hours relative to noon; convert to 24h.
-	const borders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS.map(b => b + 12);
+	// TIME_SLOT_BORDERS is in hours relative to noon; convert to 24h.
+	const borders = env.TIME_SLOT_BORDERS.map(b => b + 12);
 	const idx = borders.indexOf(hour);
 	let end: Date;
 	if (idx !== -1 && idx < borders.length - 1) {
@@ -64,9 +64,9 @@ export function parseEventDate(date: string): FieldDate | null {
 	return { year, month, day };
 }
 
-/** The calendar date, in NEXT_PUBLIC_TIME_ZONE, that `moment` falls on. */
+/** The calendar date, in TIME_ZONE, that `moment` falls on. */
 export function fieldDateOf(moment: Date): FieldDate {
-	const local = new TZDateMini(moment.getTime(), env.NEXT_PUBLIC_TIME_ZONE);
+	const local = new TZDateMini(moment.getTime(), env.TIME_ZONE);
 	return { year: local.getFullYear(), month: local.getMonth() + 1, day: local.getDate() };
 }
 
@@ -76,5 +76,5 @@ export function fieldDateOf(moment: Date): FieldDate {
  * a safe way to say "tomorrow".
  */
 export function atFieldTime(year: number, month: number, day: number, hour: number, minute = 0): Date {
-	return new Date(new TZDateMini(year, month - 1, day, hour, minute, 0, env.NEXT_PUBLIC_TIME_ZONE).getTime());
+	return new Date(new TZDateMini(year, month - 1, day, hour, minute, 0, env.TIME_ZONE).getTime());
 }

@@ -1,15 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAppConfig } from "~/app/_components/AppConfig";
 import { useInterval } from "~/app/_components/useInterval";
-import { env } from "~/env";
 import { blackoutDayCount, blackoutEndDate, formatBlackoutDates } from "~/server/util/blackout";
 import { getTimeSlots } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
 import type { Blackout, Reservation } from "~/types";
 import styles from "./BlackoutsTable.module.css";
-
-const TimeZone = env.NEXT_PUBLIC_TIME_ZONE;
 
 /** Whole-day blackouts are stored with no slot; the form needs a value to put in the <select>. */
 const AllDay = "all-day";
@@ -23,8 +21,8 @@ function formatHour(hour: number): string {
 }
 
 /** Today's date in the field's timezone, so "past" means past where the field actually is. */
-function getToday(): string {
-	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
+function getToday(timeZone: string): string {
+	return new Date().toLocaleDateString("en-CA", { timeZone });
 }
 
 type NewBlackout = {
@@ -43,7 +41,8 @@ export function BlackoutsTable({ blackouts: initialBlackouts }: { blackouts: Bla
 	const [conflicts, setConflicts] = useState<Reservation[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const slots = useMemo(() => getTimeSlots(), []);
+	const { timeZone, timeSlotBorders } = useAppConfig();
+	const slots = useMemo(() => getTimeSlots(timeSlotBorders), [timeSlotBorders]);
 
 	const utils = api.useUtils();
 	const { data: blackouts = initialBlackouts } = api.blackout.list.useQuery(undefined, {
@@ -110,7 +109,7 @@ export function BlackoutsTable({ blackouts: initialBlackouts }: { blackouts: Bla
 	};
 
 	// Re-evaluated on a timer so a blackout moves to "Past" at midnight without a reload
-	const now = useInterval(getToday, 60_000);
+	const now = useInterval(() => getToday(timeZone), 60_000, [timeZone]);
 	const sorted = [...blackouts].sort((a, b) => a.date.localeCompare(b.date));
 	const current = sorted.filter(b => blackoutEndDate(b) >= now);
 	const past = sorted.filter(b => blackoutEndDate(b) < now).reverse();

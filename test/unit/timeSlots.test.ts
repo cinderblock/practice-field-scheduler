@@ -27,9 +27,12 @@ describe("hourToTimeSlot", () => {
 	});
 });
 
+/** The deployment's settings are passed in now, so these tests don't depend on .env.test. */
+const Borders = [-2, 4, 7, 10];
+const TimeZone = "America/Los_Angeles";
+
 describe("getTimeSlots", () => {
-	// Driven by NEXT_PUBLIC_TIME_SLOT_BORDERS in .env.test: "-2, 4, 7, 10"
-	const slots = getTimeSlots();
+	const slots = getTimeSlots(Borders);
 
 	it("produces one slot per adjacent pair of borders", () => {
 		expect(slots).toHaveLength(3);
@@ -74,25 +77,23 @@ describe("formatHour", () => {
 });
 
 describe("createDateFromDateStringHour", () => {
-	// Driven by NEXT_PUBLIC_TIME_ZONE in .env.test: "America/Los_Angeles"
-
 	it("finds the instant an hour occurs at the site", () => {
-		expect(createDateFromDateStringHour("2026-09-16", 10).toISOString()).toBe("2026-09-16T17:00:00.000Z");
+		expect(createDateFromDateStringHour("2026-09-16", 10, TimeZone).toISOString()).toBe("2026-09-16T17:00:00.000Z");
 	});
 
 	it("handles fractional hours", () => {
-		expect(createDateFromDateStringHour("2026-09-16", 9.5).toISOString()).toBe("2026-09-16T16:30:00.000Z");
+		expect(createDateFromDateStringHour("2026-09-16", 9.5, TimeZone).toISOString()).toBe("2026-09-16T16:30:00.000Z");
 	});
 
 	it("follows daylight saving time", () => {
 		// Clocks fall back at 2am on 2026-11-01, so 10am that day is PST
-		expect(createDateFromDateStringHour("2026-11-01", 10).toISOString()).toBe("2026-11-01T18:00:00.000Z");
+		expect(createDateFromDateStringHour("2026-11-01", 10, TimeZone).toISOString()).toBe("2026-11-01T18:00:00.000Z");
 	});
 });
 
 describe("getSlotWindows", () => {
 	it("gives each slot's start and end as instants", () => {
-		expect(getSlotWindows("2026-09-16")).toEqual([
+		expect(getSlotWindows("2026-09-16", Borders, TimeZone)).toEqual([
 			{ start: Date.parse("2026-09-16T17:00:00Z"), end: Date.parse("2026-09-16T23:00:00Z") },
 			{ start: Date.parse("2026-09-16T23:00:00Z"), end: Date.parse("2026-09-17T02:00:00Z") },
 			{ start: Date.parse("2026-09-17T02:00:00Z"), end: Date.parse("2026-09-17T05:00:00Z") },

@@ -1,20 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { env } from "~/env";
 import { findBlackoutForSlot, isWholeDayBlackedOut } from "~/server/util/blackout";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
 import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
+import { useAppConfig } from "./AppConfig";
 import { DayWeather } from "./DayWeather";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
 import { useInterval } from "./useInterval";
-
-const TimeSlotBorders = env.NEXT_PUBLIC_TIME_SLOT_BORDERS;
-const ReservationDays = env.NEXT_PUBLIC_RESERVATION_DAYS;
-const TimeZone = env.NEXT_PUBLIC_TIME_ZONE;
 
 type InitialReservations = {
 	date: string;
@@ -22,11 +18,11 @@ type InitialReservations = {
 }[];
 
 /**
- * Returns the current date in the fixed timezone
- * @returns The current date in the fixed timezone
+ * Returns the current date in the field's timezone
+ * @returns The current date in the field's timezone
  */
-function getToday(): string {
-	return new Date().toLocaleDateString("en-CA", { timeZone: TimeZone });
+function getToday(timeZone: string): string {
+	return new Date().toLocaleDateString("en-CA", { timeZone });
 }
 
 function TimeDisplay({ hour, minute }: { date: string; hour: number; minute?: number }) {
@@ -78,10 +74,11 @@ function isWeekend(date: string): boolean {
 }
 
 function DayName({ date }: { date: string }) {
+	const { timeZone } = useAppConfig();
 	const dayString = getWeekdayFromDateString(date);
 
 	// Calculate days difference
-	const today = useInterval(getToday, 1000);
+	const today = useInterval(() => getToday(timeZone), 1000, [timeZone]);
 	const diffDays = getDateDaysDifference(date, today);
 
 	let dayLabel = "";
@@ -263,22 +260,27 @@ export function ReservationCalendar({
 	const [historyDays, setHistoryDays] = useState(0);
 	const [additionalReservations, setAdditionalReservations] = useState<InitialReservations>([]);
 	const { setIsLoadingHistory, setLoadHistory } = useHistory();
+	const { timeSlotBorders, reservationDays, timeZone } = useAppConfig();
 
-	const startDate = useInterval(() => {
-		const today = getToday();
+	const startDate = useInterval(
+		() => {
+			const today = getToday(timeZone);
 
-		const lastTimeSlot = TimeSlotBorders[TimeSlotBorders.length - 1];
-		if (lastTimeSlot === undefined) throw new Error("TimeSlotBorders is empty");
+			const lastTimeSlot = timeSlotBorders[timeSlotBorders.length - 1];
+			if (lastTimeSlot === undefined) throw new Error("TimeSlotBorders is empty");
 
-		const lastEventToday = createDateFromDateStringHour(today, lastTimeSlot + 12);
+			const lastEventToday = createDateFromDateStringHour(today, lastTimeSlot + 12, timeZone);
 
-		// Start tomorrow after the last time slot of the day
-		if (new Date() >= lastEventToday) return addDaysToDateString(today, 1);
+			// Start tomorrow after the last time slot of the day
+			if (new Date() >= lastEventToday) return addDaysToDateString(today, 1);
 
-		return today;
-	});
+			return today;
+		},
+		1000,
+		[timeSlotBorders, timeZone],
+	);
 
-	const daysText = `${ReservationDays} ${pluralize(ReservationDays, "day")}`;
+	const daysText = `${reservationDays} ${pluralize(reservationDays, "day")}`;
 
 	// Combine initial reservations with additional history
 	const allReservations = useMemo(() => {
@@ -360,7 +362,7 @@ export function ReservationCalendar({
 			<div className={styles.calendarGrid}>
 				<Days
 					start={startDate}
-					days={ReservationDays + 1}
+					days={reservationDays + 1}
 					daysHistory={historyDays}
 					initialReservations={allReservations}
 					initialHolidays={initialHolidays}
@@ -395,10 +397,11 @@ function getProgressPercentage(startTime: Date, endTime: Date, now: Date): numbe
 }
 
 function TimeSlotHeader({ startHour, endHour }: { startHour: number; endHour: number }) {
+	const { timeZone } = useAppConfig();
 	const now = useInterval(() => new Date(), 1000);
-	const today = getToday();
-	const startTime = createDateFromDateStringHour(today, startHour);
-	const endTime = createDateFromDateStringHour(today, endHour);
+	const today = getToday(timeZone);
+	const startTime = createDateFromDateStringHour(today, startHour, timeZone);
+	const endTime = createDateFromDateStringHour(today, endHour, timeZone);
 	const hasStarted = now >= startTime;
 	const hasEnded = now >= endTime;
 	const current = hasStarted && !hasEnded;
@@ -440,6 +443,7 @@ function Days({
 	// Ensure good type
 	daysHistory ??= 0;
 
+	const { timeSlotBorders } = useAppConfig();
 	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
 	const datesHistory = Array.from({ length: daysHistory }, (_, i) => addDaysToDateString(start, i - daysHistory));
 
@@ -464,11 +468,11 @@ function Days({
 				className={styles.timeSlotHeaders}
 				style={
 					{
-						"--columns": TimeSlotBorders.length - 1,
+						"--columns": timeSlotBorders.length - 1,
 					} as React.CSSProperties & { "--columns": number }
 				}
 			>
-				{TimeSlotBorders.map((_, index, a) => {
+				{timeSlotBorders.map((_, index, a) => {
 					if (index === a.length - 1) return null;
 
 					const startHours = a[index];
@@ -543,6 +547,7 @@ function Day({
 	weather: WeatherForecast | null;
 	isAdmin: boolean;
 }) {
+	const { timeSlotBorders } = useAppConfig();
 	const closedAllDay = isWholeDayBlackedOut(blackouts, date);
 
 	const style = [styles.dayContainer];
@@ -550,7 +555,7 @@ function Day({
 	if (closedAllDay) style.push(styles.dayClosed);
 
 	// Calculate number of time slots (subtract 1 because we map pairs)
-	const numSlots = TimeSlotBorders.length - 1;
+	const numSlots = timeSlotBorders.length - 1;
 
 	return (
 		<div className={style.join(" ")}>
@@ -568,7 +573,7 @@ function Day({
 					} as React.CSSProperties & { "--columns": number }
 				}
 			>
-				{TimeSlotBorders.map((_, index, a) => {
+				{timeSlotBorders.map((_, index, a) => {
 					if (index === a.length - 1) return null;
 
 					const startHours = a[index];
@@ -627,6 +632,7 @@ function TimeSlot({
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
 	const utils = api.useUtils();
+	const { timeZone } = useAppConfig();
 
 	const handleCancelAdd = useCallback(() => {
 		setIsAdding(false);
@@ -651,7 +657,7 @@ function TimeSlot({
 	const slot = hourToTimeSlot(startHour);
 
 	// Calculate days difference
-	const today = useInterval(getToday, 1000);
+	const today = useInterval(() => getToday(timeZone), 1000, [timeZone]);
 	const _diffDays = getDateDaysDifference(date, today);
 
 	const initialData = initialReservations.find(r => r.date === date)?.reservations ?? [];
@@ -764,8 +770,8 @@ function TimeSlot({
 	});
 
 	// Create Date objects for time comparisons using lab timezone
-	const startTime = createDateFromDateStringHour(date, startHour);
-	const endTime = createDateFromDateStringHour(date, endHour);
+	const startTime = createDateFromDateStringHour(date, startHour, timeZone);
+	const endTime = createDateFromDateStringHour(date, endHour, timeZone);
 
 	const now = useInterval(() => new Date(), 1000);
 	const hasStarted = now >= startTime;

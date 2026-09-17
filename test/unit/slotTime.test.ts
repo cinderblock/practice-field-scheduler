@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { getReservationWindow } from "~/server/util/slotTime";
 
 // .env.test sets:
-//   NEXT_PUBLIC_TIME_SLOT_BORDERS="-2, 4, 7, 10"  → absolute hours [10, 16, 19, 22]
-//   NEXT_PUBLIC_TIME_ZONE="America/Los_Angeles"
+//   TIME_SLOT_BORDERS="-2, 4, 7, 10"  → absolute hours [10, 16, 19, 22]
+//   TIME_ZONE="America/Los_Angeles"
 //
 // The four slots in this config are 10am, 4pm, 7pm, 10pm. 10pm has no
 // configured next border so it falls back to start + 3h.

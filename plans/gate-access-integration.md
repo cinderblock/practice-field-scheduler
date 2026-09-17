@@ -223,9 +223,11 @@ consult the `home-assistant-best-practices` skill first.
    - **Needs `users:read` on the bot token** before any gate link goes out
      in production.
    - Gate Manager copy and contract doc updated to match, as Gate Manager
-     `d9afa7e`. **Committed, not pushed**: pushing its `master` deploys
-     production, so it needs the user's go-ahead. It's wording only, so it
-     can ship any time.
+     `d9afa7e`. Pushed with the user's yes; Deploy run `35185651322`
+     succeeded, 2026-09-16.
+   - The scheduler branch was pushed again (`8287f32`, user: "push
+     scheduler: yes"). CI `Test` ✅ (run `35185626856`), and staging built
+     and is serving it.
 9. Ship, in this order, each push only with the user's go-ahead (pushes
    deploy). The user approved steps 1–2 on 2026-09-16.
    1. ✅ Push Gate Manager `master`. Its `Deploy` workflow builds, tests and
@@ -234,9 +236,22 @@ consult the `home-assistant-best-practices` skill first.
       **staging**. First merged `master` in (`e82e1ec`, see Findings),
       then pushed. CI `Test` passed. Staging is up at
       `https://practice-field-scheduler-staging.tomsawyerlabs.com`.
-   3. ⬅️ **NEXT, blocked on the user:** server settings, **set before the
-      merge**. Staging answers `/api/access/check` with 503
-      "SCHEDULER_API_KEY unset".
+   3. ⬅️ **NEXT:** server settings, rendered by ops. Staging answers
+      `/api/access/check` with 503 "SCHEDULER_API_KEY unset", by design
+      (staging gets neither secret).
+      - ✅ **Both secrets exist** in the ops `steamboat` environment
+        (2026-09-16).
+        - `PRACTICE_FIELD_SCHEDULER_SLACK_BOT_TOKEN`: set by the user at
+          22:14 PT, with `users:read`.
+        - `PRACTICE_FIELD_SCHEDULER_API_KEY`: copied at 22:26 PT (user:
+          "copy api key: yes"). Read with `sudo sed` from
+          `/root/actions-runner-gate/_work/gate-manager/gate-manager/gate.env`,
+          which the Gate Manager deploy had just rewritten. Checked on the
+          box first (one line, 64 hex characters), piped straight into
+          `gh secret set`, never printed.
+      - **Still to do (the ops plan's owner):** ops stage 1, which renders
+        these into production's `.env`. That session isn't running now;
+        its plan says where it stopped.
       - **Ops now manages the scheduler's deployed env** (user,
         2026-09-16: "now OPS repo manages deployed env of dependency apps
         (like the scheduler). plan to add whatever you need to OPS repo's
@@ -261,14 +276,15 @@ consult the `home-assistant-best-practices` skill first.
         tab, reinstall, `gh secret set`).
       - The settings ship in ops' stage 1 (env and unit), ahead of runner
         adoption.
-      - **Still needs the user's yes:** copying `SCHEDULER_API_KEY` from
-        Gate Manager's `gate.env` on steamboat into
-        `PRACTICE_FIELD_SCHEDULER_API_KEY`, never printed.
 
-   4. Merge the scheduler branch to `master`. Production deploys after the
-      `Test` workflow passes. Until then, production has no
-      `/api/access/check` (404), so every gate link shows "Service
-      unavailable". That's expected; nothing regressed.
+   4. Merge the scheduler branch to `master` **(needs the user's yes;
+      production deploy)**. Production deploys after the `Test` workflow
+      passes. Until then, production has no `/api/access/check` (404), so
+      every gate link shows "Service unavailable". That's expected; nothing
+      regressed.
+      - Merging before ops stage 1 is harmless but pointless: production
+        would answer 503 instead of 404, and the names panel would say the
+        bot token isn't configured.
    5. Approve the people who should have general access. Nobody has it
       until then.
    6. Drive a real link through `/g/:token` on a phone, in and out of site
@@ -508,32 +524,31 @@ the bot scope **`users:read`**.
       and Send work (personalised DMs), per-person "Gate links on hold" shows,
       and nothing scrolls sideways. Fixed on the way: an empty avatar `src`
       warning. The ops plan's gate section now asks for `users:read`.
-- [ ] Staging/production server settings (`SCHEDULER_API_KEY`,
-      `SLACK_BOT_TOKEN` with `chat:write` + `users:read`, `GATE_BASE_URL`),
-      via the ops plan.
+- [x] Scheduler branch pushed again (`8287f32`): CI ✅, staging serving it.
+      Gate Manager `d9afa7e` deployed to production. Landing page 200.
+- [x] Both production secrets in the ops `steamboat` environment
+      (`PRACTICE_FIELD_SCHEDULER_API_KEY`,
+      `PRACTICE_FIELD_SCHEDULER_SLACK_BOT_TOKEN`).
+- [ ] Ops stage 1 renders them (and `GATE_BASE_URL`) into production's
+      `.env`. Ops plan owner.
 - [ ] Branch merged to `master` (production deploy).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user
 
-1. **Copying `SCHEDULER_API_KEY`** from Gate Manager's `gate.env` on
-   steamboat into the ops secret `PRACTICE_FIELD_SCHEDULER_API_KEY`
-   (piped, never printed): may a session do it? Recommendation: yes. It's
-   the only way to get the value without rotating the key in both places.
-   The other settings questions are answered (step 9.3).
-2. **Merging to `master`** (production deploy): when? Recommendation:
-   right after the production settings are in place, then approve people
-   on `/users`.
-3. **People who never sign in to the scheduler get no links.** The scheduler
-   only knows people who've signed in once; enumerating the Slack workspace
-   would need the `users:read` scope. Recommendation: fine for now, since
+1. **Merging to `master`** (production deploy): when? Recommendation:
+   right after ops stage 1 has rendered the production settings, then
+   approve people on `/users`.
+2. **People who never sign in to the scheduler get no links.** The bot can
+   now list the whole workspace (`users:read`), but links are only issued
+   to people with a scheduler account. Recommendation: fine for now, since
    mentors book through the scheduler anyway.
-4. **The 18-month auto-disable** (above) will bite long-standing mentors.
+3. **The 18-month auto-disable** (above) will bite long-standing mentors.
    Recommendation: base it on last sign-in rather than creation — a separate
    change.
-5. **House/special teams** get a link like any team (ids compared as
+4. **House/special teams** get a link like any team (ids compared as
    strings). Flag if they shouldn't.
-6. **Departing members** keep a shared team link until it's rotated; their
+5. **Departing members** keep a shared team link until it's rotated; their
    personal link can be revoked immediately.
 
 ## Things not to do

@@ -587,6 +587,47 @@ the bot scope **`users:read`**.
       runner retired (`ops-88` owns it; needs the user's yes).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
+## Self-hosted runner on a public repo (status 2026-09-17)
+
+The point of the ops-owned image paradigm is that this **public** repo stops
+having a runner on `steamboat`. Half done:
+
+- Done: no workflow targets `self-hosted` any more. `deploy.yml` and
+  `deploy-staging.yml` are gone; `build.yml` and `test.yml` are all
+  `ubuntu-latest`. CI publishes an image and nothing else.
+- Done `a8ccb09`: `test.yml` ran on `pull_request_target` while checking out
+  `github.event.pull_request.head.sha` and running `npm ci` — untrusted code
+  with the repo's secrets and a write-scoped token. Now `pull_request`,
+  read-only, merge commit; report publishing is push-only. No fork ever
+  triggered the old one (checked every `pull_request_target` run), so nothing
+  leaked and `FIRST_API_AUTH_TOKEN` doesn't need rotating.
+- **Not done: the runner is still registered and online.** `id=2`,
+  name `steamboat`, labels `self-hosted,Linux,X64,tomsawyerlabs`, at
+  `/opt/actions-runner`, service
+  `actions.runner.cinderblock-practice-field-scheduler.steamboat.service`. Last
+  job was the `deploy` at 2026-09-17 10:45 PDT. While it is registered, a PR
+  from a fork can supply its own workflow with `runs-on: self-hosted` and run
+  code on the box. The repo has 2 forks.
+- `gate-manager` (`steamboat-gate`) and `ops` (7 runners incl. `steamboat`) also
+  have runners, but both repos are **private**, which is the supported case.
+  Only the scheduler's runner is the problem.
+
+Removal, when authorized (server change — needs the user's explicit yes):
+
+```bash
+# 1. removal token from GitHub
+gh api -X POST repos/cinderblock/practice-field-scheduler/actions/runners/remove-token --jq .token
+# 2. on steamboat
+cd /opt/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall
+sudo -u github ./config.sh remove --token <TOKEN>
+# 3. leftover from the old deploy: passwordless systemctl restart for `github`
+sudo rm /etc/sudoers.d/github-actions
+```
+
+Consequence: no automatic deploy at all until the ops pin is live. Deploys are
+the manual recipe (see `plans/booking-regression.md`, Deploy notes) in the
+meantime. That is strictly safer than leaving the runner registered.
+
 ## Open questions for the user
 
 1. **Merging to `master`** (production deploy): when? Recommendation:

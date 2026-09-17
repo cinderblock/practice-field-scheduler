@@ -63,6 +63,7 @@ import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { checkSlackNames, parseSlackName, type SlackNameIssue, type SuggestedNames } from "./util/slackName";
+import { addFieldDays, fieldToday } from "./util/slotTime";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -72,6 +73,13 @@ import {
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs
 const AdvancedReservationDays = 7; // Number of days in the future that reservations can be made
+// If true, a non-admin may only book for a team they're recorded as belonging to.
+// Off, because the data isn't there yet: almost no user record lists a team, so
+// enforcing it locks nearly everyone out (and it was silently never enforced for
+// over a year -- two commits adding a missing `await` turned it on by accident).
+// Refusals are logged either way, so the journal shows what enabling this would
+// block. Turn it on once user records carry teams. See plans/booking-regression.md.
+const EnforceTeamMembership = false;
 const DisableWrites = false; // If true, the server will not write to the database
 
 // Add unique module instance ID for tracking reinitialization
@@ -1266,7 +1274,10 @@ export class Context {
 
 		let u = users;
 
-		if (!this.isAdmin()) {
+		// `isAdmin()` is async: without the await this condition was a truthy
+		// Promise, so the filtering below never ran. Both callers are admin-gated
+		// pages, so nothing leaked, but the check was doing nothing.
+		if (!(await this.isAdmin())) {
 			u = u.filter(user => !user.disabled);
 
 			// Remove email from the user object
@@ -1646,13 +1657,45 @@ export class Context {
 		return { dryRun, total: outcomes.length, succeeded, failed: outcomes.length - succeeded, outcomes };
 	}
 
+	/**
+	 * Refuse an action, and say so in the journal.
+	 *
+	 * Refusals used to be invisible server-side: a user reporting "I can't book"
+	 * left nothing in the log to grep for, so every report started with
+	 * archaeology. Every refusal on the reservation path goes through here.
+	 */
+	private async refuse(message: string, detail: Record<string, unknown>): Promise<never> {
+		console.warn(`🚫 refused: ${message}`, { userId: await this.userIdForLog(), ...detail });
+		throw new PermissionError(message);
+	}
+
+	/** The current user's id, or "unknown" -- never throws, so it's safe inside a log line. */
+	private async userIdForLog(): Promise<UserId | "unknown"> {
+		return this.user.then(
+			u => u.id,
+			() => "unknown" as const,
+		);
+	}
+
 	private async restrictToTeam(team: Team | TeamFull, message: string) {
 		if (typeof team === "string") team = Number.parseInt(team, 10);
 
 		const permissions = await this.getEditPermissions();
 		if (permissions === "admin") return;
 		if (permissions.includes(team)) return;
-		throw new PermissionError(message);
+
+		// Logged but allowed while EnforceTeamMembership is off, so the journal
+		// shows who this rule would have blocked before it's switched on.
+		if (!EnforceTeamMembership) {
+			console.warn(`⚠️ allowed despite team mismatch: ${message}`, {
+				userId: await this.userIdForLog(),
+				team,
+				teams: permissions,
+			});
+			return;
+		}
+
+		await this.refuse(message, { team, teams: permissions });
 	}
 
 	/**
@@ -1667,24 +1710,38 @@ export class Context {
 		const blackout = findBlackoutForSlot(blackouts, date, slot);
 		if (!blackout) return;
 
-		throw new PermissionError(
+		await this.refuse(
 			blackout.reason
 				? `The field is blacked out for this time: ${blackout.reason}`
 				: "The field is blacked out for this time",
+			{ date, slot, blackoutId: blackout.id },
 		);
 	}
 
+	/**
+	 * Refuse a reservation outside the bookable window: today through today plus
+	 * AdvancedReservationDays, on the field's calendar. Admins are exempt.
+	 *
+	 * Both ends are compared as "YYYY-MM-DD" strings in TIME_ZONE. Mixing `Date`
+	 * objects here is what broke booking: `new Date("2026-09-17")` is midnight
+	 * UTC while `setHours(0, 0, 0, 0)` is midnight locally, so in Pacific today
+	 * always looked like the past and no non-admin could book the evening they
+	 * were standing in. Comparing against `now + 7 days` had a second flaw --
+	 * the far edge drifted with the time of day, so the seventh day was bookable
+	 * in the morning and refused in the evening.
+	 */
 	private async restrictTimeframe(date: EventDate) {
 		if (await this.isAdmin()) return; // Admins can reserve any date
 
-		const thisMorning = new Date();
-		thisMorning.setHours(0, 0, 0, 0); // Set time to midnight
-		const reservationDate = new Date(date);
+		const today = fieldToday();
+		if (date < today) await this.refuse("Cannot reserve a date in the past", { date, today });
 
-		if (reservationDate < thisMorning) throw new PermissionError("Cannot reserve a date in the past");
-
-		if (reservationDate > new Date(Date.now() + 1000 * 60 * 60 * 24 * AdvancedReservationDays))
-			throw new PermissionError(`Cannot reserve a date more than ${AdvancedReservationDays} days in advance`);
+		const lastBookable = addFieldDays(today, AdvancedReservationDays);
+		if (lastBookable && date > lastBookable)
+			await this.refuse(`Cannot reserve a date more than ${AdvancedReservationDays} days in advance`, {
+				date,
+				lastBookable,
+			});
 	}
 
 	private async getContext() {

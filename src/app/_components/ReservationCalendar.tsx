@@ -631,6 +631,9 @@ function TimeSlot({
 	const [priority, setPriority] = useState(false);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
 	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
+	// Why the last add or remove failed. Without this the server's refusal was
+	// invisible: the dialog just sat there, because it only closes on success.
+	const [error, setError] = useState<string | null>(null);
 	const utils = api.useUtils();
 	const { timeZone } = useAppConfig();
 
@@ -639,6 +642,7 @@ function TimeSlot({
 		setTeamNumber("");
 		setPriority(false);
 		setTempTeamNumber(null);
+		setError(null);
 	}, []);
 
 	useEffect(() => {
@@ -680,6 +684,8 @@ function TimeSlot({
 
 	const addReservation = api.reservation.add.useMutation({
 		onMutate: async newReservation => {
+			setError(null);
+
 			// Cancel any outgoing refetches
 			await utils.reservation.list.cancel();
 
@@ -716,13 +722,15 @@ function TimeSlot({
 			setIsAdding(false);
 			setTeamNumber("");
 		},
-		onError: (_err, newReservation, context) => {
+		onError: (err, newReservation, context) => {
 			// Rollback on error
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date }, context.previousData);
 			}
 			// Restore the temporary team number on error
 			setTempTeamNumber(newReservation.team);
+			// The dialog stays open, so say why rather than looking like nothing happened
+			setError(err.message);
 		},
 		onSettled: () => {
 			// Don't refetch
@@ -731,6 +739,8 @@ function TimeSlot({
 
 	const removeReservation = api.reservation.remove.useMutation({
 		onMutate: async ({ id }) => {
+			setError(null);
+
 			// Cancel any outgoing refetches
 			await utils.reservation.list.cancel();
 
@@ -755,7 +765,7 @@ function TimeSlot({
 				return next;
 			});
 		},
-		onError: (_err, variables, context) => {
+		onError: (err, variables, context) => {
 			// Rollback on error
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date }, context.previousData);
@@ -766,6 +776,8 @@ function TimeSlot({
 				next.delete(variables.id);
 				return next;
 			});
+			// The pill reappearing on its own looks like a glitch; say what happened
+			setError(err.message);
 		},
 	});
 
@@ -849,6 +861,12 @@ function TimeSlot({
 					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
+			{/* A failed removal has no dialog to report into. Tap to dismiss. */}
+			{error && !isAdding && (
+				<button type="button" className={styles.slotError} onClick={() => setError(null)}>
+					{error}
+				</button>
+			)}
 			{/* Add reservation button. Admins are exempt from blackouts, so they keep it. */}
 			{!hasEnded && (!blackout || isAdmin) && (
 				<button
@@ -870,6 +888,11 @@ function TimeSlot({
 							<DayDate date={date} holidays={initialHolidays} />
 							<TimeRangeDisplay date={date} start={startHour} end={endHour} />
 						</div>
+						{error && (
+							<div className={styles.modalError} role="alert">
+								{error}
+							</div>
+						)}
 						<form
 							onSubmit={e => {
 								e.preventDefault();
@@ -906,8 +929,8 @@ function TimeSlot({
 								/>
 							</div>
 							<div className={styles.modalActions}>
-								<button type="submit" disabled={!teamNumber}>
-									Add
+								<button type="submit" disabled={!teamNumber || addReservation.isPending}>
+									{addReservation.isPending ? "Adding..." : "Add"}
 								</button>
 								<button type="button" onClick={handleCancelAdd}>
 									Cancel

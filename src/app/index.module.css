@@ -701,6 +701,38 @@
 	font-size: 0.95rem;
 }
 
+/* Why the server refused the reservation. The dialog stays open, so this has to
+   be readable without scrolling on a phone. */
+.modalError {
+	margin-bottom: 1rem;
+	padding: 0.6rem 0.75rem;
+	border-radius: 0.5rem;
+	border: 1px solid #a33;
+	background: rgba(170, 51, 51, 0.18);
+	color: #ffc9c9;
+	font-size: 0.9rem;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+/* Same, for a failed removal: there's no dialog open to put it in. Tap to dismiss. */
+.slotError {
+	display: block;
+	width: 100%;
+	margin-top: 0.2rem;
+	padding: 0.25rem 0.35rem;
+	border: 1px solid #a33;
+	border-radius: 0.35rem;
+	background: rgba(170, 51, 51, 0.18);
+	color: #ffc9c9;
+	font: inherit;
+	font-size: 0.7rem;
+	line-height: 1.2;
+	text-align: left;
+	cursor: pointer;
+	overflow-wrap: anywhere;
+}
+
 .formGroup {
 	margin-bottom: 1rem;
 }

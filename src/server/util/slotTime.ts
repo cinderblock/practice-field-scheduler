@@ -78,3 +78,34 @@ export function fieldDateOf(moment: Date): FieldDate {
 export function atFieldTime(year: number, month: number, day: number, hour: number, minute = 0): Date {
 	return new Date(new TZDateMini(year, month - 1, day, hour, minute, 0, env.TIME_ZONE).getTime());
 }
+
+/** "YYYY-MM-DD" for a field calendar date, zero padded so dates sort as strings. */
+export function formatFieldDate({ year, month, day }: FieldDate): string {
+	const yyyy = year.toString().padStart(4, "0");
+	const mm = month.toString().padStart(2, "0");
+	const dd = day.toString().padStart(2, "0");
+	return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Today's calendar date at the field, as an `EventDate`. */
+export function fieldToday(now = new Date()): string {
+	return formatFieldDate(fieldDateOf(now));
+}
+
+/**
+ * The calendar date `days` days after `date` at the field.
+ *
+ * Done as calendar arithmetic through UTC, which has no daylight saving, so
+ * "7 days from today" names the same date whatever the hour and whatever the
+ * clocks do in between. Returns null if `date` is malformed.
+ */
+export function addFieldDays(date: string, days: number): string | null {
+	const parts = parseEventDate(date);
+	if (!parts) return null;
+	const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+	return formatFieldDate({
+		year: shifted.getUTCFullYear(),
+		month: shifted.getUTCMonth() + 1,
+		day: shifted.getUTCDate(),
+	});
+}

@@ -100,10 +100,17 @@ false` in `src/server/backend.ts`. Enforcing a rule that has never actually
 - A test that books "today" is green on CI (UTC) even with the bug, because in
   UTC local midnight and UTC midnight coincide. Pinning the clock to the evening
   in Pacific is what makes the regression test meaningful anywhere.
-- Mutation-tested both ways: restoring the old `restrictTimeframe` fails 4 of
-  the 6 new tests including "lets a team book the evening it is standing in";
-  setting `EnforceTeamMembership = true` fails the team-membership test. Neither
-  test is vacuous.
+- Mutation-tested both ways: restoring the old `restrictTimeframe` fails the new
+  tests under `TZ=UTC` (3) and under `TZ=America/Los_Angeles` (4), including
+  "lets a team book the evening it is standing in"; setting
+  `EnforceTeamMembership = true` fails the team-membership test. Neither test is
+  vacuous.
+- **Install the Date mock only after the backend has been imported.**
+  `@date-fns/tz` subclasses whatever `Date` is global when it loads, and a
+  subclass of vitest's mock resolves dates in the _host's_ zone rather than
+  TIME_ZONE. Faking first made the test pass here (Pacific) and fail on CI
+  (UTC) for reasons unrelated to the code under test. Fixed in `a33d200`, which
+  also pins `process.env.TIME_ZONE` in the test instead of inheriting it.
 
 ## Progress log
 
@@ -115,9 +122,37 @@ false` in `src/server/backend.ts`. Enforcing a rule that has never actually
 - [x] Surface mutation errors in the calendar UI
 - [x] Regression tests, mutation-verified
 - [x] typecheck + biome + prettier + 319 unit tests green
-- [ ] Commit, merge to `master`, push
-- [ ] Deploy to production and confirm a non-admin booking works
+- [x] Committed `4aee0bb`, fast-forwarded `master`, pushed
+- [x] Test-portability follow-up `a33d200` (CI caught it -- see below)
+- [x] Deployed to production the old way: pull, `npm ci`, `npm run build`,
+      `systemctl restart`. Service active, `/login` 200, static chunks 200, and
+      `allowed despite team mismatch` is present in `.next/server`, so the new
+      code really is what is serving.
+- [ ] Confirm a real non-admin booking works (needs the reporting user to retry;
+      `journalctl -u practice-field-scheduler -g "refused|mismatch"` will say
+      what happened either way)
 - [ ] Hand the published image digest to the ops session for the eventual pin
+
+## Deploy notes (2026-09-17)
+
+- The checkout is owned by `github`, not `cameron`: every git/npm step needs
+  `sudo -u github`. The unit runs `npm start` as `github`, `PORT=9002`.
+- **The box's `.env` still used the old `NEXT_PUBLIC_*` names**, so the first
+  build failed with "Invalid environment variables" before it produced anything
+  (the running service was untouched). Renamed in place --
+  `NEXT_PUBLIC_{SITE_TITLE,TIME_ZONE,TIME_SLOT_BORDERS,RESERVATION_DAYS}` to the
+  bare names the server block now expects. Backup at `.env.bak-20260917`.
+  `AUTH_SLACK_SIGNING_SECRET` is still in that file and nothing reads it.
+- **`SLACK_BOT_TOKEN`, `SCHEDULER_API_KEY` and `GATE_BASE_URL` are not set on
+  the box** (not in `.env`, `.env.local` or the unit). They are all optional in
+  the schema, so the app runs -- but gate links, the Slack DMs and
+  `/api/access/check` are inert in production. Those values live in ops secrets
+  and were meant to arrive with the image cutover that got rolled back. Needs a
+  decision: add them to the box's `.env` now, or wait for the cutover.
+- `next start` now warns `"next start" does not work with "output: standalone"`,
+  because the image work added `output: "standalone"`. It does serve correctly
+  (pages, RSC payloads and `/_next/static` chunks all 200) -- but the old path
+  is living on borrowed time; the real answer is the ops-pinned image.
 
 ## Things not to do
 

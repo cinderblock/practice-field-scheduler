@@ -3,15 +3,73 @@
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { TSLLogo } from "~/app/_components/TSLLogo";
 import styles from "./login.module.css";
+
+/**
+ * Bad-name error UI: shows fix instructions, offers a manual "Try Again"
+ * button, and *also* auto-retries Slack sign-in when the tab regains
+ * focus after being hidden — the assumption being that the user popped
+ * over to Slack to fix their display name. If they didn't actually fix
+ * it, they just bounce back to this page; no harm done.
+ */
+function BadSlackNameError() {
+	const [retrying, setRetrying] = useState(false);
+
+	useEffect(() => {
+		let hiddenSeen = false;
+		function onVisibility() {
+			if (document.hidden) {
+				hiddenSeen = true;
+				return;
+			}
+			if (hiddenSeen) {
+				hiddenSeen = false;
+				setRetrying(true);
+				void signIn("slack");
+			}
+		}
+		document.addEventListener("visibilitychange", onVisibility);
+		return () => document.removeEventListener("visibilitychange", onVisibility);
+	}, []);
+
+	return (
+		<div className={styles.error}>
+			<p>
+				<strong>Your Slack names don't follow the required format.</strong>
+			</p>
+			<p>
+				<strong>Full name</strong>: just your name, e.g. <code>Jane Doe</code>.
+				<br />
+				<strong>Display name</strong>: your name, then your FRC team number in parentheses, e.g.{" "}
+				<code>Jane Doe (1234)</code>. For multiple teams use a comma: <code>Jane Doe (1234, 5678)</code>.
+			</p>
+			<p>
+				In Slack, open your profile and choose <em>Edit Profile</em>, then come back to this tab.
+			</p>
+			<button
+				type="button"
+				onClick={() => {
+					setRetrying(true);
+					void signIn("slack");
+				}}
+				disabled={retrying}
+				className={styles.retryButton}
+			>
+				{retrying ? "Retrying…" : "Try again"}
+			</button>
+			<p className={styles.retryHint}>(Auto-retries when you switch back to this tab.)</p>
+		</div>
+	);
+}
 
 function LogInContent() {
 	const searchParams = useSearchParams();
 	const error = searchParams.get("error");
 
 	if (error) {
+		if (error === "BadSlackName") return <BadSlackNameError />;
 		return (
 			<div className={styles.error}>
 				{error === "OAuthAccountNotLinked"

@@ -169,3 +169,126 @@ webcal://your.domain.com/api/calendar/all.ics            # Apple / Outlook one-c
 https://your.domain.com/api/calendar/all.ics             # Google "From URL"
 https://calendar.google.com/calendar/r?cid=https%3A%2F%2Fyour.domain.com%2Fapi%2Fcalendar%2Fall.ics  # Google shortcut
 ```
+
+### Tool Access (gate)
+
+Teams and mentors can open the practice-field gate without ever seeing the
+gate-controller credentials. The scheduler is the **authority** for who may use
+what and when; [Gate Manager](https://github.com/cinderblock/gate-manager) is a
+stateless proxy that asks on every interaction and pulses the gate if the
+answer is yes.
+
+#### Two kinds of link
+
+Both have the shape `${GATE_BASE_URL}/g/<token>`, and both are checked live on
+every use, so a stable bookmark is not a standing grant.
+
+| Link         | Who gets one                                         | When it works                                            | Share it?       |
+| ------------ | ---------------------------------------------------- | -------------------------------------------------------- | --------------- |
+| **Team**     | one per team, sent to every member                   | the team's reserved slots, 20 min before to 60 min after | within the team |
+| **Personal** | people an admin has approved for general gate access | any day, within site hours                               | no              |
+
+- **Site hours are 8am–11pm** (field time) and bound _everything_ the scheduler
+  issues, team links included. Overnight, only Gate Manager's own registered
+  employees can open the gate; that path never asks the scheduler.
+- **General gate access is an explicit grant.** Nobody has it by default —
+  an admin approves each person, which issues their personal link and DMs it
+  right away. Shared or unverified Slack accounts simply never get approved.
+  The link also stops working if the person is disabled or their Slack names
+  stop following the rules below. Admins and `(TSL)` lab mates can be
+  approved like anyone else; being an admin grants nothing by itself.
+- **Gate links wait on Slack names.** Nobody is sent a link, team or
+  personal, until both of their Slack names follow the format (see
+  [Slack names](#slack-names)).
+- **Team membership comes from the display name's parentheses.** Until
+  someone's names have been read from Slack, teams come from their sign-in
+  name instead, so booking works without the Web API.
+- **Blackouts don't affect personal links** — they only stop bookings.
+- **Delivery is one Slack DM** listing whichever links someone hasn't been sent
+  yet (a mentor on two teams gets three links in one message), plus a DM when
+  a link is replaced, plus the team link alongside each new reservation. Slack
+  being down or unconfigured never breaks sign-in or booking; unsent links go
+  out at the next sign-in.
+- **Links reset each year.** They're stored under `data/<year>/`, so a new
+  season starts with fresh links, issued as people sign in.
+- Grace periods and site hours are constants in `src/server/access.ts`.
+
+#### Slack names
+
+| Slack field      | Rule                                                         | Example                                    |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| **Full name**    | just a name: no digits, no parentheses                       | `Jane Doe`                                 |
+| **Display name** | a name, then team number(s) or `TSL` in trailing parentheses | `Jane Doe (1234)`, `Jane Doe (1234, 5678)` |
+
+- Names are read from Slack's Web API: for each person at sign-in, and for the
+  whole workspace every 10 minutes. Sign in with Slack doesn't carry the
+  display name.
+- Names that can't be read count as wrong, so links are held until they've
+  been checked.
+- While a person's names are wrong, their personal link is refused and team
+  links aren't DM'd to them. Reservation notices still arrive, without the
+  link.
+- They get one DM per wrong pair of names saying what to fix, with suggested
+  values. Their links arrive within about 10 minutes of the fix.
+
+#### Admin controls
+
+On `/users`, admins get:
+
+- **Slack names** — everyone in the Slack workspace whose names need fixing
+  (including people who've never signed in), what's wrong, and suggested
+  fixes. **Check now**, and **Preview**/**Send DMs** with personalised
+  instructions. Use it before turning on `STRICT_SLACK_NAMES`. Each person's
+  row also says when their gate links are on hold, and why.
+- **Team gate links** — per-team status, **Reveal link** (to hand a link over
+  when Slack isn't reaching someone) and **Rotate** (new link, every old
+  bookmark for that team stops working, the team is DM'd the replacement).
+- **Per person, under each name** — general gate access status, **Approve
+  general gate access** (issues and DMs their personal link), and for approved
+  people **Reveal link**, **Replace link** (DMs the new one) and **Revoke
+  access** (deletes the link; approving again issues a fresh one).
+
+Approvals, revocations, reveals, rotations and name-fix DM batches are all
+written to the audit log.
+
+#### The check endpoint
+
+```http
+POST /api/access/check
+Authorization: Bearer <SCHEDULER_API_KEY>
+Content-Type: application/json
+
+{ "token": "<opaque>", "tool": "gate" }
+```
+
+Every decision — allow or deny — is `200` with a
+`{ "valid": …, "grant": "team" | "personal", "reason": … }` envelope. Team
+successes carry `team` and `reservation_id`; personal successes carry `user`
+instead, with `team` and `reservation_id` null. Non-2xx means a config, auth or
+transport problem (`401` bad secret, `503` `SCHEDULER_API_KEY` unset, `500`
+unexpected); consumers are expected to fail closed on those.
+
+`tool` is currently only `"gate"`; anything else answers `tool_not_authorized`.
+The full contract, including every denial reason, lives in
+`docs/scheduler-integration.md` in the Gate Manager repo.
+
+#### Required configuration
+
+| Variable             | Purpose                                                                | If unset                         |
+| -------------------- | ---------------------------------------------------------------------- | -------------------------------- |
+| `SCHEDULER_API_KEY`  | Shared bearer secret consumers present (≥32 chars)                     | endpoint returns `503`           |
+| `SLACK_BOT_TOKEN`    | Slack bot token (`xoxb-…`), bot scopes `chat:write` and `users:read`   | no DMs, no name checks, no links |
+| `GATE_BASE_URL`      | Public Gate Manager base URL, used to build `${base}/g/<token>`        | link omitted from DMs            |
+| `STRICT_SLACK_NAMES` | `"true"`/`"1"` refuses sign-in until both Slack names follow the rules | names are only checked for links |
+
+The bot needs **`users:read`** to read names (`users.info`, `users.list`).
+Without it, `/users` says so and nobody's gate links go out. Add the scope in
+the Slack app's **OAuth & Permissions**, then reinstall the app. The bot token
+normally stays the same; if Slack issues a new one, update
+`SLACK_BOT_TOKEN`.
+
+Generate the API key with:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```

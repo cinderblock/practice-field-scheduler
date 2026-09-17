@@ -1,0 +1,52 @@
+.list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.5rem 1rem;
+	padding: 0.65rem 0;
+	border-top: 1px solid var(--border-color);
+}
+
+.summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.15rem 0.75rem;
+	min-width: 0;
+}
+
+.team {
+	font-weight: 700;
+	font-size: 1.05rem;
+	color: var(--text-primary);
+}
+
+.actions {
+	justify-content: flex-end;
+}
+
+/* Confirmations, revealed links and results span the whole row. */
+.confirm,
+.reveal,
+.row > p {
+	grid-column: 1 / -1;
+}
+
+.confirm,
+.reveal {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+	.row {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

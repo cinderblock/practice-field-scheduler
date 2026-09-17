@@ -10,6 +10,7 @@
 import crypto from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { Session } from "next-auth";
 import { env } from "~/env";
 import type {
@@ -18,19 +19,50 @@ import type {
 	Blackout,
 	EventDate,
 	Holiday,
+	PersonalAccess,
+	PersonalAccessStatus,
 	RemoveReservationArgs,
 	Reservation,
 	SiteEvent,
 	Team,
+	TeamAccess,
 	TeamFull,
 	TimeSlot,
 	UserEntry,
 	UserId,
 } from "~/types";
+import {
+	type AccessCheckResult,
+	evaluateAccess,
+	hasValidSlackNames,
+	isPersonalAccessEligible,
+	sameTeam,
+	slackNameCheckFor,
+} from "./access";
+import {
+	type GateLink,
+	type LinkDmKind,
+	type NameFixReason,
+	notifyTeamOfLink,
+	notifyTeamOfReservation,
+	selectTeamMemberRecipients,
+	sendLinksDm,
+	sendNameFixDm,
+} from "./notifications";
+import {
+	getSlackMember,
+	isMissingScope,
+	isSlackConfigured,
+	listSlackMembers,
+	SlackApiError,
+	type SlackMember,
+	SlackNotConfiguredError,
+} from "./slack";
 import { activeBlackouts, blackoutCoversSlot, findBlackoutForSlot, normalizeBlackoutRange } from "./util/blackout";
 import { exit } from "./util/exit";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
+import { checkSlackNames, parseSlackName, type SlackNameIssue, type SuggestedNames } from "./util/slackName";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -54,8 +86,14 @@ declare global {
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
+	var __teamAccess: TeamAccess[] | undefined;
+	var __personalAccess: PersonalAccess[] | undefined;
+	var __accessByToken: Map<string, IndexedToken> | undefined;
 	var __backendInitialized: boolean | undefined;
 	var __changeLock: Lock | undefined;
+	var __slackRoster: SlackRoster | undefined;
+	var __slackNamesRefreshedAt: Map<UserId, number> | undefined;
+	var __slackNameSyncTimer: ReturnType<typeof setInterval> | undefined;
 }
 
 // Initialize or reuse global arrays
@@ -66,6 +104,11 @@ globalThis.__holidays ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
+globalThis.__teamAccess ||= [];
+globalThis.__personalAccess ||= [];
+globalThis.__accessByToken ||= new Map();
+globalThis.__slackRoster ||= { status: "never", attemptedAt: null, checkedAt: null, error: null, members: [] };
+globalThis.__slackNamesRefreshedAt ||= new Map();
 
 const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
@@ -74,6 +117,636 @@ const holidays = globalThis.__holidays;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
+const teamAccess = globalThis.__teamAccess;
+const personalAccess = globalThis.__personalAccess;
+const accessByToken = globalThis.__accessByToken;
+const slackRoster = globalThis.__slackRoster;
+const slackNamesRefreshedAt = globalThis.__slackNamesRefreshedAt;
+
+/** What a token in {@link accessByToken} resolves to. */
+type IndexedToken = { kind: "team"; entry: TeamAccess } | { kind: "personal"; entry: PersonalAccess };
+
+function newAccessToken(): string {
+	// 24 random bytes ⇒ 32 url-safe characters, ~192 bits of entropy.
+	return crypto.randomBytes(24).toString("base64url");
+}
+
+function findTeamAccess(team: TeamFull): TeamAccess | undefined {
+	return teamAccess.find(t => sameTeam(t.team, team));
+}
+
+function findPersonalAccess(userId: UserId): PersonalAccess | undefined {
+	return personalAccess.find(p => p.userId === userId);
+}
+
+type AccessRecord = { token: string; created: Date; rotated?: Date; rotatedBy?: UserId };
+
+/** Everything the issue/rotate machinery needs to know about one link. */
+type AccessStore<T extends AccessRecord> = {
+	records: T[];
+	find: () => T | undefined;
+	make: (token: string) => T;
+	indexed: (entry: T) => IndexedToken;
+	persist: () => Promise<void>;
+};
+
+function teamStore(team: TeamFull): AccessStore<TeamAccess> {
+	return {
+		records: teamAccess,
+		find: () => findTeamAccess(team),
+		make: token => ({ team, token, created: new Date() }),
+		indexed: entry => ({ kind: "team", entry }),
+		persist: () => writeJsonFile(TEAM_ACCESS_FILE, teamAccess),
+	};
+}
+
+function personalStore(userId: UserId): AccessStore<PersonalAccess> {
+	return {
+		records: personalAccess,
+		find: () => findPersonalAccess(userId),
+		make: token => ({ userId, token, created: new Date() }),
+		indexed: entry => ({ kind: "personal", entry }),
+		persist: () => writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess),
+	};
+}
+
+/**
+ * Return the link's record, issuing it first if it doesn't exist yet. Safe to
+ * call on every login.
+ *
+ * Takes `changeLock`. Must NOT be called while already holding it.
+ */
+async function ensureAccess<T extends AccessRecord>(store: AccessStore<T>): Promise<T> {
+	const existing = store.find();
+	if (existing) return existing;
+
+	const release = await changeLock.acquire();
+	try {
+		// Re-check under the lock: concurrent logins race here.
+		const raced = store.find();
+		if (raced) return raced;
+
+		const entry = store.make(newAccessToken());
+		store.records.push(entry);
+		accessByToken.set(entry.token, store.indexed(entry));
+		await store.persist();
+		return entry;
+	} finally {
+		release();
+	}
+}
+
+/**
+ * Replace a link's token. The old token stops working immediately (it's
+ * dropped from the index), so callers are expected to DM the replacement.
+ * Issues the link if there wasn't one — that satisfies the request just as well.
+ *
+ * Takes `changeLock`. Must NOT be called while already holding it.
+ */
+async function rotateAccess<T extends AccessRecord>(store: AccessStore<T>, rotatedBy: UserId): Promise<T> {
+	const release = await changeLock.acquire();
+	try {
+		const existing = store.find();
+		if (!existing) {
+			const entry = store.make(newAccessToken());
+			store.records.push(entry);
+			accessByToken.set(entry.token, store.indexed(entry));
+			await store.persist();
+			return entry;
+		}
+
+		accessByToken.delete(existing.token);
+		existing.token = newAccessToken();
+		existing.rotated = new Date();
+		existing.rotatedBy = rotatedBy;
+		accessByToken.set(existing.token, store.indexed(existing));
+		await store.persist();
+		return existing;
+	} finally {
+		release();
+	}
+}
+
+/**
+ * Delete a person's link outright. Used when an admin revokes general gate
+ * access: the link may have spread, so approving again later must issue a new
+ * token rather than bring the old one back.
+ *
+ * Takes `changeLock`. Must NOT be called while already holding it.
+ */
+async function removePersonalAccess(userId: UserId): Promise<void> {
+	const release = await changeLock.acquire();
+	try {
+		const index = personalAccess.findIndex(p => p.userId === userId);
+		if (index === -1) return;
+		const [removed] = personalAccess.splice(index, 1);
+		if (removed) accessByToken.delete(removed.token);
+		await writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess);
+	} finally {
+		release();
+	}
+}
+
+/**
+ * Record that a user has been DM'd the given tokens, so we don't re-send the
+ * same links on every login. Rotation invalidates this naturally: a new token
+ * isn't in the list, so the next login re-sends.
+ *
+ * Takes `changeLock`. Must NOT be called while already holding it.
+ */
+async function markLinksSent(user: UserEntry, tokens: readonly string[]): Promise<void> {
+	const fresh = tokens.filter(t => !user.gateLinkSentTokens?.includes(t));
+	if (fresh.length === 0) return;
+	const release = await changeLock.acquire();
+	try {
+		user.gateLinkSentTokens = [...new Set([...(user.gateLinkSentTokens ?? []), ...fresh])];
+		await writeJsonFile(USERS_FILE, users);
+	} finally {
+		release();
+	}
+}
+
+/** Every Slack ID mapped to a user — admin-triggered DMs reach all of them. */
+function slackIdsFor(userId: UserId): string[] {
+	return slackMappings.filter(m => m.userId === userId).map(m => m.slackId);
+}
+
+/** What happened when we tried to DM someone their personal link. */
+export type LinkDelivery = {
+	notified: number;
+	failed: number;
+	/** Why nothing was attempted, if nothing was. */
+	skipped: "slack_not_configured" | "no_slack_account" | null;
+};
+
+/**
+ * DM a person their personal link on every Slack account mapped to them, and
+ * record it as sent if any DM got through.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+async function deliverPersonalLink(user: UserEntry, token: string, kind: LinkDmKind): Promise<LinkDelivery> {
+	if (!isSlackConfigured()) return { notified: 0, failed: 0, skipped: "slack_not_configured" };
+	const slackIds = slackIdsFor(user.id);
+	if (slackIds.length === 0) return { notified: 0, failed: 0, skipped: "no_slack_account" };
+
+	let notified = 0;
+	let failed = 0;
+	for (const slackId of slackIds) {
+		const outcome = await sendLinksDm(slackId, [{ kind: "personal", token }], kind);
+		if (outcome.sent) notified++;
+		else {
+			failed++;
+			console.warn(`Personal link DM to ${user.id}/${slackId} failed: ${outcome.error ?? outcome.reason}`);
+		}
+	}
+	if (notified > 0) await markLinksSent(user, [token]);
+	return { notified, failed, skipped: null };
+}
+
+/**
+ * Make sure this user holds every link they're entitled to — one per team they
+ * belong to, plus a personal link if they're an approved member — and DM them,
+ * in a single message, any they haven't been sent yet. Covers first login,
+ * joining a team, becoming eligible, fixing their Slack names and picking up a
+ * rotation, all through the same path.
+ *
+ * While their Slack names are wrong, nothing is issued or sent; instead they're
+ * told (once per wrong pair of names) what to fix.
+ *
+ * Never throws: logs failures so a Slack hiccup can't break login.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+async function ensureLinksForUser(user: UserEntry, slackId: string): Promise<void> {
+	if (!hasValidSlackNames(user)) {
+		await nudgeAboutNames(user, slackId, "links_held");
+		return;
+	}
+
+	const unsent: GateLink[] = [];
+	const wanted = (token: string) => !user.gateLinkSentTokens?.includes(token);
+
+	try {
+		if (isPersonalAccessEligible(user)) {
+			const entry = await ensureAccess(personalStore(user.id));
+			if (wanted(entry.token)) unsent.push({ kind: "personal", token: entry.token });
+		}
+
+		if (user.teams !== "admin") {
+			for (const team of user.teams) {
+				const entry = await ensureAccess(teamStore(team));
+				if (wanted(entry.token)) unsent.push({ kind: "team", team: entry.team, token: entry.token });
+			}
+		}
+	} catch (err) {
+		console.error(`Failed issuing gate links for user ${user.id}:`, err);
+		return;
+	}
+
+	if (unsent.length === 0) return;
+
+	const outcome = await sendLinksDm(slackId, unsent, "issued");
+	if (!outcome.sent) {
+		console.warn(
+			`Gate link DM not sent to user ${user.id} (slack ${slackId}): ${outcome.reason}${
+				outcome.error ? ` - ${outcome.error}` : ""
+			}`,
+		);
+		return;
+	}
+	await markLinksSent(
+		user,
+		unsent.map(l => l.token),
+	).catch(err => console.error(`Failed recording sent gate links for user ${user.id}:`, err));
+}
+
+/** How long a request waits for a newcomer's first name check. */
+const FIRST_NAME_CHECK_WAIT_MS = 3_000;
+
+/**
+ * For someone whose names have never been read from Slack, wait (briefly) for
+ * the first read, so their first page already shows the teams their display
+ * name gives. Everyone else is refreshed in the background.
+ */
+async function awaitFirstNameCheck(user: UserEntry, slackId: string): Promise<void> {
+	if (user.slackNamesSyncedAt || !isSlackConfigured()) return;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<void>(resolve => {
+		timer = setTimeout(resolve, FIRST_NAME_CHECK_WAIT_MS);
+	});
+	await Promise.race([refreshSlackNames(user, slackId), timeout]);
+	clearTimeout(timer);
+}
+
+/**
+ * Refresh the user's Slack names, then {@link ensureLinksForUser}, without
+ * blocking the request. Runs on every request; both steps are cheap when
+ * nothing has changed.
+ */
+function fireLinkDms(user: UserEntry, slackId: string): void {
+	void (async () => {
+		await refreshSlackNames(user, slackId);
+		await ensureLinksForUser(user, slackId);
+	})();
+}
+
+/**
+ * Fire-and-forget DMs to every member of the reservation's team (excluding the
+ * creator), carrying the team's link — issued now if the team has none yet.
+ * Best-effort: logs failures but never blocks the caller.
+ *
+ * Must be called after the caller has released `changeLock`.
+ */
+function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
+	const { recipients } = selectTeamMemberRecipients(users, slackMappings, reservation.team, excludeUserId);
+	if (recipients.length === 0) return;
+
+	void (async () => {
+		const entry = await ensureAccess(teamStore(reservation.team));
+		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token);
+
+		const failed = outcomes.filter(o => !o.sent);
+		if (failed.length > 0) {
+			console.warn(
+				`Reservation ${reservation.id}: ${failed.length}/${outcomes.length} DM(s) failed:`,
+				failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+			);
+		}
+
+		// Where the notice carried the link, the next login needn't send it again.
+		const gotLink = new Set(recipients.filter(r => r.withLink).map(r => r.user.id));
+		for (const o of outcomes.filter(o => o.sent && gotLink.has(o.userId))) {
+			const user = users.find(u => u.id === o.userId);
+			if (user) await markLinksSent(user, [entry.token]);
+		}
+	})().catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
+}
+
+/** Persist the users file after an in-place change, taking the lock. */
+async function saveUsers(context: string): Promise<void> {
+	const release = await changeLock.acquire();
+	try {
+		await writeJsonFile(USERS_FILE, users);
+	} catch (err) {
+		console.error(`Error persisting users (${context}):`, err);
+	} finally {
+		release();
+	}
+}
+
+/** Set `teams` from an affiliation, sorted. Returns whether anything changed. Admins keep "admin". */
+function applyTeams(user: UserEntry, teams: readonly Team[]): boolean {
+	if (user.teams === "admin") return false;
+	const wanted = [...teams].sort((a, b) => a - b);
+	const current = [...user.teams].sort((a, b) => a - b);
+	if (wanted.length === current.length && wanted.every((t, i) => t === current[i])) return false;
+	user.teams = wanted;
+	return true;
+}
+
+/**
+ * Keep a stored user in step with their session, but only until Slack's Web
+ * API has given us their real names. Sign in with Slack only carries a `name`
+ * claim, which may be either Slack name; once {@link applySlackMember} has run,
+ * the session is ignored so the two sources don't fight.
+ *
+ * Until then, teams are read from that `name` as before, so booking keeps
+ * working where the Web API isn't available. Gate links stay held regardless:
+ * unverified names never pass {@link hasValidSlackNames}.
+ *
+ * Takes `changeLock`. Must NOT be called while already holding it.
+ */
+async function syncUserFromSession(user: UserEntry, sessionName: string | undefined): Promise<void> {
+	if (user.slackNamesSyncedAt) return;
+
+	let dirty = false;
+	if (sessionName && sessionName !== user.name) {
+		user.name = sessionName;
+		dirty = true;
+	}
+	const parsed = parseSlackName(user.name);
+	if (parsed && applyTeams(user, parsed.teams)) dirty = true;
+
+	if (!dirty) return;
+	user.updated = new Date();
+	await saveUsers("session sync");
+}
+
+// ===== Slack names =====
+//
+// Names come from Slack's Web API (`users.info` / `users.list`, bot scope
+// `users:read`), the only source that has both the full name and the display
+// name. Gate links wait on both following the rules; see
+// `plans/gate-access-integration.md`, "Slack name rules".
+
+/** How often every workspace member's names are re-read. */
+export const SLACK_NAME_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+
+/** A signed-in person's names are re-read at most this often. */
+export const SLACK_NAME_REFRESH_MS = 5 * 60 * 1000;
+
+/** Wait this long after startup before the first workspace sync. */
+const SLACK_NAME_FIRST_SYNC_DELAY_MS = 5_000;
+
+export type SlackNameSyncStatus = "never" | "ok" | "not_configured" | "missing_scope" | "error";
+
+type SlackRoster = {
+	status: SlackNameSyncStatus;
+	/** When the last workspace sync finished, whether or not it worked. */
+	attemptedAt: Date | null;
+	/** When `members` was fetched. */
+	checkedAt: Date | null;
+	error: string | null;
+	members: SlackMember[];
+};
+
+function statusForSlackError(err: unknown): { status: SlackNameSyncStatus; error: string } {
+	if (err instanceof SlackNotConfiguredError) return { status: "not_configured", error: err.message };
+	if (isMissingScope(err)) return { status: "missing_scope", error: "The Slack bot token lacks the users:read scope" };
+	if (err instanceof SlackApiError) return { status: "error", error: err.slackError };
+	return { status: "error", error: (err as Error).message };
+}
+
+/** How a user's name check moved when Slack's values were applied. */
+type NameChange = { firstCheck: boolean; wasOk: boolean; isOk: boolean };
+
+/**
+ * Store what Slack says a user's names are, and the teams their display name
+ * gives, when it follows the rules. A deactivated Slack account un-verifies
+ * the user, which holds their links.
+ *
+ * Takes `changeLock` (to save). Must NOT be called while holding it.
+ */
+async function applySlackMember(user: UserEntry, member: SlackMember): Promise<NameChange> {
+	const firstCheck = !user.slackNamesSyncedAt;
+	const wasOk = hasValidSlackNames(user);
+
+	if (member.deleted) {
+		if (!firstCheck) {
+			user.slackNamesSyncedAt = undefined;
+			user.updated = new Date();
+			await saveUsers("Slack account deactivated");
+		}
+		return { firstCheck, wasOk, isOk: false };
+	}
+
+	const realName = member.realName.trim();
+	const displayName = member.displayName.trim() || undefined;
+	const check = checkSlackNames({ realName, displayName });
+
+	let dirty = firstCheck;
+	if (realName !== user.name) {
+		user.name = realName;
+		dirty = true;
+	}
+	if (displayName !== user.displayName) {
+		user.displayName = displayName;
+		dirty = true;
+	}
+	if (check.affiliation && applyTeams(user, check.affiliation.teams)) dirty = true;
+
+	if (dirty) {
+		const now = new Date();
+		user.slackNamesSyncedAt = now;
+		user.updated = now;
+		await saveUsers("Slack names");
+	}
+	return { firstCheck, wasOk, isOk: check.ok };
+}
+
+/**
+ * Act on a change in someone's names. Fixed names release their links at
+ * once; newly broken ones get a DM saying what to fix. A first check does
+ * neither: the caller decides, so the first sync after a deploy doesn't DM
+ * everyone.
+ */
+async function reactToNameChange(user: UserEntry, slackId: string, change: NameChange): Promise<void> {
+	if (change.firstCheck || change.wasOk === change.isOk) return;
+	if (change.isOk) await ensureLinksForUser(user, slackId);
+	else await nudgeAboutNames(user, slackId, "links_held");
+}
+
+/** The pair of names a nudge was about, so each wrong pair is raised once. */
+function nameNudgeKey(user: Pick<UserEntry, "name" | "displayName">): string {
+	return JSON.stringify([user.name ?? "", user.displayName ?? ""]);
+}
+
+const nudgesInFlight = new Set<UserId>();
+
+/**
+ * DM someone what's wrong with their Slack names, unless they've already been
+ * told about this exact pair. Does nothing when the names are fine, or when
+ * they've never been read from Slack (we can't say what's wrong).
+ *
+ * Takes `changeLock` (to save). Must NOT be called while holding it.
+ */
+async function nudgeAboutNames(user: UserEntry, slackId: string, reason: NameFixReason): Promise<boolean> {
+	const check = slackNameCheckFor(user);
+	if (check.ok || check.issues.includes("unverified")) return false;
+	const key = nameNudgeKey(user);
+	if (user.slackNameNudgeSentFor === key || nudgesInFlight.has(user.id)) return false;
+
+	nudgesInFlight.add(user.id);
+	try {
+		const outcome = await sendNameFixDm(slackId, { realName: user.name, displayName: user.displayName }, check, reason);
+		if (!outcome.sent) {
+			if (outcome.reason !== "slack_not_configured") {
+				console.warn(`Name-fix DM to ${user.id}/${slackId} failed: ${outcome.error ?? outcome.reason}`);
+			}
+			return false;
+		}
+		user.slackNameNudgeSentFor = key;
+		await saveUsers("name nudge");
+		return true;
+	} finally {
+		nudgesInFlight.delete(user.id);
+	}
+}
+
+const refreshesInFlight = new Map<UserId, Promise<void>>();
+
+/**
+ * Re-read one signed-in person's names (`users.info`), at most once every
+ * {@link SLACK_NAME_REFRESH_MS}. Never throws.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+async function refreshSlackNames(user: UserEntry, slackId: string): Promise<void> {
+	if (!isSlackConfigured()) return;
+	const running = refreshesInFlight.get(user.id);
+	if (running) return running;
+	const last = slackNamesRefreshedAt.get(user.id);
+	if (last !== undefined && Date.now() - last < SLACK_NAME_REFRESH_MS) return;
+	slackNamesRefreshedAt.set(user.id, Date.now());
+
+	const run = (async () => {
+		try {
+			const member = await getSlackMember(slackId);
+			if (!member) return;
+			const change = await applySlackMember(user, member);
+			await reactToNameChange(user, slackId, change);
+		} catch (err) {
+			const { status, error } = statusForSlackError(err);
+			console.warn(`Couldn't read Slack names for ${user.id}/${slackId} (${status}): ${error}`);
+		}
+	})().finally(() => refreshesInFlight.delete(user.id));
+	refreshesInFlight.set(user.id, run);
+	return run;
+}
+
+let workspaceSync: Promise<void> | null = null;
+
+/**
+ * Re-read every workspace member's names (`users.list`), update the people
+ * who use the scheduler, and remember the list for the admin audit. One sync
+ * at a time; callers share a running one. Never throws.
+ *
+ * Takes `changeLock` (via helpers). Must NOT be called while holding it.
+ */
+export function syncSlackNames(): Promise<void> {
+	workspaceSync ??= (async () => {
+		await initialized();
+		let members: SlackMember[];
+		try {
+			members = await listSlackMembers();
+		} catch (err) {
+			const { status, error } = statusForSlackError(err);
+			Object.assign(slackRoster, { status, error, attemptedAt: new Date() });
+			if (status !== "not_configured") console.warn(`Slack name sync failed (${status}): ${error}`);
+			return;
+		}
+
+		const now = new Date();
+		Object.assign(slackRoster, { status: "ok", error: null, attemptedAt: now, checkedAt: now, members });
+
+		const byId = new Map(members.map(m => [m.id, m]));
+		for (const user of [...users]) {
+			if (user.disabled) continue;
+			const found = slackIdsFor(user.id)
+				.map(id => byId.get(id))
+				.filter((m): m is SlackMember => m !== undefined);
+			const member = found.find(m => !m.deleted) ?? found[0];
+			if (!member) continue;
+			slackNamesRefreshedAt.set(user.id, Date.now());
+			try {
+				const change = await applySlackMember(user, member);
+				await reactToNameChange(user, member.id, change);
+			} catch (err) {
+				console.error(`Slack name sync failed for user ${user.id}:`, err);
+			}
+		}
+	})().finally(() => {
+		workspaceSync = null;
+	});
+	return workspaceSync;
+}
+
+/**
+ * Start the periodic workspace sync. Not during `next build`, which loads the
+ * real data directory and must not DM anyone or write to it, and not under
+ * Vitest, where tests drive syncs themselves.
+ */
+function startSlackNameSync(): void {
+	if (globalThis.__slackNameSyncTimer) return;
+	if (process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD || process.env.VITEST) return;
+	const run = () => void syncSlackNames();
+	globalThis.__slackNameSyncTimer = setInterval(run, SLACK_NAME_SYNC_INTERVAL_MS);
+	globalThis.__slackNameSyncTimer.unref();
+	setTimeout(run, SLACK_NAME_FIRST_SYNC_DELAY_MS).unref();
+}
+
+/** One workspace member whose names need fixing, for the admin audit. */
+export type SlackNameProblem = {
+	slackId: string;
+	realName: string;
+	displayName: string;
+	issues: SlackNameIssue[];
+	suggestion: SuggestedNames | null;
+	/** The scheduler user this Slack account belongs to, if they've ever signed in. */
+	userId: UserId | null;
+};
+
+export type SlackNameReport = {
+	status: SlackNameSyncStatus;
+	attemptedAt: Date | null;
+	checkedAt: Date | null;
+	error: string | null;
+	/** People in the workspace, deactivated accounts excluded. */
+	memberCount: number;
+	problems: SlackNameProblem[];
+};
+
+function slackNameReport(): SlackNameReport {
+	const active = slackRoster.members.filter(m => !m.deleted);
+	const problems: SlackNameProblem[] = [];
+	for (const member of active) {
+		const check = checkSlackNames(member);
+		if (check.ok) continue;
+		problems.push({
+			slackId: member.id,
+			realName: member.realName,
+			displayName: member.displayName,
+			issues: check.issues,
+			suggestion: check.suggestion,
+			userId: slackMappings.find(m => m.slackId === member.id)?.userId ?? null,
+		});
+	}
+	problems.sort((a, b) => (a.displayName || a.realName).localeCompare(b.displayName || b.realName));
+	return {
+		status: slackRoster.status,
+		attemptedAt: slackRoster.attemptedAt,
+		checkedAt: slackRoster.checkedAt,
+		error: slackRoster.error,
+		memberCount: active.length,
+		problems,
+	};
+}
+
+/** Status of the Slack name checks, for the admin UI. */
+export function slackNameSyncState(): Pick<SlackNameReport, "status" | "checkedAt" | "error"> {
+	return { status: slackRoster.status, checkedAt: slackRoster.checkedAt, error: slackRoster.error };
+}
 
 type LogCommon = {
 	timestamp: Date;
@@ -112,7 +785,37 @@ type LogUserEntry = LogCommon & {
 	teams: Team[] | "admin";
 };
 
-type LogEntry = LogReservationEntry | LogBlackoutEntry | LogSiteEventEntry | LogUserEntry;
+/**
+ * Team-link administration. Worth auditing on its own: revealing a shared
+ * secret and invalidating a whole team's bookmarks are both things you want
+ * to be able to attribute after the fact.
+ */
+type LogTeamAccessEntry = LogCommon & {
+	type: "teamLinkReveal" | "teamLinkRotate";
+	team: TeamFull;
+};
+
+/** General-access and personal-link administration, attributed to the admin who did it. */
+type LogPersonalAccessEntry = LogCommon & {
+	type: "generalAccessApprove" | "generalAccessRevoke" | "personalLinkReveal" | "personalLinkRotate";
+	targetUserId: UserId;
+	targetName: string;
+};
+
+/** An admin DM'd everyone whose Slack names need fixing. */
+type LogSlackNamesEntry = LogCommon & {
+	type: "slackNamesNudge";
+	count: number;
+};
+
+type LogEntry =
+	| LogReservationEntry
+	| LogBlackoutEntry
+	| LogSiteEventEntry
+	| LogUserEntry
+	| LogTeamAccessEntry
+	| LogPersonalAccessEntry
+	| LogSlackNamesEntry;
 
 export class PermissionError extends Error {
 	constructor(message: string) {
@@ -195,6 +898,11 @@ export class Context {
 		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to await Promise.all - PID: ${process.pid}`);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation END - PID: ${process.pid}`);
+
+		// Fire-and-forget DMs to other team members so they get a reminder
+		// + their personal gate link. Excludes the creator (they already know).
+		const creatorId = (await this.user).id;
+		fireReservationDmsForTeam(res, creatorId);
 
 		return res;
 	}
@@ -458,6 +1166,8 @@ export class Context {
 		const slackId = this.session.user.id;
 		const email = this.session.user.email ?? "";
 
+		const sessionName = this.session.user.name ?? undefined;
+
 		// First check if we have a direct Slack ID mapping
 		const existingMapping = slackMappings.find(m => m.slackId === slackId);
 		if (existingMapping) {
@@ -468,6 +1178,9 @@ export class Context {
 			if (user.disabled) {
 				throw new PermissionError("User disabled");
 			}
+			await syncUserFromSession(user, sessionName);
+			await awaitFirstNameCheck(user, slackId);
+			fireLinkDms(user, slackId);
 			return user;
 		}
 
@@ -490,19 +1203,25 @@ export class Context {
 					})
 					.finally(release);
 
+				await syncUserFromSession(existingUser, sessionName);
+				await awaitFirstNameCheck(existingUser, slackId);
+				fireLinkDms(existingUser, slackId);
 				return existingUser;
 			}
 		}
 
 		// No existing user found, create new user entry
 		const newUserId = crypto.randomUUID();
+		const nameForUser = this.session.user.name ?? email ?? "Unknown";
+		// Teams from the sign-in name until Slack's Web API supplies the real names.
+		const parsedSlackName = parseSlackName(nameForUser);
+		const sortedTeams = parsedSlackName ? [...parsedSlackName.teams].sort((a, b) => a - b) : [];
 		const newUser: UserEntry = {
 			id: newUserId,
-			name: this.session.user.name ?? email ?? "Unknown",
-			displayName: this.session.user.displayName,
+			name: nameForUser,
 			created: new Date(),
 			updated: new Date(),
-			teams: FirstUserIsAdmin && !users.length ? "admin" : [],
+			teams: FirstUserIsAdmin && !users.length ? "admin" : sortedTeams,
 			email,
 			image: this.session.user.image ?? "",
 		};
@@ -523,6 +1242,9 @@ export class Context {
 				writeJsonFile(getFilePath(a), a).catch(err => console.error("Error saving user data:", err)),
 			),
 		).then(release);
+
+		await awaitFirstNameCheck(newUser, slackId);
+		fireLinkDms(newUser, slackId);
 
 		return newUser;
 	}
@@ -570,6 +1292,358 @@ export class Context {
 	private async restrictToAdmin(message: string) {
 		if (await this.isAdmin()) return;
 		throw new PermissionError(message);
+	}
+
+	/** Throws PermissionError if the current user isn't an admin. */
+	async assertAdmin(message = "Admin access required"): Promise<void> {
+		await this.restrictToAdmin(message);
+	}
+
+	/** Slack user ID (e.g. "U01ABCDEF") of the current session, for DM targeting. */
+	getSlackUserId(): string {
+		return this.session.user.id;
+	}
+
+	/**
+	 * Admin-only: summary of every team's shared gate link.
+	 *
+	 * Deliberately omits the token itself — it's a bearer secret, and the
+	 * listing is rendered for every team at once. Use {@link revealTeamAccessLink}
+	 * for the one team an admin actually needs to hand over.
+	 *
+	 * Teams are drawn from user membership *and* existing access records, so a
+	 * team keeps its row even after its last member's Slack name breaks.
+	 */
+	async listTeamAccess(): Promise<
+		Array<{ team: TeamFull; hasLink: boolean; created: Date | null; rotated: Date | null; memberCount: number }>
+	> {
+		await this.assertAdmin("Only admins can view team access");
+		await initialized();
+
+		const teams = new Map<string, TeamFull>();
+		for (const user of users) {
+			if (user.disabled) continue;
+			if (user.teams === "admin") continue;
+			for (const team of user.teams) teams.set(String(team), team);
+		}
+		for (const entry of teamAccess) teams.set(String(entry.team), entry.team);
+
+		return [...teams.values()]
+			.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+			.map(team => {
+				const entry = findTeamAccess(team);
+				return {
+					team,
+					hasLink: Boolean(entry),
+					created: entry?.created ?? null,
+					rotated: entry?.rotated ?? null,
+					memberCount: users.filter(u => !u.disabled && u.teams !== "admin" && u.teams.some(t => sameTeam(t, team)))
+						.length,
+				};
+			});
+	}
+
+	/**
+	 * Admin-only: reveal one team's actual gate link, for handing over when
+	 * Slack DMs aren't reaching someone. Issues the link if the team doesn't
+	 * have one yet, so "reveal" always returns something usable.
+	 *
+	 * Logged, because revealing a shared secret is worth an audit trail.
+	 */
+	async revealTeamAccessLink(team: TeamFull): Promise<{ team: TeamFull; token: string }> {
+		await this.assertAdmin("Only admins can reveal team access links");
+		await initialized();
+
+		const entry = await ensureAccess(teamStore(team));
+
+		const ctx = await this.getContext();
+		await log({ ...ctx, type: "teamLinkReveal", team: entry.team });
+
+		return { team: entry.team, token: entry.token };
+	}
+
+	/**
+	 * Admin-only: rotate a team's shared gate link. Every existing bookmark for
+	 * that team stops working immediately, so the team is DM'd the new link
+	 * right away. Anyone the DM misses picks it up on their next login, because
+	 * the new token won't be in their `gateLinkSentTokens`.
+	 */
+	async rotateTeamAccessLink(team: TeamFull): Promise<{
+		team: TeamFull;
+		notified: number;
+		failed: number;
+		/** Members not sent the new link because their Slack names need fixing. */
+		held: number;
+		slackConfigured: boolean;
+	}> {
+		await this.assertAdmin("Only admins can rotate team access links");
+		await initialized();
+
+		const admin = await this.user;
+		const entry = await rotateAccess(teamStore(team), admin.id);
+
+		const ctx = await this.getContext();
+		await log({ ...ctx, type: "teamLinkRotate", team: entry.team });
+
+		// DM the whole team, including the admin if they're on it — everyone's
+		// old bookmark just died.
+		const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, null);
+		const outcomes = await notifyTeamOfLink(entry.team, entry.token, recipients);
+
+		for (const o of outcomes.filter(o => o.sent)) {
+			const user = users.find(u => u.id === o.userId);
+			if (user) await markLinksSent(user, [entry.token]);
+		}
+
+		const failed = outcomes.filter(o => !o.sent && o.reason !== "slack_not_configured");
+		if (failed.length > 0) {
+			console.warn(
+				`Team ${team} link rotation: ${failed.length}/${outcomes.length} DM(s) failed:`,
+				failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+			);
+		}
+
+		return {
+			team: entry.team,
+			notified: outcomes.filter(o => o.sent).length,
+			failed: failed.length,
+			held: new Set(recipients.filter(r => !r.withLink).map(r => r.user.id)).size,
+			slackConfigured: isSlackConfigured(),
+		};
+	}
+
+	/**
+	 * Admin-only: personal-link status for every user, keyed by user ID. Like
+	 * the team listing, it never includes the token itself.
+	 */
+	async listPersonalAccess(): Promise<
+		Record<
+			UserId,
+			{
+				status: PersonalAccessStatus;
+				created: Date | null;
+				rotated: Date | null;
+				/** Empty when the person's Slack names are fine; their gate links wait on this. */
+				nameIssues: SlackNameIssue[];
+			}
+		>
+	> {
+		await this.assertAdmin("Only admins can view personal access");
+		await initialized();
+
+		const out: Awaited<ReturnType<Context["listPersonalAccess"]>> = {};
+		for (const user of users) {
+			const entry = findPersonalAccess(user.id);
+			const names = slackNameCheckFor(user);
+			const status: PersonalAccessStatus = user.disabled
+				? "disabled"
+				: !user.generalAccessApproved
+					? "not_approved"
+					: !names.ok
+						? "invalid_name"
+						: entry
+							? "active"
+							: "not_issued";
+			out[user.id] = {
+				status,
+				created: entry?.created ?? null,
+				rotated: entry?.rotated ?? null,
+				nameIssues: names.issues,
+			};
+		}
+		return out;
+	}
+
+	/** Look up a user an admin action targets, refusing ones that can't hold a link. */
+	private eligibleTarget(userId: UserId): UserEntry {
+		const target = users.find(u => u.id === userId);
+		if (!target) throw new Error("User not found");
+		if (!isPersonalAccessEligible(target)) {
+			throw new Error(
+				target.disabled
+					? "This account is disabled"
+					: !target.generalAccessApproved
+						? "This account isn't approved for general gate access"
+						: "This person's Slack names need fixing, so their link is on hold",
+			);
+		}
+		return target;
+	}
+
+	/**
+	 * Admin-only: reveal one person's link, for handing over when Slack DMs
+	 * aren't reaching them. Issues it if needed. Logged.
+	 */
+	async revealPersonalAccessLink(userId: UserId): Promise<{ userId: UserId; token: string }> {
+		await this.assertAdmin("Only admins can reveal personal access links");
+		await initialized();
+
+		const target = this.eligibleTarget(userId);
+		const entry = await ensureAccess(personalStore(target.id));
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: "personalLinkReveal",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		return { userId: target.id, token: entry.token };
+	}
+
+	/**
+	 * Admin-only: rotate one person's link and DM them the replacement on every
+	 * Slack account mapped to them. The old link stops working immediately.
+	 */
+	async rotatePersonalAccessLink(userId: UserId): Promise<{ userId: UserId } & LinkDelivery> {
+		await this.assertAdmin("Only admins can rotate personal access links");
+		await initialized();
+
+		const target = this.eligibleTarget(userId);
+		const admin = await this.user;
+		const entry = await rotateAccess(personalStore(target.id), admin.id);
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: "personalLinkRotate",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		return { userId: target.id, ...(await deliverPersonalLink(target, entry.token, "rotated")) };
+	}
+
+	/**
+	 * Admin-only: approve someone for general gate access, or revoke it.
+	 *
+	 * Approving issues their personal link and DMs it straight away, so they
+	 * don't have to sign in again to get it. If their Slack name doesn't parse
+	 * the approval is still recorded, but no link is issued until it's fixed.
+	 *
+	 * Revoking deletes the link outright — it may have spread — so approving
+	 * again later issues a fresh token rather than reviving the old one.
+	 */
+	async setGeneralAccessApproved(
+		userId: UserId,
+		approved: boolean,
+	): Promise<{ userId: UserId; approved: boolean; linkIssued: boolean } & LinkDelivery> {
+		await this.assertAdmin("Only admins can approve general gate access");
+		await initialized();
+
+		const target = users.find(u => u.id === userId);
+		if (!target) throw new Error("User not found");
+		if (approved && target.disabled) throw new Error("This account is disabled");
+
+		if (Boolean(target.generalAccessApproved) !== approved) {
+			const release = await changeLock.acquire();
+			try {
+				target.generalAccessApproved = approved ? true : undefined;
+				target.updated = new Date();
+				await writeJsonFile(USERS_FILE, users);
+			} finally {
+				release();
+			}
+		}
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: approved ? "generalAccessApprove" : "generalAccessRevoke",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		const nothingSent: LinkDelivery = { notified: 0, failed: 0, skipped: null };
+		if (!approved) {
+			await removePersonalAccess(target.id);
+			return { userId: target.id, approved, linkIssued: false, ...nothingSent };
+		}
+		if (!isPersonalAccessEligible(target)) {
+			// Most likely their Slack names; tell them, once, what to fix.
+			for (const slackId of slackIdsFor(target.id)) await nudgeAboutNames(target, slackId, "links_held");
+			return { userId: target.id, approved, linkIssued: false, ...nothingSent };
+		}
+
+		const entry = await ensureAccess(personalStore(target.id));
+		const delivery = target.gateLinkSentTokens?.includes(entry.token)
+			? nothingSent
+			: await deliverPersonalLink(target, entry.token, "approved");
+		return { userId: target.id, approved, linkIssued: true, ...delivery };
+	}
+
+	/**
+	 * Admin-only: everyone in the Slack workspace whose names need fixing, from
+	 * the last workspace sync, including people who've never signed in here.
+	 */
+	async getSlackNameReport(): Promise<SlackNameReport> {
+		await this.assertAdmin("Only admins can audit Slack names");
+		await initialized();
+		return slackNameReport();
+	}
+
+	/** Admin-only: re-read the workspace's names now, then report. */
+	async checkSlackNamesNow(): Promise<SlackNameReport> {
+		await this.assertAdmin("Only admins can audit Slack names");
+		await syncSlackNames();
+		return slackNameReport();
+	}
+
+	/**
+	 * Admin-only: DM everyone in the last report what to fix. With `dryRun`,
+	 * only reports who would be DM'd. Per-person failures are reported, not
+	 * thrown. People who use the scheduler are marked as told, so signing in
+	 * doesn't DM them the same thing again.
+	 */
+	async nudgeSlackNameProblems(dryRun: boolean): Promise<{
+		dryRun: boolean;
+		total: number;
+		succeeded: number;
+		failed: number;
+		outcomes: Array<{ slackId: string; name: string; ok: boolean; error?: string }>;
+	}> {
+		await this.assertAdmin("Only admins can nudge people about their names");
+		await initialized();
+		if (slackRoster.status !== "ok") {
+			throw new Error("Slack names haven't been read successfully yet, so there's no one to DM");
+		}
+		if (!dryRun && !isSlackConfigured()) throw new Error("SLACK_BOT_TOKEN isn't configured");
+
+		const { problems } = slackNameReport();
+		const outcomes: Array<{ slackId: string; name: string; ok: boolean; error?: string }> = [];
+		for (const problem of problems) {
+			const name = problem.displayName || problem.realName || problem.slackId;
+			if (dryRun) {
+				outcomes.push({ slackId: problem.slackId, name, ok: true });
+				continue;
+			}
+			const names = { realName: problem.realName, displayName: problem.displayName };
+			const outcome = await sendNameFixDm(problem.slackId, names, checkSlackNames(names), "admin_nudge");
+			if (!outcome.sent) {
+				outcomes.push({ slackId: problem.slackId, name, ok: false, error: outcome.error ?? outcome.reason });
+				continue;
+			}
+			outcomes.push({ slackId: problem.slackId, name, ok: true });
+
+			// Only once the stored names match what we just DM'd about.
+			const user = problem.userId ? users.find(u => u.id === problem.userId) : undefined;
+			if (
+				user?.slackNamesSyncedAt &&
+				user.name === problem.realName &&
+				(user.displayName ?? "") === problem.displayName
+			) {
+				user.slackNameNudgeSentFor = nameNudgeKey(user);
+				await saveUsers("admin name nudge");
+			}
+		}
+
+		const succeeded = outcomes.filter(o => o.ok).length;
+		if (!dryRun) {
+			const ctx = await this.getContext();
+			await log({ ...ctx, type: "slackNamesNudge", count: succeeded });
+		}
+		return { dryRun, total: outcomes.length, succeeded, failed: outcomes.length - succeeded, outcomes };
 	}
 
 	private async restrictToTeam(team: Team | TeamFull, message: string) {
@@ -648,6 +1722,10 @@ const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
 const SITE_EVENTS_FILE = join(DATA_DIR, YEAR, "events.json");
 const HOLIDAYS_FILE = join(DATA_DIR, YEAR, "holidays.json");
 const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
+// Access links are per season: the server restarts when the year changes, and
+// a new year's empty files mean everyone is issued (and DM'd) fresh links.
+const TEAM_ACCESS_FILE = join(DATA_DIR, YEAR, "teamAccess.json");
+const PERSONAL_ACCESS_FILE = join(DATA_DIR, YEAR, "personalAccess.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
 
@@ -732,6 +1810,8 @@ function getFilePath(array: unknown[]) {
 	if (array === users) return USERS_FILE;
 	if (array === houseTeams) return HOUSE_TEAMS_FILE;
 	if (array === slackMappings) return SLACK_MAPPINGS_FILE;
+	if (array === teamAccess) return TEAM_ACCESS_FILE;
+	if (array === personalAccess) return PERSONAL_ACCESS_FILE;
 	throw new Error("Unknown array type");
 }
 
@@ -757,8 +1837,16 @@ async function initializePart(array: unknown[]) {
 			array.length = 0;
 		}
 
-		// Set when loading rewrote any record, so the migration is persisted instead of being redone
-		// (with different ids) on every boot
+		// Both link stores share one token index; drop only this store's entries.
+		const reloadingKind = array === teamAccess ? "team" : array === personalAccess ? "personal" : null;
+		if (reloadingKind) {
+			for (const [token, indexed] of accessByToken) {
+				if (indexed.kind === reloadingKind) accessByToken.delete(token);
+			}
+		}
+
+		// Set when loading rewrote any record (a migration, or a scrubbed dead field), so the
+		// change is persisted instead of being redone (with different ids) on every boot
 		let migrated = false;
 
 		array.push(
@@ -768,10 +1856,18 @@ async function initializePart(array: unknown[]) {
 					if (typeof item !== "object" || item === null) return false;
 					item.created = new Date(item.created);
 					item.updated = new Date(item.updated);
+					if (item.slackNamesSyncedAt) item.slackNamesSyncedAt = new Date(item.slackNamesSyncedAt);
 					if (item.disabled) {
 						if (item.created < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 2)) return false; // 2 year expiration
 					} else if (item.created < new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 1.5)) {
 						item.disabled = true;
+					}
+					// The per-user token model was replaced by per-team links; scrub the
+					// dead field so future writes drop it.
+					const legacyUser = item as UserEntry & { accessToken?: string };
+					if (legacyUser.accessToken !== undefined) {
+						legacyUser.accessToken = undefined;
+						migrated = true;
 					}
 				}
 
@@ -781,6 +1877,37 @@ async function initializePart(array: unknown[]) {
 					// Convert created to Date if it exists
 					if (item.created) {
 						item.created = new Date(item.created);
+					}
+				}
+
+				// Access records: revive dates and rebuild the token index that
+				// /api/access/check reads on every call.
+				if (array === teamAccess || array === personalAccess) {
+					if (typeof item !== "object" || item === null) return false;
+					const record = item as AccessRecord;
+					if (!record.token) return false;
+					record.created = new Date(record.created);
+					if (record.rotated) record.rotated = new Date(record.rotated);
+
+					if (array === teamAccess) {
+						const entry = item as TeamAccess;
+						if (entry.team === undefined || entry.team === null) return false;
+						accessByToken.set(entry.token, { kind: "team", entry });
+					} else {
+						const entry = item as PersonalAccess;
+						if (!entry.userId) return false;
+						accessByToken.set(entry.token, { kind: "personal", entry });
+					}
+				}
+
+				// Old per-reservation `token` field is dead since we switched to
+				// per-user access tokens. Scrub it on load so future writes drop it.
+				if (array === reservations) {
+					if (typeof item !== "object" || item === null) return false;
+					const legacy = item as Reservation & { token?: string };
+					if (legacy.token !== undefined) {
+						legacy.token = undefined;
+						migrated = true;
 					}
 				}
 
@@ -819,6 +1946,30 @@ async function initializePart(array: unknown[]) {
 	}
 }
 
+/**
+ * A personal link may only exist for someone approved for general gate
+ * access. Links written before approval was required, or whose owner's user
+ * record has since expired, are deleted here. Otherwise approving that person
+ * later would quietly revive an old token instead of issuing a fresh one.
+ *
+ * Runs once at startup, while initialization holds `changeLock`.
+ */
+async function prunePersonalLinksWithoutApproval() {
+	const approved = new Set(users.filter(u => u.generalAccessApproved).map(u => u.id));
+	const kept = personalAccess.filter(p => approved.has(p.userId));
+	const removed = personalAccess.length - kept.length;
+	if (removed === 0) return;
+
+	for (const p of personalAccess) {
+		if (!approved.has(p.userId)) accessByToken.delete(p.token);
+	}
+	personalAccess.splice(0, personalAccess.length, ...kept);
+	console.warn(
+		`⚠️ [${MODULE_INSTANCE_ID}] Removed ${removed} personal gate link(s) whose owner isn't approved for general gate access`,
+	);
+	await writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess);
+}
+
 function getArrayName(array: unknown[]): string {
 	if (array === reservations) return "reservations";
 	if (array === blackouts) return "blackouts";
@@ -827,6 +1978,8 @@ function getArrayName(array: unknown[]): string {
 	if (array === users) return "users";
 	if (array === houseTeams) return "houseTeams";
 	if (array === slackMappings) return "slackMappings";
+	if (array === teamAccess) return "teamAccess";
+	if (array === personalAccess) return "personalAccess";
 	return "unknown";
 }
 
@@ -848,15 +2001,44 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(users));
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
+	jobs.push(initializePart(teamAccess));
+	jobs.push(initializePart(personalAccess));
 
 	await Promise.all(jobs);
 
+	// Needs both users and personal links loaded, and still holds the lock.
+	await prunePersonalLinksWithoutApproval();
+
 	globalThis.__backendInitialized = true;
 	done();
+
+	startSlackNameSync();
 })().catch(err => {
 	console.error(`❌ [${MODULE_INSTANCE_ID}] Error initializing data - PID: ${process.pid}:`, err);
 	exit(1); // Exit the process on initialization error
 });
+
+// ===== Access (Tool Authorization) =====
+/**
+ * Resolve an access token (team or personal) and decide whether it currently
+ * grants the given tool. Gate Manager and other tool integrations call this on
+ * every interaction via /api/access/check.
+ *
+ * Callers must already have authenticated themselves with the scheduler bearer
+ * token before reaching here; this function trusts that and just runs policy.
+ */
+export async function checkAccess(token: string, tool: string): Promise<AccessCheckResult> {
+	await initialized();
+	const indexed = accessByToken.get(token);
+	if (!indexed) return evaluateAccess(undefined, tool, reservations);
+
+	if (indexed.kind === "team") return evaluateAccess({ kind: "team", team: indexed.entry.team }, tool, reservations);
+
+	// Resolve the live user so disabling or a broken Slack name takes effect
+	// immediately. A link whose user has since expired grants nothing.
+	const user = users.find(u => u.id === indexed.entry.userId);
+	return evaluateAccess(user ? { kind: "personal", user } : undefined, tool, reservations);
+}
 
 // ===== Calendar Feed Helpers =====
 /**

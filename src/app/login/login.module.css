@@ -282,3 +282,39 @@
 	border-radius: 8px;
 	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
+
+.retryButton {
+	display: inline-block;
+	margin-top: 12px;
+	background: #4a154b;
+	color: white;
+	border: none;
+	border-radius: 8px;
+	padding: 10px 20px;
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.2s ease;
+}
+
+.retryButton:hover:not(:disabled) {
+	background: #611f69;
+}
+
+.retryButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.retryHint {
+	margin-top: 8px;
+	font-size: 12px;
+	font-style: italic;
+	color: #718096;
+}
+
+@media (prefers-color-scheme: dark) {
+	.retryHint {
+		color: #a0aec0;
+	}
+}

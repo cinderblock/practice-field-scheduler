@@ -1,0 +1,39 @@
+.controls {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	min-width: 0;
+	/* The users table sets nowrap on cells; these controls need to wrap. */
+	white-space: normal;
+}
+
+.statusLine {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 0.6rem;
+}
+
+/* The desktop table has a column header; phones show the label inline. */
+.label {
+	display: none;
+	font-size: 0.8rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-secondary);
+}
+
+.confirm,
+.reveal {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+	.label {
+		display: inline;
+		margin-right: auto;
+	}
+}

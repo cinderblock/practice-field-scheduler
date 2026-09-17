@@ -31,14 +31,20 @@ reuse the same endpoint with a different `tool` identifier. See
   `C:\Users\camer\.t3\worktrees\practice-field-scheduler\t3code-b9d31dd3`.
   It has since landed on `master` and was merged into this branch
   (`e82e1ec`). **Still, don't do blackout-days work in this tree.**
-- Deploys:
-  - Scheduler production: merge to `master`, then `Test`, then `Deploy`
-    (self-hosted runner: `/opt/practice-field-scheduler`,
-    `practice-field-scheduler.service`).
-  - Scheduler staging: any non-`master` push deploys to
-    `https://practice-field-scheduler-staging.tomsawyerlabs.com`
-    (`/opt/practice-field-scheduler-staging`, exits after 60 minutes).
-  - Gate Manager production: push to its `master`.
+- Deploys, **as of 2026-09-17**: ops owns which version runs on our servers.
+  An app repo builds a container image and stops; a pinned digest in
+  `cinderblock/ops` decides what runs, and only an ops push applies it.
+  See ops' `plans/ops-owned-app-deploys.md`, its `add-app` skill and its
+  `CLAUDE.md`.
+  - Scheduler: push `master` → `build.yml` publishes
+    `ghcr.io/cinderblock/practice-field-scheduler:<sha>`. Then a human
+    edits `servers/steamboat/stacks/practice-field-scheduler/pin.json`
+    in ops. Rollback = revert that edit.
+  - Gate Manager: the same, already migrated; its stack is pinned to
+    `d9afa7e`, the commit from this work.
+  - The old path (a self-hosted runner in the app repo restarting
+    `practice-field-scheduler.service`) is deleted here and is retired on
+    the box during the cutover.
 
 ### New env vars
 
@@ -532,15 +538,24 @@ the bot scope **`users:read`**.
       (`PRACTICE_FIELD_SCHEDULER_API_KEY`,
       `PRACTICE_FIELD_SCHEDULER_SLACK_BOT_TOKEN`).
 - [x] Merged to `master` (`e1225a1`) and deployed to production, 2026-09-17.
+- [x] **Reworked for ops-owned deploys** (user, 2026-09-17: "can you rework
+      your plan/implementation to work in the new paradigm?"). The app-side
+      steps of ops' plan, on branch `ops-owned-deploy`: - `e910727` (N1): the four `NEXT_PUBLIC_*` settings became runtime
+      server settings, reaching client components through a provider.
+      Shared helpers take them as arguments. 306 tests still pass. - `3a3615b` (N2): `Dockerfile` (Next standalone, Node 22, non-root
+      uid 10001), `.dockerignore`, `build.yml` on `ubuntu-latest`
+      publishing the image with the revision label and a `pin.json`
+      summary; `deploy.yml`, `deploy-staging.yml` and `deploy/` deleted. - Not pushed yet.
 - [ ] **Production still has none of the three settings**, so gate access
-      is off. The ops plan replaced its host-layout "stage 1" with a
-      container cutover (its steps C4–C11), built and tested locally but
-      uncommitted. That plan's session is gone; the user said there isn't
-      another thread, so it needs an owner.
-      - The Slack bot token only exists as a GitHub secret now, so a
-        hand-edit of production's `.env` would need the user to paste it
-        again. The container deploy reads it from GitHub instead.
-- [ ] Branch merged to `master` (production deploy).
+      is off. It arrives with the stack: session `ops-88` has staged both
+      stacks (production and staging) under
+      `plans/ops-owned-app-deploys/steamboat/` in ops, with the settings as
+      literals and the secrets by `from`. - Seven of the nine secrets don't exist on ops yet; only
+      `PRACTICE_FIELD_SCHEDULER_API_KEY` and `…_SLACK_BOT_TOKEN` do. The
+      rest are still only in `/opt/practice-field-scheduler/.env` and
+      get piped across during the cutover.
+- [ ] Image published, then `pin.json` filled in and the stacks activated
+      (ops-88 owns that; it needs the user's yes and its own prerequisites).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user

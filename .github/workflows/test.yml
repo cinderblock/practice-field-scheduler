@@ -1,13 +1,19 @@
 name: Test
 
+# This repo is public. `pull_request`, not `pull_request_target`: the job checks
+# out the contributor's code and runs `npm ci` and their tests, so it must not
+# hold anything worth stealing. On `pull_request` a fork's run gets no secrets
+# and a read-only token; the old `pull_request_target` gave that same untrusted
+# code the repo's secrets and a write-scoped token. (No fork ever triggered it,
+# so nothing was exposed — but any fork PR could have.)
 on:
   push:
-  pull_request_target:
+  pull_request:
 
 jobs:
   test:
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     env:
       DATA_DIR: .tmp/ci-data
@@ -15,9 +21,10 @@ jobs:
       ENABLE_SOURCEMAPS: "true"
 
     steps:
+      # No `ref:` — `pull_request` checks out the merge commit, which is what
+      # should be tested. Naming head.sha here is only needed (and only safe)
+      # with pull_request_target, which this deliberately isn't.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -56,8 +63,11 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Pushes only. This job needs write access to publish to gh-pages, so it must
+  # never run in the same workflow as a fork's code; a PR from a fork still gets
+  # the allure-results artifact from the job above.
   publish-test-report:
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name == 'push' }}
     needs: test
     permissions:
       contents: write

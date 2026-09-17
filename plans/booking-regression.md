@@ -131,7 +131,16 @@ false` in `src/server/backend.ts`. Enforcing a rule that has never actually
 - [ ] Confirm a real non-admin booking works (needs the reporting user to retry;
       `journalctl -u practice-field-scheduler -g "refused|mismatch"` will say
       what happened either way)
-- [ ] Hand the published image digest to the ops session for the eventual pin
+- [x] Handed the published image digest to the ops session for the eventual pin:
+      `ghcr.io/cinderblock/practice-field-scheduler@sha256:8a48be6e05a00ddaf7516db28f3190dcec979dbceae48aa3e8a7d41046715412`,
+      revision `4f28f1f`, verified pullable anonymously. Production is **not**
+      running that image -- steamboat is still the systemd path built from
+      source. Note `build.yml`'s concurrency group cancels an in-flight build on
+      the next push, so the `a33d200` image never published; a plan-only commit
+      wants `[skip ci]`.
+- [ ] Decide whether `SLACK_BOT_TOKEN`, `SCHEDULER_API_KEY` and `GATE_BASE_URL`
+      go into the box's `.env` now or wait for the ops stack to own them (see
+      Deploy notes)
 
 ## Deploy notes (2026-09-17)
 

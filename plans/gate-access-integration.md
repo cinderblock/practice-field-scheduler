@@ -567,17 +567,24 @@ the bot scope **`users:read`**.
       Shared helpers take them as arguments. 306 tests still pass. - `3a3615b` (N2): `Dockerfile` (Next standalone, Node 22, non-root
       uid 10001), `.dockerignore`, `build.yml` on `ubuntu-latest`
       publishing the image with the revision label and a `pin.json`
-      summary; `deploy.yml`, `deploy-staging.yml` and `deploy/` deleted. - Not pushed yet.
+      summary; `deploy.yml`, `deploy-staging.yml` and `deploy/` deleted.
+- [x] **Merged and the first image published** (user: "do it", 2026-09-17).
+      `master` is `daa77ab` by fast-forward, PR #22 merged, `Test` and
+      `Build image` green, and **no** `Deploy` ran — `deploy.yml` is gone,
+      so the live service keeps serving its old build until the cutover. - `ghcr.io/cinderblock/practice-field-scheduler@sha256:5eb4ea3c71636b740ddc6865fb6d7bc58200f7478c45e984dfd62c3e15a1e97c` - Checked against the registry, not just the build log: anonymous
+      pull works (public, so ops needs no pull token),
+      `org.opencontainers.image.revision` is `daa77ab…`, and the amd64
+      config has `User app` (uid 10001), port 3000, `node server.js`. - Pin sent to `ops-88`.
 - [ ] **Production still has none of the three settings**, so gate access
-      is off. It arrives with the stack: session `ops-88` has staged both
-      stacks (production and staging) under
-      `plans/ops-owned-app-deploys/steamboat/` in ops, with the settings as
-      literals and the secrets by `from`. - Seven of the nine secrets don't exist on ops yet; only
+      is off until the cutover. The stack is staged at
+      `plans/ops-owned-app-deploys/steamboat/practice-field-scheduler/` in
+      ops (staging dropped, 2026-09-17), waiting only on the pin. - Five secrets still don't exist on ops; only
       `PRACTICE_FIELD_SCHEDULER_API_KEY` and `…_SLACK_BOT_TOKEN` do. The
-      rest are still only in `/opt/practice-field-scheduler/.env` and
-      get piped across during the cutover.
-- [ ] Image published, then `pin.json` filled in and the stacks activated
-      (ops-88 owns that; it needs the user's yes and its own prerequisites).
+      rest are in `/opt/practice-field-scheduler/.env` and get piped
+      across during the cutover. - The data bind mount must be chowned to uid 10001 after the copy,
+      or the app can't write on first boot.
+- [ ] Cutover: pin filled in, stack activated, Caddy switched, old unit and
+      runner retired (`ops-88` owns it; needs the user's yes).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Open questions for the user

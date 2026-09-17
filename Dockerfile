@@ -17,8 +17,14 @@ COPY . .
 # The deployment's settings aren't known at build time and mustn't be baked in —
 # that's why none of them are NEXT_PUBLIC_*. `next build` still imports
 # src/env.js, so skip its validation here; the server validates at startup.
+#
+# DATA_DIR still has to be *something*: the backend resolves it at module scope,
+# and `next build` loads that module while collecting page data. The build also
+# creates empty JSON files under it, so point it at a throwaway path inside the
+# build stage — never /data, which is where the real data is mounted at runtime.
 ENV SKIP_ENV_VALIDATION=1 \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    DATA_DIR=/tmp/build-data
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

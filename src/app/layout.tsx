@@ -7,6 +7,12 @@ import { env } from "~/env";
 import { TRPCReactProvider } from "~/trpc/react";
 import { AppConfigProvider } from "./_components/AppConfig";
 
+// Every page is rendered per request. Otherwise Next prerenders the ones it
+// thinks are static (/login, /_not-found) at build time, when the deployment's
+// settings don't exist yet — the login page shipped with no <title> at all.
+// Nothing here is worth serving from build-time HTML: it's all session-driven.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
 	title: env.SITE_TITLE,
 	description: "Schedule your practice field time",

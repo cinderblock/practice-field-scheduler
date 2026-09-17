@@ -1,7 +1,7 @@
 # Practice Field Reservation System
 
 [![Test](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/test.yml/badge.svg)](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/test.yml)
-[![Deploy](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/deploy.yml/badge.svg)](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/deploy.yml)
+[![Build image](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/build.yml/badge.svg)](https://github.com/cinderblock/practice-field-scheduler/actions/workflows/build.yml)
 
 ## Setup
 
@@ -15,6 +15,14 @@ npm install
 ### Environment Variables
 
 Copy `.env.example` to `.env` and fill in the required environment variables.
+
+Every setting is read at runtime, including the four the browser needs
+(`SITE_TITLE`, `TIME_ZONE`, `TIME_SLOT_BORDERS`, `RESERVATION_DAYS`). They are
+deliberately **not** `NEXT_PUBLIC_*`, which Next.js would bake into the bundle
+at build time: one image is built by CI and then run by whichever deployment ops
+points at it. The root layout reads them and hands them to client components
+through `AppConfigProvider` (`src/app/_components/AppConfig.tsx`); code that
+needs them outside React takes them as arguments.
 
 Use `npx auth secret --raw` to generate a new `AUTH_SECRET`.
 See [Auth.js CLI](https://cli.authjs.dev) for more information.
@@ -291,4 +299,34 @@ Generate the API key with:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+## Deployment
+
+This repo **does not deploy itself.** Pushing `master` builds a container image
+and stops there:
+
+```
+push master → build.yml on ubuntu-latest
+              checks, tests, docker build
+              → ghcr.io/cinderblock/practice-field-scheduler:<sha>
+```
+
+What actually runs on the server is named in the private ops repo
+(`cinderblock/ops`) by an image **digest**, in
+`servers/steamboat/stacks/practice-field-scheduler/pin.json`. Only a push to ops
+changes it, so shipping is two steps:
+
+1. Push here. The build job's summary prints a ready-to-paste `pin.json`.
+2. Paste it into that file in ops and push. Rolling back is reverting that edit.
+
+The runtime composition — ports, volumes, settings and secrets — lives in the
+same ops directory, not here. This repo holds no host credentials and has no
+self-hosted runner.
+
+Run the image locally with an `.env` file:
+
+```bash
+docker build -t pfs .
+docker run --rm -p 3000:3000 --env-file .env -e DATA_DIR=/data -v "$PWD/data:/data" pfs
 ```

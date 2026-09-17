@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+.next
+out
+coverage
+allure-results
+allure-report
+playwright-report
+test-results
+data
+plans
+deploy
+*.log
+.env
+.env.*
+!.env.example

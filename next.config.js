@@ -8,6 +8,10 @@ const NextAuthURL = process.env.NEXTAUTH_URL;
 
 /** @type {import("next").NextConfig} */
 const config = {
+	// The deployed artifact is a container image (see the README's Deployment
+	// section): `standalone` emits .next/standalone with only the traced
+	// dependencies, which is what the image runs with `node server.js`.
+	output: "standalone",
 	productionBrowserSourceMaps: process.env.ENABLE_SOURCEMAPS === "true",
 	allowedDevOrigins: [NextAuthURL?.replace("https://", "") ?? "localhost"],
 	images: {

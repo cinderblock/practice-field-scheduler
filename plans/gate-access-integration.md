@@ -277,14 +277,16 @@ consult the `home-assistant-best-practices` skill first.
       - The settings ship in ops' stage 1 (env and unit), ahead of runner
         adoption.
 
-   4. Merge the scheduler branch to `master` **(needs the user's yes;
-      production deploy)**. Production deploys after the `Test` workflow
-      passes. Until then, production has no `/api/access/check` (404), so
-      every gate link shows "Service unavailable". That's expected; nothing
-      regressed.
-      - Merging before ops stage 1 is harmless but pointless: production
-        would answer 503 instead of 404, and the names panel would say the
-        bot token isn't configured.
+   4. ✅ Merged to `master` as `e1225a1` (user: "merge scheduler",
+      2026-09-17), a merge commit on top of `93c27f9`. CI `Test` ✅
+      (`35254386747`), `Deploy` ✅ (`35254619731`). Production `/login`
+      answers 200.
+      - **Gate access is deployed but switched off**, as expected:
+        `/api/access/check` answers 503 "SCHEDULER_API_KEY unset", and a
+        gate link shows "Service unavailable". Production's `.env` has
+        none of the three settings yet.
+      - Checked on the merge before pushing: biome, prettier, tsc, 306
+        tests and `next build`.
    5. Approve the people who should have general access. Nobody has it
       until then.
    6. Drive a real link through `/g/:token` on a phone, in and out of site
@@ -529,8 +531,15 @@ the bot scope **`users:read`**.
 - [x] Both production secrets in the ops `steamboat` environment
       (`PRACTICE_FIELD_SCHEDULER_API_KEY`,
       `PRACTICE_FIELD_SCHEDULER_SLACK_BOT_TOKEN`).
-- [ ] Ops stage 1 renders them (and `GATE_BASE_URL`) into production's
-      `.env`. Ops plan owner.
+- [x] Merged to `master` (`e1225a1`) and deployed to production, 2026-09-17.
+- [ ] **Production still has none of the three settings**, so gate access
+      is off. The ops plan replaced its host-layout "stage 1" with a
+      container cutover (its steps C4–C11), built and tested locally but
+      uncommitted. That plan's session is gone; the user said there isn't
+      another thread, so it needs an owner.
+      - The Slack bot token only exists as a GitHub secret now, so a
+        hand-edit of production's `.env` would need the user to paste it
+        again. The container deploy reads it from GitHub instead.
 - [ ] Branch merged to `master` (production deploy).
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 

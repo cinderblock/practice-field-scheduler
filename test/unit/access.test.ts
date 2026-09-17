@@ -7,9 +7,11 @@ import {
 	describeSiteHours,
 	evaluateAccess,
 	formatHour,
+	hasValidSlackNames,
 	isPersonalAccessEligible,
 	SITE_CLOSE_HOUR,
 	SITE_OPEN_HOUR,
+	slackNameCheckFor,
 } from "~/server/access";
 import type { Reservation, TeamFull, UserEntry } from "~/types";
 
@@ -23,6 +25,7 @@ const mentor: UserEntry = {
 	email: "jane@example.com",
 	image: "",
 	generalAccessApproved: true,
+	slackNamesSyncedAt: new Date("2026-05-01T00:00:00Z"),
 };
 
 const teamReservation: Reservation = {
@@ -253,10 +256,28 @@ describe("isPersonalAccessEligible", () => {
 		expect(isPersonalAccessEligible({ ...mentor, disabled: true })).toBe(false);
 	});
 
-	it("refuses an approved account whose Slack name no longer parses", () => {
+	it("refuses an approved account whose Slack names don't follow the rules", () => {
 		expect(isPersonalAccessEligible({ ...mentor, displayName: "Robotics Laptop", name: "Robotics Laptop" })).toBe(
 			false,
 		);
+		expect(isPersonalAccessEligible({ ...mentor, name: "Jane Doe (1234)" })).toBe(false);
+	});
+
+	it("refuses an approved account whose names were never read from Slack", () => {
+		const { slackNamesSyncedAt: _, ...unchecked } = mentor;
+		expect(isPersonalAccessEligible(unchecked)).toBe(false);
+	});
+});
+
+describe("slackNameCheckFor", () => {
+	it("checks stored names once they've come from Slack", () => {
+		expect(slackNameCheckFor(mentor).ok).toBe(true);
+		expect(slackNameCheckFor({ ...mentor, displayName: undefined }).issues).toEqual(["display_name_missing"]);
+	});
+
+	it("counts names that never came from Slack as unverified, whatever they say", () => {
+		expect(slackNameCheckFor({ ...mentor, slackNamesSyncedAt: undefined }).issues).toEqual(["unverified"]);
+		expect(hasValidSlackNames({ ...mentor, slackNamesSyncedAt: undefined })).toBe(false);
 	});
 });
 

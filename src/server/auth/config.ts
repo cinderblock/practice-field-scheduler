@@ -1,7 +1,8 @@
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import SlackProvider from "next-auth/providers/slack";
 import { env } from "../../env.js";
-import { isValidSlackName } from "../util/slackName";
+import { getSlackMember } from "../slack";
+import { checkSlackNames } from "../util/slackName";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -13,7 +14,6 @@ declare module "next-auth" {
 	interface Session extends DefaultSession {
 		user: {
 			id: string;
-			displayName?: string; // Slack display_name
 			// ...other properties
 			// role: UserRole;
 		} & DefaultSession["user"];
@@ -40,13 +40,15 @@ export const authConfig = {
 					team: env.AUTH_SLACK_TEAM_ID,
 				},
 			},
+			// Sign in with Slack (OpenID Connect) carries a single `name` claim and no
+			// display name. The Slack names the scheduler checks come from the Web
+			// API instead; see `syncSlackNames` in the backend.
 			profile(profile) {
 				return {
 					id: profile.sub,
-					name: profile.name, // real_name from Slack
+					name: profile.name,
 					email: profile.email,
 					image: profile.picture,
-					displayName: profile["https://slack.com/user_name"] as string | undefined, // display_name from Slack
 				};
 			},
 		}),
@@ -61,29 +63,35 @@ export const authConfig = {
 		 */
 	],
 	callbacks: {
-		signIn: ({ profile }) => {
+		/**
+		 * With STRICT_SLACK_NAMES on, refuse sign-in until the person's Slack names
+		 * follow the rules, read from Slack's Web API. If the names can't be read
+		 * (no bot token, no `users:read`, Slack down), sign-in is allowed: gate
+		 * links are held separately, and an outage shouldn't lock everyone out.
+		 */
+		signIn: async ({ profile }) => {
 			if (!env.STRICT_SLACK_NAMES) return true;
-			if (!profile) return true;
-			const displayName = profile["https://slack.com/user_name"] as string | undefined;
-			const realName = (profile.name as string | undefined) ?? undefined;
-			const candidate = (displayName ?? "").trim() || (realName ?? "").trim();
-			if (isValidSlackName(candidate)) return true;
-			// Redirect to the login page with a custom error so we can render
-			// fix-your-name instructions instead of a generic auth failure.
-			return "/login?error=BadSlackName";
-		},
-		jwt: ({ token, profile }) => {
-			if (profile) {
-				token.displayName = profile.displayName;
+			const slackId = profile?.sub;
+			if (!slackId) return true;
+
+			let member: Awaited<ReturnType<typeof getSlackMember>>;
+			try {
+				member = await getSlackMember(slackId);
+			} catch (err) {
+				console.warn(`STRICT_SLACK_NAMES: couldn't read Slack names for ${slackId}; allowing sign-in:`, err);
+				return true;
 			}
-			return token;
+			if (!member) return true;
+			if (checkSlackNames(member).ok) return true;
+			// Redirect to the login page with a custom error so we can render
+			// fix-your-names instructions instead of a generic auth failure.
+			return "/login?error=BadSlackName";
 		},
 		session: ({ session, token }) => ({
 			...session,
 			user: {
 				...session.user,
 				id: token.sub,
-				displayName: token.displayName as string | undefined,
 			},
 		}),
 		redirect: async () => "/",

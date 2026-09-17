@@ -1,5 +1,5 @@
 import type { Reservation, TeamFull, UserEntry } from "~/types";
-import { parseSlackName, pickNameForValidation } from "./util/slackName";
+import { checkSlackNames, type SlackNameCheck, UNVERIFIED_NAMES } from "./util/slackName";
 import { atFieldTime, fieldDateOf, getReservationWindow, parseEventDate } from "./util/slotTime";
 
 /** Tools the scheduler is willing to be asked about. */
@@ -85,8 +85,8 @@ export type AccessCheckResult = AccessCheckSuccess | AccessCheckDenial;
 
 /**
  * Whatever the presented token resolved to. For a personal link, pass the
- * live user record so disabling, blocking or a broken Slack name takes effect
- * on the very next check.
+ * live user record so disabling, revoking or broken Slack names take effect on
+ * the very next check.
  */
 export type AccessPrincipal = { kind: "team"; team: TeamFull } | { kind: "personal"; user: UserEntry };
 
@@ -174,18 +174,29 @@ export function computeAccessWindow(reservation: Reservation): Window | null {
 /**
  * Whether a user should hold a working personal link: an admin has approved
  * them for general gate access, the account isn't disabled, and their Slack
- * display name is still in the expected format. Team membership isn't
- * required — admins and `(TSL)` lab mates can be approved too.
+ * names follow the rules. Team membership isn't required — admins and `(TSL)`
+ * lab mates can be approved too.
  */
 export function isPersonalAccessEligible(user: UserEntry): boolean {
 	if (user.disabled) return false;
 	if (!user.generalAccessApproved) return false;
-	return hasValidSlackName(user);
+	return hasValidSlackNames(user);
 }
 
-/** Whether a user's Slack display name parses in the expected format. */
-export function hasValidSlackName(user: UserEntry): boolean {
-	return parseSlackName(pickNameForValidation(user)) !== null;
+/**
+ * Check a user's stored Slack names. Names that were never read from Slack's
+ * Web API count as wrong: sign-in alone can't see the display name.
+ */
+export function slackNameCheckFor(
+	user: Pick<UserEntry, "name" | "displayName" | "slackNamesSyncedAt">,
+): SlackNameCheck {
+	if (!user.slackNamesSyncedAt) return UNVERIFIED_NAMES;
+	return checkSlackNames({ realName: user.name, displayName: user.displayName });
+}
+
+/** Whether a user's Slack names are verified and follow the rules; gate links wait on this. */
+export function hasValidSlackNames(user: Pick<UserEntry, "name" | "displayName" | "slackNamesSyncedAt">): boolean {
+	return slackNameCheckFor(user).ok;
 }
 
 /**

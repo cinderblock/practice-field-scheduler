@@ -11,9 +11,9 @@ const STATUS: Record<PersonalAccessStatus, { chip: string; tone: string; detail?
 	not_issued: { chip: "Approved", tone: ui.chipInfo as string, detail: "Their link goes out at their next sign-in." },
 	not_approved: { chip: "Not approved", tone: ui.chipMuted as string },
 	invalid_name: {
-		chip: "Approved · link inactive",
+		chip: "Approved · link on hold",
 		tone: ui.chipWarn as string,
-		detail: "Their Slack name isn't in the “First Last (1234)” format.",
+		detail: "Held until their Slack names follow the format.",
 	},
 	disabled: { chip: "Account disabled", tone: ui.chipMuted as string },
 };
@@ -101,7 +101,7 @@ export function GeneralAccessControls({
 		run(async () => {
 			const result = await setApproved.mutateAsync({ userId, approved: true });
 			await onChanged();
-			if (!result.linkIssued) return "Approved. The link is issued once their Slack name is in the expected format.";
+			if (!result.linkIssued) return "Approved. Their link goes out once their Slack names follow the format.";
 			if (result.notified === 0 && result.failed === 0 && result.skipped === null)
 				return "Approved. They already have their link.";
 			return deliveryText("Approved", result);

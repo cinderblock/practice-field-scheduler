@@ -71,6 +71,13 @@ export type UserEntry = {
 	// hold a personal gate link; nobody has one by default, so shared or
 	// unverified accounts simply never get approved.
 	generalAccessApproved?: boolean;
+	// When `name` and `displayName` were last taken from Slack's Web API.
+	// Unset means they've never been verified there (sign-in alone can't see
+	// the display name), so gate links are held.
+	slackNamesSyncedAt?: Date;
+	// The (full name, display name) pair we last DM'd this person about fixing,
+	// so each wrong pair is only raised once.
+	slackNameNudgeSentFor?: string;
 };
 
 /**

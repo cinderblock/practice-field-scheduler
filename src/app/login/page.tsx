@@ -37,14 +37,16 @@ function BadSlackNameError() {
 	return (
 		<div className={styles.error}>
 			<p>
-				<strong>Your Slack display name doesn't match the required format.</strong>
+				<strong>Your Slack names don't follow the required format.</strong>
 			</p>
 			<p>
-				Please update it to <code>First Last (1234)</code> (where <code>1234</code> is your FRC team number), then come
-				back to this tab. For multiple teams use a comma, e.g. <code>First Last (1234, 5678)</code>.
+				<strong>Full name</strong>: just your name, e.g. <code>Jane Doe</code>.
+				<br />
+				<strong>Display name</strong>: your name, then your FRC team number in parentheses, e.g.{" "}
+				<code>Jane Doe (1234)</code>. For multiple teams use a comma: <code>Jane Doe (1234, 5678)</code>.
 			</p>
 			<p>
-				In Slack: <em>Profile → Edit profile → Display name</em>.
+				In Slack, open your profile and choose <em>Edit Profile</em>, then come back to this tab.
 			</p>
 			<button
 				type="button"

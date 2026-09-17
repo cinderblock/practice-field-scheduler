@@ -9,7 +9,15 @@ vi.mock("~/env", () => ({
 	env: envState,
 }));
 
-const { isSlackConfigured, sendDirectMessage, SlackApiError, SlackNotConfiguredError } = await import("~/server/slack");
+const {
+	getSlackMember,
+	isMissingScope,
+	isSlackConfigured,
+	listSlackMembers,
+	sendDirectMessage,
+	SlackApiError,
+	SlackNotConfiguredError,
+} = await import("~/server/slack");
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -105,5 +113,95 @@ describe("sendDirectMessage", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+function formBody(call: unknown[]): Record<string, string> {
+	const init = call[1] as RequestInit;
+	expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/x-www-form-urlencoded");
+	return Object.fromEntries(new URLSearchParams(init.body as string));
+}
+
+const person = (id: string, real_name: string, display_name: string, extra: Record<string, unknown> = {}) => ({
+	id,
+	profile: { real_name, display_name },
+	...extra,
+});
+
+describe("getSlackMember", () => {
+	it("reads both names with a form-encoded users.info call", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ ok: true, user: person("U1", "Jane Doe", "Jane Doe (1234)") }));
+		expect(await getSlackMember("U1")).toEqual({
+			id: "U1",
+			realName: "Jane Doe",
+			displayName: "Jane Doe (1234)",
+			deleted: false,
+		});
+		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://slack.com/api/users.info");
+		expect(formBody(fetchMock.mock.calls[0] as unknown[])).toEqual({ user: "U1" });
+	});
+
+	it("treats a missing display name as empty and reports deactivated accounts", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ ok: true, user: { id: "U1", deleted: true, profile: {} } }));
+		expect(await getSlackMember("U1")).toEqual({ id: "U1", realName: "", displayName: "", deleted: true });
+	});
+
+	it("returns null for bots, app users, Slackbot and unknown IDs", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true, user: person("B1", "Bot", "", { is_bot: true }) }));
+		expect(await getSlackMember("B1")).toBeNull();
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true, user: person("A1", "App", "", { is_app_user: true }) }));
+		expect(await getSlackMember("A1")).toBeNull();
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true, user: person("USLACKBOT", "Slackbot", "") }));
+		expect(await getSlackMember("USLACKBOT")).toBeNull();
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: false, error: "user_not_found" }));
+		expect(await getSlackMember("U404")).toBeNull();
+	});
+
+	it("throws on a response without a user, and flags a missing scope", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+		await expect(getSlackMember("U1")).rejects.toBeInstanceOf(SlackApiError);
+
+		fetchMock.mockResolvedValueOnce(jsonResponse({ ok: false, error: "missing_scope", needed: "users:read" }));
+		const err = await getSlackMember("U1").catch(e => e);
+		expect(isMissingScope(err)).toBe(true);
+		expect(isMissingScope(new Error("missing_scope"))).toBe(false);
+	});
+});
+
+describe("listSlackMembers", () => {
+	it("follows cursors until the last page, keeping only people", async () => {
+		fetchMock
+			.mockResolvedValueOnce(
+				jsonResponse({
+					ok: true,
+					members: [person("U1", "Jane Doe", "Jane Doe (1234)"), person("B1", "Bot", "", { is_bot: true })],
+					response_metadata: { next_cursor: "page2" },
+				}),
+			)
+			.mockResolvedValueOnce(
+				jsonResponse({
+					ok: true,
+					members: [person("U2", "Old Mentor", "", { deleted: true })],
+					response_metadata: { next_cursor: "" },
+				}),
+			);
+
+		expect(await listSlackMembers()).toEqual([
+			{ id: "U1", realName: "Jane Doe", displayName: "Jane Doe (1234)", deleted: false },
+			{ id: "U2", realName: "Old Mentor", displayName: "", deleted: true },
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(formBody(fetchMock.mock.calls[0] as unknown[])).toEqual({ limit: "200" });
+		expect(formBody(fetchMock.mock.calls[1] as unknown[])).toEqual({ limit: "200", cursor: "page2" });
+	});
+
+	it("never reads a response without members as an empty workspace", async () => {
+		fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+		await expect(listSlackMembers()).rejects.toBeInstanceOf(SlackApiError);
+	});
+
+	it("throws SlackNotConfiguredError without a token", async () => {
+		envState.SLACK_BOT_TOKEN = undefined;
+		await expect(listSlackMembers()).rejects.toBeInstanceOf(SlackNotConfiguredError);
 	});
 });

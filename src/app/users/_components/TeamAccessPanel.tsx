@@ -6,7 +6,7 @@ import ui from "./adminUi.module.css";
 import styles from "./TeamAccessPanel.module.css";
 
 type RevealState = { team: string; url: string | null; token: string };
-type Rotation = { team: string; notified: number; failed: number; slackConfigured: boolean };
+type Rotation = { team: string; notified: number; failed: number; held: number; slackConfigured: boolean };
 
 const cx = (...names: Array<string | false | undefined>) => names.filter(Boolean).join(" ");
 
@@ -17,12 +17,22 @@ function issuedText(t: { hasLink: boolean; created: Date | null; rotated: Date |
 	return t.rotated ? `replaced ${date}` : `issued ${date}`;
 }
 
+function heldText(held: number): string {
+	if (held === 0) return "";
+	return held === 1
+		? " 1 member's Slack names need fixing, so they get it once they're fixed."
+		: ` ${held} members' Slack names need fixing, so they get it once theirs are fixed.`;
+}
+
 function rotationText(r: Rotation): string {
 	if (!r.slackConfigured) return "Slack isn't configured, so nobody was DM'd — reveal the link and pass it on.";
-	if (r.notified === 0 && r.failed === 0)
-		return "No members with a Slack account to DM — reveal the link and pass it on.";
+	if (r.notified === 0 && r.failed === 0) {
+		return r.held > 0
+			? `Nobody was DM'd.${heldText(r.held)}`
+			: "No members with a Slack account to DM — reveal the link and pass it on.";
+	}
 	const dmd = `DM'd ${r.notified} member${r.notified === 1 ? "" : "s"}`;
-	return `${dmd}${r.failed > 0 ? `, ${r.failed} failed` : ""}. Anyone missed gets the new link at their next sign-in.`;
+	return `${dmd}${r.failed > 0 ? `, ${r.failed} failed` : ""}. Anyone missed gets the new link at their next sign-in.${heldText(r.held)}`;
 }
 
 /**

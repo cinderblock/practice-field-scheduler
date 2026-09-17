@@ -1,18 +1,20 @@
 import type { Team } from "~/types";
 
 /**
- * Slack-display-name format the scheduler expects:
- *   "First Last (1234)"           // single team
- *   "First Last (1234, 5678)"    // multiple teams, comma-separated
- *   "First Last (TSL)"            // approved non-team marker (lab mates)
+ * Slack name rules. A person's two Slack names do different jobs:
  *
- * The text before the parens is treated opaquely (any non-empty content);
- * what matters is that the contents of the trailing parens either parse
- * as one-or-more team numbers OR exactly match one of the approved
- * non-team role markers below.
+ *   Full name      "Jane Doe"                 just a name
+ *   Display name   "Jane Doe (1234)"          a name, then affiliation(s) in parens
+ *                  "Jane Doe (1234, 5678)"    several teams, comma-separated
+ *                  "Jane Doe (TSL)"           approved non-team marker (lab mates)
+ *
+ * "Just a name" means no parentheses or brackets and no digits, so team
+ * numbers can only ever come from the display name's trailing parens. The two
+ * names don't have to match; nicknames are fine.
  */
 const NAME_WITH_SUFFIX = /^\s*(?<displayName>\S.*\S|\S)\s*\(\s*(?<suffix>[^)]+?)\s*\)\s*$/;
 const TEAMS_SUFFIX = /^\d+(?:\s*,\s*\d+)*$/;
+const NOT_JUST_A_NAME = /[()[\]{}<>\d]/;
 
 /**
  * Approved non-team parens markers. Names ending in `(TSL)` belong to lab
@@ -43,8 +45,10 @@ function asApprovedRole(suffix: string): ApprovedRole | null {
 }
 
 /**
- * Parse a Slack display name in the expected format. Returns null if the
- * string doesn't match either grammar (team-number list or approved role).
+ * Split a display name into its name and its "(…)" affiliation. Returns null
+ * if the trailing parens aren't a team-number list or an approved role. Says
+ * nothing about whether the name part is "just a name"; see
+ * {@link checkSlackNames} for the full rules.
  */
 export function parseSlackName(name: string | null | undefined): ParsedSlackName | null {
 	if (!name) return null;
@@ -64,16 +68,128 @@ export function parseSlackName(name: string | null | undefined): ParsedSlackName
 	return { displayName: displayName.trim(), teams, role: null };
 }
 
-export function isValidSlackName(name: string | null | undefined): boolean {
-	return parseSlackName(name) !== null;
+/** Not empty, and no parentheses, brackets or digits. */
+export function isJustAName(value: string | null | undefined): boolean {
+	const v = value?.trim();
+	return Boolean(v) && !NOT_JUST_A_NAME.test(v as string);
+}
+
+/** What's wrong with someone's Slack names. */
+export type SlackNameIssue =
+	/** We haven't been able to read their names from Slack. */
+	| "unverified"
+	| "full_name_missing"
+	| "full_name_not_just_a_name"
+	| "display_name_missing"
+	| "display_name_no_affiliation"
+	| "display_name_not_just_a_name";
+
+export type SlackNames = { realName?: string | null; displayName?: string | null };
+
+/** Corrected names, when we can work out what they should be. */
+export type SuggestedNames = { realName: string | null; displayName: string | null };
+
+export type SlackNameCheck = {
+	ok: boolean;
+	issues: SlackNameIssue[];
+	/**
+	 * The display name's affiliation, when the display name itself follows the
+	 * rules, even if the full name doesn't. Teams are taken from here.
+	 */
+	affiliation: ParsedSlackName | null;
+	/** Suggested fixes; null when the names are fine or we can't tell. */
+	suggestion: SuggestedNames | null;
+};
+
+export const UNVERIFIED_NAMES: SlackNameCheck = {
+	ok: false,
+	issues: ["unverified"],
+	affiliation: null,
+	suggestion: null,
+};
+
+/** Check a person's full name and display name against the rules. */
+export function checkSlackNames({ realName, displayName }: SlackNames): SlackNameCheck {
+	const real = realName?.trim() ?? "";
+	const display = displayName?.trim() ?? "";
+	const issues: SlackNameIssue[] = [];
+
+	if (!real) issues.push("full_name_missing");
+	else if (!isJustAName(real)) issues.push("full_name_not_just_a_name");
+
+	const parsed = parseSlackName(display);
+	if (!display) issues.push("display_name_missing");
+	else if (!parsed) issues.push("display_name_no_affiliation");
+	else if (!isJustAName(parsed.displayName)) issues.push("display_name_not_just_a_name");
+
+	const displayOk = parsed !== null && isJustAName(parsed.displayName);
+	return {
+		ok: issues.length === 0,
+		issues,
+		affiliation: displayOk ? parsed : null,
+		suggestion: issues.length === 0 ? null : suggestNames(real, display, parsed),
+	};
+}
+
+export function formatAffiliation(parsed: Pick<ParsedSlackName, "teams" | "role">): string {
+	return parsed.role ?? parsed.teams.join(", ");
+}
+
+/** Strip anything that isn't part of a name: bracketed text, digits, dangling separators. */
+function stripToName(value: string): string {
+	return value
+		.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}|<[^>]*>/g, " ")
+		.replace(/[()[\]{}<>\d]/g, " ")
+		.replace(/\s+/g, " ")
+		.replace(/^[\s,;:|/\-–—#]+|[\s,;:|/\-–—#]+$/g, "")
+		.trim();
+}
+
+/** Find a team list or approved role somewhere in a name, for suggestions. */
+function findAffiliation(...values: string[]): string | null {
+	for (const value of values) {
+		for (const [, group] of value.matchAll(/\(([^)]*)\)/g)) {
+			const parsed = parseSlackName(`x (${group})`);
+			if (parsed) return formatAffiliation(parsed);
+		}
+	}
+	const numbers = values.flatMap(v => [...v.matchAll(/\b\d{1,5}\b/g)].map(m => Number.parseInt(m[0], 10)));
+	const teams = [...new Set(numbers.filter(n => n > 0))];
+	return teams.length > 0 ? teams.join(", ") : null;
 }
 
 /**
- * Returns whichever of (displayName, name) the user should be validated
- * against. Prefer displayName (what's shown in Slack messages); fall back
- * to real_name when display name isn't set.
+ * Suggest values only for the names that are wrong. A display name keeps the
+ * name the person chose for it (a nickname is fine), cleaned up.
  */
-export function pickNameForValidation(user: { name?: string | null; displayName?: string | null }): string {
-	const candidate = (user.displayName ?? "").trim() || (user.name ?? "").trim();
-	return candidate;
+function suggestNames(real: string, display: string, parsed: ParsedSlackName | null): SuggestedNames | null {
+	const displayBase = stripToName(parsed?.displayName ?? display);
+	const realBase = stripToName(real) || displayBase;
+	const affiliation = parsed ? formatAffiliation(parsed) : findAffiliation(real, display);
+	const displayOk = parsed !== null && isJustAName(parsed.displayName);
+
+	const base = displayBase || realBase;
+	const suggestion: SuggestedNames = {
+		realName: isJustAName(real) ? null : realBase || null,
+		displayName: displayOk || !base || !affiliation ? null : `${base} (${affiliation})`,
+	};
+	return suggestion.realName || suggestion.displayName ? suggestion : null;
+}
+
+/** One-line, human description of an issue, for admins and DMs. */
+export function describeSlackNameIssue(issue: SlackNameIssue): string {
+	switch (issue) {
+		case "unverified":
+			return "Names haven't been checked with Slack yet";
+		case "full_name_missing":
+			return "Full name is empty";
+		case "full_name_not_just_a_name":
+			return "Full name has more than a name in it (team numbers or parentheses)";
+		case "display_name_missing":
+			return "Display name is empty";
+		case "display_name_no_affiliation":
+			return "Display name doesn't end with team number(s) in parentheses";
+		case "display_name_not_just_a_name":
+			return "Display name has extra numbers or parentheses in the name part";
+	}
 }

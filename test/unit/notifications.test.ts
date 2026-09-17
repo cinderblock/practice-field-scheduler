@@ -15,11 +15,14 @@ vi.mock("~/env", () => ({
 const {
 	gateAccessUrl,
 	linksMessage,
+	nameFixMessage,
 	notifyTeamOfLink,
 	notifyTeamOfReservation,
 	selectTeamMemberRecipients,
 	sendLinksDm,
+	sendNameFixDm,
 } = await import("~/server/notifications");
+const { checkSlackNames } = await import("~/server/util/slackName");
 
 const fetchMock = vi.fn();
 
@@ -39,6 +42,7 @@ const user: UserEntry = {
 	teams: [1234],
 	email: "jane@example.com",
 	image: "",
+	slackNamesSyncedAt: new Date("2026-05-01T00:00:00Z"),
 };
 
 /** Read the JSON body of the nth captured fetch call. */
@@ -191,8 +195,8 @@ describe("notifyTeamOfReservation", () => {
 		const outcomes = await notifyTeamOfReservation(
 			reservation,
 			[
-				{ user, slackUserId: "U111" },
-				{ user: otherTeammate, slackUserId: "U222" },
+				{ user, slackUserId: "U111", withLink: true },
+				{ user: otherTeammate, slackUserId: "U222", withLink: true },
 			],
 			"tok-team-1234",
 		);
@@ -211,7 +215,11 @@ describe("notifyTeamOfReservation", () => {
 
 	it("still sends the reservation details when the team has no link yet", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
-		const outcomes = await notifyTeamOfReservation(reservation, [{ user, slackUserId: "U111" }], undefined);
+		const outcomes = await notifyTeamOfReservation(
+			reservation,
+			[{ user, slackUserId: "U111", withLink: true }],
+			undefined,
+		);
 		expect(outcomes[0]?.sent).toBe(true);
 		expect(bodyOf().text).toContain("Team 1234");
 		expect(bodyOf().text).not.toContain("gate link");
@@ -219,7 +227,7 @@ describe("notifyTeamOfReservation", () => {
 
 	it("returns no-DM outcomes when slack is not configured (doesn't call fetch)", async () => {
 		envState.SLACK_BOT_TOKEN = undefined;
-		const outcomes = await notifyTeamOfReservation(reservation, [{ user, slackUserId: "U111" }], "tok");
+		const outcomes = await notifyTeamOfReservation(reservation, [{ user, slackUserId: "U111", withLink: true }], "tok");
 		expect(outcomes).toEqual([{ userId: "user-1", slackUserId: "U111", sent: false, reason: "slack_not_configured" }]);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
@@ -236,8 +244,8 @@ describe("notifyTeamOfReservation", () => {
 		const outcomes = await notifyTeamOfReservation(
 			reservation,
 			[
-				{ user, slackUserId: "U111" },
-				{ user: otherTeammate, slackUserId: "U222" },
+				{ user, slackUserId: "U111", withLink: true },
+				{ user: otherTeammate, slackUserId: "U222", withLink: true },
 			],
 			"tok",
 		);
@@ -246,12 +254,40 @@ describe("notifyTeamOfReservation", () => {
 	});
 });
 
+describe("notifyTeamOfReservation for people whose names need fixing", () => {
+	const reservation: Reservation = {
+		id: "res-2",
+		date: "2026-05-24",
+		slot: "10:00am",
+		created: new Date("2026-05-20T00:00:00Z"),
+		userId: "user-creator",
+		priority: false,
+		team: 1234,
+	};
+
+	it("still tells them about the booking, but leaves the link out", async () => {
+		fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true })));
+		await notifyTeamOfReservation(
+			reservation,
+			[
+				{ user, slackUserId: "U111", withLink: true },
+				{ user: { ...user, id: "user-2" }, slackUserId: "U222", withLink: false },
+			],
+			"tok-team",
+		);
+		expect(bodyOf(0).text).toContain("/g/tok-team");
+		expect(bodyOf(1).text).toContain("Team 1234");
+		expect(bodyOf(1).text).not.toContain("/g/tok-team");
+		expect(bodyOf(1).text).toContain("Slack names need fixing");
+	});
+});
+
 describe("notifyTeamOfLink", () => {
 	it("DMs the whole team the rotated link", async () => {
 		fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true })));
 		const outcomes = await notifyTeamOfLink(1234, "tok-rotated", [
-			{ user, slackUserId: "U111" },
-			{ user: { ...user, id: "user-2" }, slackUserId: "U222" },
+			{ user, slackUserId: "U111", withLink: true },
+			{ user: { ...user, id: "user-2" }, slackUserId: "U222", withLink: true },
 		]);
 		expect(outcomes.every(o => o.sent)).toBe(true);
 		expect(bodyOf(0).text).toContain("https://gate.example.test/g/tok-rotated");
@@ -259,9 +295,19 @@ describe("notifyTeamOfLink", () => {
 		expect(bodyOf(1).text).toContain("https://gate.example.test/g/tok-rotated");
 	});
 
+	it("skips people whose names need fixing: the message is only the link", async () => {
+		fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ok: true })));
+		const outcomes = await notifyTeamOfLink(1234, "tok-rotated", [
+			{ user, slackUserId: "U111", withLink: true },
+			{ user: { ...user, id: "user-2" }, slackUserId: "U222", withLink: false },
+		]);
+		expect(outcomes.map(o => o.slackUserId)).toEqual(["U111"]);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("reports slack_not_configured rather than throwing", async () => {
 		envState.SLACK_BOT_TOKEN = undefined;
-		const outcomes = await notifyTeamOfLink(1234, "tok", [{ user, slackUserId: "U111" }]);
+		const outcomes = await notifyTeamOfLink(1234, "tok", [{ user, slackUserId: "U111", withLink: true }]);
 		expect(outcomes).toEqual([{ userId: "user-1", slackUserId: "U111", sent: false, reason: "slack_not_configured" }]);
 	});
 });
@@ -343,5 +389,82 @@ describe("selectTeamMemberRecipients", () => {
 	it("returns nobody for a non-numeric team when members are numeric", () => {
 		const { recipients } = selectTeamMemberRecipients(allUsers, mappings, "not-a-number", "creator");
 		expect(recipients).toEqual([]);
+	});
+
+	it("keeps people whose names need fixing, but marks them as not getting the link", () => {
+		const wrongNames: UserEntry = { ...user, id: "wrong", name: "Jane Doe (1234)" };
+		const unchecked: UserEntry = { ...user, id: "unchecked", slackNamesSyncedAt: undefined };
+		const { recipients } = selectTeamMemberRecipients(
+			[teammate, wrongNames, unchecked],
+			[
+				{ slackId: "U_teammate", userId: "teammate-1" },
+				{ slackId: "U_wrong", userId: "wrong" },
+				{ slackId: "U_unchecked", userId: "unchecked" },
+			],
+			1234,
+			null,
+		);
+		expect(Object.fromEntries(recipients.map(r => [r.slackUserId, r.withLink]))).toEqual({
+			U_teammate: true,
+			U_wrong: false,
+			U_unchecked: false,
+		});
+	});
+});
+
+describe("nameFixMessage", () => {
+	const names = { realName: "Jane Doe (1234)", displayName: "" };
+	const check = checkSlackNames(names);
+
+	it("explains the rules, what's wrong with these names, and what to change them to", () => {
+		const text = nameFixMessage(names, check, "links_held");
+		expect(text).toContain("gate links are on hold");
+		expect(text).toContain("*Full name*: just your name");
+		expect(text).toContain(
+			"Full name has more than a name in it (team numbers or parentheses) (now `Jane Doe (1234)`)",
+		);
+		expect(text).toContain("Display name is empty");
+		expect(text).toContain("• Full name: `Jane Doe`");
+		expect(text).toContain("• Display name: `Jane Doe (1234)`");
+		expect(text).toContain("Edit Profile");
+		expect(text).toContain("within about 10 minutes");
+	});
+
+	it("frames an admin's nudge without promising links", () => {
+		const text = nameFixMessage(names, check, "admin_nudge");
+		expect(text).not.toContain("on hold");
+		expect(text).toContain("any gate links you're entitled to");
+	});
+
+	it("leaves out suggestions it can't make, and keeps names from breaking the formatting", () => {
+		const odd = { realName: "Jane `Doe`", displayName: "Jane" };
+		const text = nameFixMessage(odd, checkSlackNames(odd), "admin_nudge");
+		expect(text).toContain("(now `Jane`)");
+		expect(text).not.toContain("Suggested:");
+	});
+});
+
+describe("sendNameFixDm", () => {
+	it("DMs the message", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+		const names = { realName: "Jane Doe", displayName: "Jane" };
+		expect(await sendNameFixDm("U111", names, checkSlackNames(names), "admin_nudge")).toEqual({ sent: true });
+		expect(bodyOf().channel).toBe("U111");
+		expect(bodyOf().text).toContain("team number(s) in parentheses");
+	});
+
+	it("reports failures instead of throwing", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: false, error: "user_not_found" })));
+		const names = { realName: "Jane Doe", displayName: "Jane" };
+		expect(await sendNameFixDm("U111", names, checkSlackNames(names), "admin_nudge")).toEqual({
+			sent: false,
+			reason: "slack_error",
+			error: "user_not_found",
+		});
+		envState.SLACK_BOT_TOKEN = undefined;
+		expect(await sendNameFixDm("U111", names, checkSlackNames(names), "admin_nudge")).toEqual({
+			sent: false,
+			reason: "slack_not_configured",
+		});
 	});
 });

@@ -3,9 +3,11 @@
 import Image from "next/image";
 import { useState } from "react";
 import { TeamAvatar } from "~/app/_components/TeamAvatar";
+import { describeSlackNameIssue, type SlackNameIssue } from "~/server/util/slackName";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { api } from "~/trpc/react";
 import type { UserEntry } from "~/types";
+import ui from "./adminUi.module.css";
 import { GeneralAccessControls } from "./GeneralAccessControls";
 import styles from "./UsersTable.module.css";
 
@@ -15,6 +17,28 @@ type User = Omit<Pick<UserEntry, "id" | "name" | "displayName" | "image" | "crea
 };
 
 type SortField = "name" | "created";
+
+/** Why this person's gate links are held, if they are. Admin-only. */
+function NameIssues({ issues }: { issues: readonly SlackNameIssue[] }) {
+	if (issues.length === 0) return null;
+	if (issues.includes("unverified")) {
+		return (
+			<div className={styles.nameIssues}>
+				<span className={`${ui.chip} ${ui.chipMuted}`}>Names not checked with Slack</span>
+			</div>
+		);
+	}
+	return (
+		<div className={styles.nameIssues}>
+			<span className={`${ui.chip} ${ui.chipWarn}`}>Gate links on hold</span>
+			<ul className={styles.issueList}>
+				{issues.map(issue => (
+					<li key={issue}>{describeSlackNameIssue(issue)}</li>
+				))}
+			</ul>
+		</div>
+	);
+}
 type SortDirection = "asc" | "desc";
 
 export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean }) {
@@ -125,12 +149,15 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 								<tr key={user.id}>
 									<td className={styles.avatarCol}>
 										<div className={styles.avatar}>
-											<Image src={user.image} alt="" className={styles.userImage} fill sizes="40px" unoptimized />
+											{user.image && (
+												<Image src={user.image} alt="" className={styles.userImage} fill sizes="40px" unoptimized />
+											)}
 										</div>
 									</td>
 									<td className={styles.nameCol}>
-										<div className={styles.displayName}>{user.displayName ?? user.name}</div>
+										<div className={styles.displayName}>{user.displayName || user.name || "(no name in Slack)"}</div>
 										{user.displayName && user.name && <div className={styles.realName}>{user.name}</div>}
+										{access && <NameIssues issues={access.nameIssues} />}
 									</td>
 									{isAdmin && (
 										<td className={styles.gateCol}>

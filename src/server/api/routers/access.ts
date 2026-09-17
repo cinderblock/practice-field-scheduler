@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { describeSiteHours } from "~/server/access";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
+import { slackNameSyncState } from "~/server/backend";
 import { gateAccessUrl } from "~/server/notifications";
 import { isSlackConfigured } from "~/server/slack";
 
@@ -23,6 +24,8 @@ export const accessRouter = createTRPCRouter({
 			slackConfigured: isSlackConfigured(),
 			gateUrlConfigured: gateAccessUrl("probe") !== null,
 			siteHours: describeSiteHours(),
+			/** Whether Slack names can be read; gate links wait on them. */
+			slackNames: slackNameSyncState(),
 		};
 	}),
 

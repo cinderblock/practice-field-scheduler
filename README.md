@@ -194,13 +194,15 @@ every use, so a stable bookmark is not a standing grant.
 - **General gate access is an explicit grant.** Nobody has it by default —
   an admin approves each person, which issues their personal link and DMs it
   right away. Shared or unverified Slack accounts simply never get approved.
-  The link also stops working if the person is disabled or their Slack name
-  stops parsing. Admins and `(TSL)` lab mates can be approved like anyone
-  else; being an admin grants nothing by itself.
-- **Team membership comes from Slack display names** in the form
-  `First Last (1234)` (multi-team: `First Last (1234, 5678)`; lab mates:
-  `First Last (TSL)`). Membership re-syncs on every sign-in, and a malformed
-  name immediately stops that person's personal link working.
+  The link also stops working if the person is disabled or their Slack names
+  stop following the rules below. Admins and `(TSL)` lab mates can be
+  approved like anyone else; being an admin grants nothing by itself.
+- **Gate links wait on Slack names.** Nobody is sent a link, team or
+  personal, until both of their Slack names follow the format (see
+  [Slack names](#slack-names)).
+- **Team membership comes from the display name's parentheses.** Until
+  someone's names have been read from Slack, teams come from their sign-in
+  name instead, so booking works without the Web API.
 - **Blackouts don't affect personal links** — they only stop bookings.
 - **Delivery is one Slack DM** listing whichever links someone hasn't been sent
   yet (a mentor on two teams gets three links in one message), plus a DM when
@@ -211,13 +213,33 @@ every use, so a stable bookmark is not a standing grant.
   season starts with fresh links, issued as people sign in.
 - Grace periods and site hours are constants in `src/server/access.ts`.
 
+#### Slack names
+
+| Slack field      | Rule                                                         | Example                                    |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| **Full name**    | just a name: no digits, no parentheses                       | `Jane Doe`                                 |
+| **Display name** | a name, then team number(s) or `TSL` in trailing parentheses | `Jane Doe (1234)`, `Jane Doe (1234, 5678)` |
+
+- Names are read from Slack's Web API: for each person at sign-in, and for the
+  whole workspace every 10 minutes. Sign in with Slack doesn't carry the
+  display name.
+- Names that can't be read count as wrong, so links are held until they've
+  been checked.
+- While a person's names are wrong, their personal link is refused and team
+  links aren't DM'd to them. Reservation notices still arrive, without the
+  link.
+- They get one DM per wrong pair of names saying what to fix, with suggested
+  values. Their links arrive within about 10 minutes of the fix.
+
 #### Admin controls
 
 On `/users`, admins get:
 
-- **Slack-name audit** — lists anyone whose display name doesn't match the
-  convention and can DM them all fix-it instructions. Use this before turning
-  on `STRICT_SLACK_NAMES`.
+- **Slack names** — everyone in the Slack workspace whose names need fixing
+  (including people who've never signed in), what's wrong, and suggested
+  fixes. **Check now**, and **Preview**/**Send DMs** with personalised
+  instructions. Use it before turning on `STRICT_SLACK_NAMES`. Each person's
+  row also says when their gate links are on hold, and why.
 - **Team gate links** — per-team status, **Reveal link** (to hand a link over
   when Slack isn't reaching someone) and **Rotate** (new link, every old
   bookmark for that team stops working, the team is DM'd the replacement).
@@ -226,7 +248,8 @@ On `/users`, admins get:
   people **Reveal link**, **Replace link** (DMs the new one) and **Revoke
   access** (deletes the link; approving again issues a fresh one).
 
-Approvals, revocations, reveals and rotations are all written to the audit log.
+Approvals, revocations, reveals, rotations and name-fix DM batches are all
+written to the audit log.
 
 #### The check endpoint
 
@@ -251,12 +274,18 @@ The full contract, including every denial reason, lives in
 
 #### Required configuration
 
-| Variable             | Purpose                                                         | If unset                   |
-| -------------------- | --------------------------------------------------------------- | -------------------------- |
-| `SCHEDULER_API_KEY`  | Shared bearer secret consumers present (≥32 chars)              | endpoint returns `503`     |
-| `SLACK_BOT_TOKEN`    | Slack bot token (`xoxb-…`, scope `chat:write`) used to DM links | DMs become logged no-ops   |
-| `GATE_BASE_URL`      | Public Gate Manager base URL, used to build `${base}/g/<token>` | link omitted from DMs      |
-| `STRICT_SLACK_NAMES` | `"true"`/`"1"` rejects logins whose display name doesn't parse  | soft mode — warn but allow |
+| Variable             | Purpose                                                                | If unset                         |
+| -------------------- | ---------------------------------------------------------------------- | -------------------------------- |
+| `SCHEDULER_API_KEY`  | Shared bearer secret consumers present (≥32 chars)                     | endpoint returns `503`           |
+| `SLACK_BOT_TOKEN`    | Slack bot token (`xoxb-…`), bot scopes `chat:write` and `users:read`   | no DMs, no name checks, no links |
+| `GATE_BASE_URL`      | Public Gate Manager base URL, used to build `${base}/g/<token>`        | link omitted from DMs            |
+| `STRICT_SLACK_NAMES` | `"true"`/`"1"` refuses sign-in until both Slack names follow the rules | names are only checked for links |
+
+The bot needs **`users:read`** to read names (`users.info`, `users.list`).
+Without it, `/users` says so and nobody's gate links go out. Add the scope in
+the Slack app's **OAuth & Permissions**, then reinstall the app. The bot token
+normally stays the same; if Slack issues a new one, update
+`SLACK_BOT_TOKEN`.
 
 Generate the API key with:
 

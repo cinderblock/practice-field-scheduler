@@ -30,6 +30,7 @@ const user = (id: string, displayName: string, extra: Record<string, unknown>) =
 	teams: [1234],
 	email: `${id}@example.com`,
 	image: "",
+	slackNamesSyncedAt: created,
 	...extra,
 });
 const link = (userId: string, token: string) => ({ userId, token, created });

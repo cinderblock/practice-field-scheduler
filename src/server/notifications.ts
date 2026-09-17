@@ -1,7 +1,8 @@
 import { env } from "~/env";
 import type { Reservation, TeamFull, UserEntry, UserId } from "~/types";
-import { describeSiteHours, formatHour, SITE_CLOSE_HOUR, SITE_OPEN_HOUR, sameTeam } from "./access";
+import { describeSiteHours, formatHour, hasValidSlackNames, SITE_CLOSE_HOUR, SITE_OPEN_HOUR, sameTeam } from "./access";
 import { isSlackConfigured, SlackApiError, SlackNotConfiguredError, sendDirectMessage } from "./slack";
+import { describeSlackNameIssue, type SlackNameCheck, type SlackNameIssue, type SlackNames } from "./util/slackName";
 
 /**
  * Build a gate access URL (team or personal — same shape). Returns null when
@@ -92,7 +93,12 @@ export async function sendLinksDm(
 	}
 }
 
-function reservationNoticeMessage(reservation: Reservation, token: string | undefined): string {
+/** Exported for tests. */
+export function reservationNoticeMessage(
+	reservation: Reservation,
+	token: string | undefined,
+	withLink: boolean,
+): string {
 	const lines = [
 		`New practice-field reservation for *Team ${reservation.team}*:`,
 		`• Date: ${reservation.date}`,
@@ -100,10 +106,13 @@ function reservationNoticeMessage(reservation: Reservation, token: string | unde
 	];
 	if (reservation.notes) lines.push(`• Notes: ${reservation.notes}`);
 	const url = gateAccessUrl(token);
-	if (url) {
+	if (url && withLink) {
 		lines.push("");
 		lines.push(`Your team's gate link: <${url}>`);
 		lines.push("(Use it during the reservation window to open the gate.)");
+	} else if (url) {
+		lines.push("");
+		lines.push("Your team's gate link isn't included: your Slack names need fixing first.");
 	}
 	return lines.join("\n");
 }
@@ -111,6 +120,8 @@ function reservationNoticeMessage(reservation: Reservation, token: string | unde
 export type TeamMemberRecipient = {
 	user: UserEntry;
 	slackUserId: string;
+	/** False while the person's Slack names are wrong: they get notices, but not the link. */
+	withLink: boolean;
 };
 
 /**
@@ -121,6 +132,9 @@ export type TeamMemberRecipient = {
  *
  * Pass `excludeUserId` to skip one person — e.g. the creator of a reservation,
  * who already knows. Pass `null` to include everyone, as rotation does.
+ *
+ * Everyone on the team is returned; `withLink` says whether they may be sent
+ * the team's gate link.
  */
 export function selectTeamMemberRecipients(
 	users: readonly UserEntry[],
@@ -136,7 +150,7 @@ export function selectTeamMemberRecipients(
 		if (!user.teams.some(t => sameTeam(t, team))) continue;
 		for (const mapping of slackMappings) {
 			if (mapping.userId !== user.id) continue;
-			recipients.push({ user, slackUserId: mapping.slackId });
+			recipients.push({ user, slackUserId: mapping.slackId, withLink: hasValidSlackNames(user) });
 		}
 	}
 	return { recipients };
@@ -192,13 +206,13 @@ export async function notifyTeamOfReservation(
 	recipients: readonly TeamMemberRecipient[],
 	token: string | undefined,
 ): Promise<TeamDmOutcome[]> {
-	const text = reservationNoticeMessage(reservation, token);
-	return fanOut(recipients, () => text);
+	return fanOut(recipients, r => reservationNoticeMessage(reservation, token, r.withLink));
 }
 
 /**
- * DM every recipient a team's replacement link after a rotation, where every
- * existing bookmark has just stopped working.
+ * DM a team's replacement link after a rotation, where every existing bookmark
+ * has just stopped working. Recipients whose Slack names are wrong are skipped:
+ * the message is nothing but the link.
  */
 export async function notifyTeamOfLink(
 	team: TeamFull,
@@ -206,5 +220,77 @@ export async function notifyTeamOfLink(
 	recipients: readonly TeamMemberRecipient[],
 ): Promise<TeamDmOutcome[]> {
 	const text = linksMessage([{ kind: "team", team, token }], "rotated");
-	return fanOut(recipients, () => text);
+	return fanOut(
+		recipients.filter(r => r.withLink),
+		() => text,
+	);
+}
+
+/** Why someone is being told about their names. Changes only the framing. */
+export type NameFixReason =
+	/** Their gate links would have gone out, but are held until the names are fixed. */
+	| "links_held"
+	/** An admin asked everyone with wrong names to fix them. */
+	| "admin_nudge";
+
+/** Keep a name from breaking out of Slack's inline code formatting. */
+function code(value: string): string {
+	return `\`${value.replace(/`/g, "'")}\``;
+}
+
+function currentValue(issue: SlackNameIssue, names: SlackNames): string {
+	const value = (issue.startsWith("full_name") ? names.realName : names.displayName)?.trim();
+	return value ? ` (now ${code(value)})` : "";
+}
+
+/**
+ * The DM asking someone to fix their Slack names: the rules, what's wrong with
+ * theirs, and suggested values when we can tell. Exported for tests.
+ */
+export function nameFixMessage(names: SlackNames, check: SlackNameCheck, reason: NameFixReason): string {
+	const issues = check.issues.filter(i => i !== "unverified");
+	const lines = [
+		reason === "links_held"
+			? "Hi! Your practice-field gate links are on hold until your Slack names follow the format. 🔒"
+			: "Hi! Your Slack names don't follow the practice-field format yet.",
+		"",
+		`• *Full name*: just your name, e.g. ${code("Jane Doe")}`,
+		`• *Display name*: your name, then your team number in parentheses, e.g. ${code("Jane Doe (1234)")}. For more than one team: ${code("Jane Doe (1234, 5678)")}.`,
+		"",
+		"What needs fixing:",
+		...issues.map(issue => `• ${describeSlackNameIssue(issue)}${currentValue(issue, names)}`),
+	];
+
+	const suggestion = check.suggestion;
+	if (suggestion?.realName || suggestion?.displayName) {
+		lines.push("", "Suggested:");
+		if (suggestion.realName) lines.push(`• Full name: ${code(suggestion.realName)}`);
+		if (suggestion.displayName) lines.push(`• Display name: ${code(suggestion.displayName)}`);
+	}
+
+	lines.push("", "To change them in Slack, open your profile and choose *Edit Profile*.");
+	lines.push(
+		reason === "links_held"
+			? "Your gate links will arrive here by DM within about 10 minutes of the fix."
+			: "Once they're fixed, any gate links you're entitled to will arrive here by DM.",
+	);
+	return lines.join("\n");
+}
+
+/** DM someone {@link nameFixMessage}. Best-effort, like {@link sendLinksDm}. */
+export async function sendNameFixDm(
+	slackUserId: string,
+	names: SlackNames,
+	check: SlackNameCheck,
+	reason: NameFixReason,
+): Promise<DmOutcome> {
+	if (!isSlackConfigured()) return { sent: false, reason: "slack_not_configured" };
+	try {
+		await sendDirectMessage({ slackUserId, text: nameFixMessage(names, check, reason) });
+		return { sent: true };
+	} catch (err) {
+		if (err instanceof SlackNotConfiguredError) return { sent: false, reason: "slack_not_configured" };
+		if (err instanceof SlackApiError) return { sent: false, reason: "slack_error", error: err.slackError };
+		return { sent: false, reason: "slack_error", error: (err as Error).message };
+	}
 }

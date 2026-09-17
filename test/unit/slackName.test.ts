@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isValidSlackName, parseSlackName, pickNameForValidation } from "~/server/util/slackName";
+import {
+	checkSlackNames,
+	describeSlackNameIssue,
+	isJustAName,
+	parseSlackName,
+	type SlackNameIssue,
+} from "~/server/util/slackName";
 
 describe("parseSlackName", () => {
 	it("parses single-team format", () => {
@@ -78,24 +84,122 @@ describe("parseSlackName", () => {
 	});
 });
 
-describe("isValidSlackName", () => {
-	it("agrees with parseSlackName", () => {
-		expect(isValidSlackName("Jane Doe (1234)")).toBe(true);
-		expect(isValidSlackName("Jane Doe")).toBe(false);
+describe("isJustAName", () => {
+	it("accepts ordinary names, including hyphens, apostrophes and accents", () => {
+		expect(isJustAName("Jane Doe")).toBe(true);
+		expect(isJustAName("Jean-Luc O'Brien")).toBe(true);
+		expect(isJustAName("Zoë Ñúñez")).toBe(true);
+	});
+
+	it("rejects empty names, digits and brackets of any kind", () => {
+		expect(isJustAName("")).toBe(false);
+		expect(isJustAName("   ")).toBe(false);
+		expect(isJustAName(undefined)).toBe(false);
+		expect(isJustAName("Jane Doe 1234")).toBe(false);
+		expect(isJustAName("Jane Doe (1234)")).toBe(false);
+		expect(isJustAName("Jane [TSL]")).toBe(false);
+		expect(isJustAName("Jane {x}")).toBe(false);
 	});
 });
 
-describe("pickNameForValidation", () => {
-	it("prefers displayName when set", () => {
-		expect(pickNameForValidation({ name: "Real Name", displayName: "Display (1234)" })).toBe("Display (1234)");
+describe("checkSlackNames", () => {
+	const issuesOf = (realName: string | undefined, displayName: string | undefined): SlackNameIssue[] =>
+		checkSlackNames({ realName, displayName }).issues;
+
+	it("passes a plain full name with a team-tagged display name", () => {
+		const check = checkSlackNames({ realName: "Jane Doe", displayName: "Jane Doe (1234, 5678)" });
+		expect(check).toEqual({
+			ok: true,
+			issues: [],
+			affiliation: { displayName: "Jane Doe", teams: [1234, 5678], role: null },
+			suggestion: null,
+		});
 	});
 
-	it("falls back to name when displayName is empty", () => {
-		expect(pickNameForValidation({ name: "Real Name (1234)", displayName: "" })).toBe("Real Name (1234)");
-		expect(pickNameForValidation({ name: "Real Name (1234)", displayName: undefined })).toBe("Real Name (1234)");
+	it("passes lab mates and nicknames", () => {
+		expect(checkSlackNames({ realName: "Lab Mate", displayName: "Labby (TSL)" }).ok).toBe(true);
+		expect(checkSlackNames({ realName: "Robert Roe", displayName: "Bob (1234)" }).ok).toBe(true);
 	});
 
-	it("returns empty string when neither is set", () => {
-		expect(pickNameForValidation({})).toBe("");
+	it("rejects team numbers in the full name", () => {
+		expect(issuesOf("Jane Doe (1234)", "Jane Doe (1234)")).toEqual(["full_name_not_just_a_name"]);
+		expect(issuesOf("Jane Doe 1234", "Jane Doe (1234)")).toEqual(["full_name_not_just_a_name"]);
+	});
+
+	it("rejects a display name without an affiliation, or with a missing name", () => {
+		expect(issuesOf("Jane Doe", "Jane Doe")).toEqual(["display_name_no_affiliation"]);
+		expect(issuesOf("Jane Doe", "Jane Doe (mentor)")).toEqual(["display_name_no_affiliation"]);
+		expect(issuesOf("Jane Doe", "")).toEqual(["display_name_missing"]);
+		expect(issuesOf("Jane Doe", undefined)).toEqual(["display_name_missing"]);
+		expect(issuesOf("", "Jane Doe (1234)")).toEqual(["full_name_missing"]);
+	});
+
+	it("rejects extra numbers or parentheses in the display name's name part", () => {
+		expect(issuesOf("Jane Doe", "Jane (x) (1234)")).toEqual(["display_name_not_just_a_name"]);
+		expect(issuesOf("Jane Doe", "Jane Doe 42 (1234)")).toEqual(["display_name_not_just_a_name"]);
+	});
+
+	it("still reports teams from a good display name when the full name is wrong", () => {
+		const check = checkSlackNames({ realName: "Jane Doe (1234)", displayName: "Jane Doe (1234)" });
+		expect(check.ok).toBe(false);
+		expect(check.affiliation?.teams).toEqual([1234]);
+	});
+
+	it("reports no teams from a display name that breaks the rules", () => {
+		expect(checkSlackNames({ realName: "Jane Doe", displayName: "Jane (x) (1234)" }).affiliation).toBeNull();
+	});
+
+	describe("suggestions", () => {
+		const suggest = (realName: string, displayName: string) => checkSlackNames({ realName, displayName }).suggestion;
+
+		it("moves teams out of the full name and into the display name", () => {
+			expect(suggest("Jane Doe (1234, 5678)", "")).toEqual({
+				realName: "Jane Doe",
+				displayName: "Jane Doe (1234, 5678)",
+			});
+		});
+
+		it("finds bare team numbers and keeps the chosen display name", () => {
+			expect(suggest("Jane Doe - 1234", "Janey")).toEqual({ realName: "Jane Doe", displayName: "Janey (1234)" });
+		});
+
+		it("cleans up the display name's own name part", () => {
+			expect(suggest("Jane Doe", "Janey 42 (1234)")).toEqual({ realName: null, displayName: "Janey (1234)" });
+		});
+
+		it("only suggests the names that are wrong", () => {
+			expect(suggest("Robert Roe (1234)", "Bob (1234)")).toEqual({ realName: "Robert Roe", displayName: null });
+		});
+
+		it("keeps the TSL marker", () => {
+			expect(suggest("Lab Mate (TSL)", "")).toEqual({ realName: "Lab Mate", displayName: "Lab Mate (TSL)" });
+		});
+
+		it("can't suggest a display name without knowing the team", () => {
+			expect(suggest("Jane Doe", "Jane")).toBeNull();
+			expect(suggest("Jane Doe (x)", "Jane")).toEqual({ realName: "Jane Doe", displayName: null });
+		});
+
+		it("suggests nothing when there's no name to work from", () => {
+			expect(suggest("", "")).toBeNull();
+		});
+
+		it("suggests nothing when the names are fine", () => {
+			expect(suggest("Jane Doe", "Jane (1234)")).toBeNull();
+		});
+	});
+});
+
+describe("describeSlackNameIssue", () => {
+	it("has words for every issue", () => {
+		const issues: SlackNameIssue[] = [
+			"unverified",
+			"full_name_missing",
+			"full_name_not_just_a_name",
+			"display_name_missing",
+			"display_name_no_affiliation",
+			"display_name_not_just_a_name",
+		];
+		for (const issue of issues) expect(describeSlackNameIssue(issue)).toMatch(/\w/);
 	});
 });

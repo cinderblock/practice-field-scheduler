@@ -13,7 +13,6 @@ export const env = createEnv({
 		AUTH_SECRET: z.string(),
 		AUTH_SLACK_CLIENT_ID: z.string().min(10),
 		AUTH_SLACK_CLIENT_SECRET: z.string().length(32),
-		AUTH_SLACK_SIGNING_SECRET: z.string().length(32).optional(),
 
 		AUTH_SLACK_TEAM_ID: z
 			.string()
@@ -94,7 +93,6 @@ export const env = createEnv({
 		AUTH_SECRET: process.env.AUTH_SECRET,
 		AUTH_SLACK_CLIENT_ID: process.env.AUTH_SLACK_CLIENT_ID,
 		AUTH_SLACK_CLIENT_SECRET: process.env.AUTH_SLACK_CLIENT_SECRET,
-		AUTH_SLACK_SIGNING_SECRET: process.env.AUTH_SLACK_SIGNING_SECRET,
 		AUTH_SLACK_TEAM_ID: process.env.AUTH_SLACK_TEAM_ID,
 		NEXTAUTH_URL: process.env.NEXTAUTH_URL,
 		NODE_ENV: process.env.NODE_ENV,

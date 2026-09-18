@@ -1,8 +1,6 @@
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 import SlackProvider from "next-auth/providers/slack";
 import { env } from "../../env.js";
-import { getSlackMember } from "../slack";
-import { checkSlackNames } from "../util/slackName";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -64,29 +62,32 @@ export const authConfig = {
 	],
 	callbacks: {
 		/**
-		 * With STRICT_SLACK_NAMES on, refuse sign-in until the person's Slack names
-		 * follow the rules, read from Slack's Web API. If the names can't be read
-		 * (no bot token, no `users:read`, Slack down), sign-in is allowed: gate
-		 * links are held separately, and an outage shouldn't lock everyone out.
+		 * Put the person's real Slack user id in the token at sign-in.
+		 *
+		 * Auth.js mints a random UUID for `user.id` on every OAuth sign-in,
+		 * whatever `profile()` returned, and only keeps the provider's id as
+		 * `account.providerAccountId`. Left alone, `token.sub` (and so
+		 * `session.user.id`) is that UUID -- which is exactly what happened here
+		 * for over a year: every sign-in looked like a brand-new "Slack id",
+		 * `users.info` never found anyone, and gate links could never be sent.
+		 *
+		 * Slack's OpenID Connect id_token carries the user id under
+		 * `https://slack.com/user_id` (and as `sub`); `providerAccountId` is the
+		 * `sub` our `profile()` handed back. Only runs at sign-in (`account` is
+		 * set then and only then); later requests keep the token as is.
+		 *
+		 * Sessions issued before this callback still carry a UUID until they
+		 * expire; the backend repairs those by email. See `getUser` there.
 		 */
-		signIn: async ({ profile }) => {
-			if (!env.STRICT_SLACK_NAMES) return true;
-			const slackId = profile?.sub;
-			if (!slackId) return true;
-
-			let member: Awaited<ReturnType<typeof getSlackMember>>;
-			try {
-				member = await getSlackMember(slackId);
-			} catch (err) {
-				console.warn(`STRICT_SLACK_NAMES: couldn't read Slack names for ${slackId}; allowing sign-in:`, err);
-				return true;
-			}
-			if (!member) return true;
-			if (checkSlackNames(member).ok) return true;
-			// Redirect to the login page with a custom error so we can render
-			// fix-your-names instructions instead of a generic auth failure.
-			return "/login?error=BadSlackName";
+		jwt: ({ token, account, profile }) => {
+			if (!account) return token;
+			const claim = (profile as Record<string, unknown> | undefined)?.["https://slack.com/user_id"];
+			const slackId = typeof claim === "string" && claim ? claim : account.providerAccountId;
+			if (slackId) token.sub = slackId;
+			return token;
 		},
+		// Sign-in is never refused for how someone's Slack names look: names
+		// only decide whether they receive gate links.
 		session: ({ session, token }) => ({
 			...session,
 			user: {

@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Session } from "next-auth";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Context as ContextClass } from "~/server/backend";
 
 const MemberTeam = "1234";
@@ -90,6 +90,12 @@ beforeAll(async () => {
 	mkdirSync(join(dataDir, new Date().getFullYear().toString()), { recursive: true });
 
 	process.env.DATA_DIR = dataDir;
+	// Session ids here aren't Slack ids, so the backend would ask Slack who they are. Not over the
+	// network, thanks: Slack says it doesn't know us, and the tests carry on as unidentified.
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ ok: false, error: "invalid_auth" })),
+	);
 
 	const backend = await import("~/server/backend");
 	Context = backend.Context;
@@ -97,6 +103,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+	vi.unstubAllGlobals();
 	rmSync(dataDir, { recursive: true, force: true });
 });
 

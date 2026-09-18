@@ -53,7 +53,9 @@ import {
 	getSlackMember,
 	isMissingScope,
 	isSlackConfigured,
+	isSlackUserId,
 	listSlackMembers,
+	lookupSlackMemberByEmail,
 	SlackApiError,
 	type SlackMember,
 	SlackNotConfiguredError,
@@ -277,6 +279,53 @@ async function markLinksSent(user: UserEntry, tokens: readonly string[]): Promis
 /** Every Slack ID mapped to a user — admin-triggered DMs reach all of them. */
 function slackIdsFor(userId: UserId): string[] {
 	return slackMappings.filter(m => m.userId === userId).map(m => m.slackId);
+}
+
+/**
+ * The real Slack user id behind a session whose id isn't one.
+ *
+ * Sessions issued before the `jwt` callback in auth/config.ts carry a random
+ * UUID as `user.id`. The person is found by the email on their Slack profile
+ * (`users.lookupByEmail`) and the answer remembered per session id, so such a
+ * session costs one Slack call, not one per request. A miss is remembered too,
+ * and retried after a while in case Slack was just unreachable.
+ */
+const slackIdBySessionId = new Map<string, { slackId: string | null; at: number }>();
+const SLACK_ID_MISS_RETRY_MS = 5 * 60 * 1000;
+
+async function resolveSlackIdByEmail(sessionId: string, email: string): Promise<string | null> {
+	if (!email || !isSlackConfigured()) return null;
+	const known = slackIdBySessionId.get(sessionId);
+	if (known && (known.slackId !== null || Date.now() - known.at < SLACK_ID_MISS_RETRY_MS)) return known.slackId;
+
+	let slackId: string | null = null;
+	try {
+		const member = await lookupSlackMemberByEmail(email);
+		slackId = member?.id ?? null;
+		if (!slackId) console.warn(`No Slack account found by email for session ${sessionId}`);
+	} catch (err) {
+		const { status, error } = statusForSlackError(err);
+		console.warn(`Couldn't look up a Slack account by email for session ${sessionId} (${status}): ${error}`);
+	}
+	slackIdBySessionId.set(sessionId, { slackId, at: Date.now() });
+	return slackId;
+}
+
+/**
+ * Drop mappings whose "Slack id" isn't one. For over a year every sign-in
+ * stored a fresh random UUID here (see the `jwt` callback in auth/config.ts),
+ * so the file held hundreds of entries that matched nothing in Slack. A
+ * session still carrying such an id is matched by email instead.
+ *
+ * Runs once at startup, while initialization holds `changeLock`.
+ */
+async function pruneNonSlackMappings() {
+	const kept = slackMappings.filter(m => isSlackUserId(m.slackId));
+	const removed = slackMappings.length - kept.length;
+	if (removed === 0) return;
+	slackMappings.splice(0, slackMappings.length, ...kept);
+	console.warn(`⚠️ [${MODULE_INSTANCE_ID}] Removed ${removed} Slack mapping(s) that weren't Slack user ids`);
+	await writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings);
 }
 
 /** What happened when we tried to DM someone their personal link. */
@@ -704,6 +753,19 @@ function startSlackNameSync(): void {
 	setTimeout(run, SLACK_NAME_FIRST_SYNC_DELAY_MS).unref();
 }
 
+/** A person's own Slack names, as the calendar shows them. See `Context.getMySlackNames`. */
+export type MySlackNames = {
+	/** False when Slack couldn't identify the session by email; links are held until they sign in again. */
+	identified: boolean;
+	realName: string;
+	displayName: string | null;
+	/** When the names were last read from Slack; null if never (then `issues` is ["unverified"]). */
+	syncedAt: Date | null;
+	ok: boolean;
+	issues: SlackNameIssue[];
+	suggestion: SuggestedNames | null;
+};
+
 /** One workspace member whose names need fixing, for the admin audit. */
 export type SlackNameProblem = {
 	slackId: string;
@@ -844,6 +906,8 @@ async function log(entry: LogEntry) {
 
 export class Context {
 	private user: Promise<UserEntry>;
+	/** The session's real Slack user id, once `getUser` has worked it out; null if Slack couldn't identify them. */
+	private slackId: string | null = null;
 
 	constructor(
 		private session: Session,
@@ -1171,13 +1235,20 @@ export class Context {
 
 		await initialized();
 
-		const slackId = this.session.user.id;
+		const sessionId = this.session.user.id;
 		const email = this.session.user.email ?? "";
 
 		const sessionName = this.session.user.name ?? undefined;
 
+		// The session id is the Slack user id -- unless the session predates the
+		// `jwt` callback in auth/config.ts, in which case it's a random UUID and
+		// the real id has to be found by email. Null when Slack can't tell us,
+		// which holds gate links (and nothing else) until they sign in again.
+		const slackId = isSlackUserId(sessionId) ? sessionId : await resolveSlackIdByEmail(sessionId, email);
+		this.slackId = slackId;
+
 		// First check if we have a direct Slack ID mapping
-		const existingMapping = slackMappings.find(m => m.slackId === slackId);
+		const existingMapping = slackId ? slackMappings.find(m => m.slackId === slackId) : undefined;
 		if (existingMapping) {
 			const user = users.find(u => u.id === existingMapping.userId);
 			if (!user) {
@@ -1187,8 +1258,7 @@ export class Context {
 				throw new PermissionError("User disabled");
 			}
 			await syncUserFromSession(user, sessionName);
-			await awaitFirstNameCheck(user, slackId);
-			fireLinkDms(user, slackId);
+			await this.startNameCheck(user);
 			return user;
 		}
 
@@ -1196,24 +1266,23 @@ export class Context {
 		if (email) {
 			const existingUser = users.find(u => u.email === email);
 			if (existingUser) {
-				const release = await changeLock.acquire();
+				if (existingUser.disabled) {
+					throw new PermissionError("User disabled");
+				}
 
-				// Found existing user by email, create a new Slack mapping
-				slackMappings.push({
-					slackId,
-					userId: existingUser.id,
-				});
-
-				// Save the new mapping
-				void writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings)
-					.catch(err => {
-						console.error("Error saving Slack mapping:", err);
-					})
-					.finally(release);
+				// Found existing user by email: remember their Slack id, when we have one
+				if (slackId) {
+					const release = await changeLock.acquire();
+					slackMappings.push({ slackId, userId: existingUser.id });
+					void writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings)
+						.catch(err => {
+							console.error("Error saving Slack mapping:", err);
+						})
+						.finally(release);
+				}
 
 				await syncUserFromSession(existingUser, sessionName);
-				await awaitFirstNameCheck(existingUser, slackId);
-				fireLinkDms(existingUser, slackId);
+				await this.startNameCheck(existingUser);
 				return existingUser;
 			}
 		}
@@ -1238,11 +1307,8 @@ export class Context {
 
 		users.push(newUser);
 
-		// Add Slack mapping
-		slackMappings.push({
-			slackId,
-			userId: newUserId,
-		});
+		// Add Slack mapping -- only a real one; a session Slack couldn't identify has nothing to map
+		if (slackId) slackMappings.push({ slackId, userId: newUserId });
 
 		// Save both the updated users array and slack mappings
 		void Promise.all(
@@ -1251,10 +1317,20 @@ export class Context {
 			),
 		).then(release);
 
-		await awaitFirstNameCheck(newUser, slackId);
-		fireLinkDms(newUser, slackId);
+		await this.startNameCheck(newUser);
 
 		return newUser;
+	}
+
+	/**
+	 * Read the person's Slack names (waiting briefly the first time, so their
+	 * first page can already say what's wrong) and send any links they're due.
+	 * Nothing to do when Slack couldn't identify them.
+	 */
+	private async startNameCheck(user: UserEntry): Promise<void> {
+		if (!this.slackId) return;
+		await awaitFirstNameCheck(user, this.slackId);
+		fireLinkDms(user, this.slackId);
 	}
 
 	async getTeams() {
@@ -1310,9 +1386,84 @@ export class Context {
 		await this.restrictToAdmin(message);
 	}
 
-	/** Slack user ID (e.g. "U01ABCDEF") of the current session, for DM targeting. */
-	getSlackUserId(): string {
-		return this.session.user.id;
+	/**
+	 * Slack user ID (e.g. "U01ABCDEF") of the current session, for DM
+	 * targeting. Null when Slack couldn't identify the person -- a session from
+	 * before the `jwt` callback whose email matches no Slack account.
+	 */
+	async getSlackUserId(): Promise<string | null> {
+		await this.user;
+		return this.slackId;
+	}
+
+	/**
+	 * The current person's own Slack names and whether they follow the rules.
+	 * The only thing the rules gate is receiving gate links; the calendar shows
+	 * this so people know what to fix, and that booking is unaffected.
+	 */
+	async getMySlackNames(): Promise<MySlackNames> {
+		const user = await this.user;
+		const check = slackNameCheckFor(user);
+		return {
+			identified: this.slackId !== null,
+			realName: user.name,
+			displayName: user.displayName ?? null,
+			syncedAt: user.slackNamesSyncedAt ?? null,
+			ok: check.ok,
+			issues: check.issues,
+			suggestion: check.suggestion,
+		};
+	}
+
+	/**
+	 * Re-read the person's Slack names now, skipping the background refresh's
+	 * throttle, and send any links they're now due -- the "Check again" button
+	 * after they've edited their Slack profile.
+	 */
+	async recheckMySlackNames(): Promise<MySlackNames> {
+		const user = await this.user;
+		if (this.slackId) {
+			slackNamesRefreshedAt.delete(user.id);
+			await refreshSlackNames(user, this.slackId);
+			await ensureLinksForUser(user, this.slackId);
+		}
+		return this.getMySlackNames();
+	}
+
+	/** When each person last reported browser errors, for the per-minute cap. */
+	private static readonly clientErrorTimes = new Map<string, number[]>();
+
+	/**
+	 * Record an error the browser hit, with who and where, for review later.
+	 * Capped per person per minute, so a page stuck in a loop can't fill the disk.
+	 */
+	async reportClientError(input: {
+		kind: string;
+		message: string;
+		detail?: string;
+		page?: string;
+	}): Promise<{ recorded: boolean }> {
+		const userId = await this.userIdForLog();
+		const now = Date.now();
+		const recent = (Context.clientErrorTimes.get(userId) ?? []).filter(t => now - t < 60_000);
+		if (recent.length >= CLIENT_ERROR_REPORTS_PER_MINUTE) return { recorded: false };
+		recent.push(now);
+		Context.clientErrorTimes.set(userId, recent);
+		await recordError({ source: "client", ...input, userId, userAgent: this.userAgent, ip: this.ip });
+		return { recorded: true };
+	}
+
+	/** File an error that happened while serving this person, with who and where. */
+	async recordServerError(kind: string, message: string, detail?: unknown): Promise<void> {
+		await recordError({
+			source: "server",
+			kind,
+			message,
+			detail,
+			userId: await this.userIdForLog(),
+			userAgent: this.userAgent,
+			ip: this.ip,
+		});
 	}
 
 	/**
@@ -1665,7 +1816,17 @@ export class Context {
 	 * archaeology. Every refusal on the reservation path goes through here.
 	 */
 	private async refuse(message: string, detail: Record<string, unknown>): Promise<never> {
-		console.warn(`🚫 refused: ${message}`, { userId: await this.userIdForLog(), ...detail });
+		const userId = await this.userIdForLog();
+		console.warn(`🚫 refused: ${message}`, { userId, ...detail });
+		void recordError({
+			source: "server",
+			kind: "refused",
+			message,
+			detail,
+			userId,
+			userAgent: this.userAgent,
+			ip: this.ip,
+		});
 		throw new PermissionError(message);
 	}
 
@@ -1785,6 +1946,9 @@ const TEAM_ACCESS_FILE = join(DATA_DIR, YEAR, "teamAccess.json");
 const PERSONAL_ACCESS_FILE = join(DATA_DIR, YEAR, "personalAccess.json");
 // Logs file is also year-specific
 const LOGS_FILE = join(DATA_DIR, YEAR, "logs.txt");
+// What went wrong for people -- server refusals, unexpected failures, and what
+// browsers report -- one JSON object per line, for review later.
+const ERRORS_FILE = join(DATA_DIR, YEAR, "errors.txt");
 
 globalThis.__changeLock ||= new Lock();
 const changeLock = globalThis.__changeLock;
@@ -1852,6 +2016,40 @@ async function appendLog(logEntry: JsonData) {
 		await appendFile(LOGS_FILE, `${logLine}\n`, "utf-8");
 	} catch (err) {
 		console.error("Error appending to logs file:", err);
+	}
+}
+
+/** One thing that went wrong for someone. See `recordError`. */
+export type ErrorRecord = {
+	timestamp: Date;
+	/** Where it was caught: on the server, or reported by a browser. */
+	source: "server" | "client";
+	/** Short category: "refused", "trpc", "render", "unhandled", "network", ... */
+	kind: string;
+	message: string;
+	detail?: unknown;
+	userId?: UserId | "unknown";
+	/** The page the person was on (browser reports). */
+	page?: string;
+	userAgent?: string;
+	ip?: string;
+};
+
+/** Per-person cap on browser error reports, so a runaway loop can't fill the disk. */
+const CLIENT_ERROR_REPORTS_PER_MINUTE = 30;
+
+/**
+ * Append what went wrong to the season's `errors.txt`, one JSON object per
+ * line, so the errors people hit can be reviewed later without hunting through
+ * the journal. Never throws; a failure to record is itself logged.
+ */
+export async function recordError(entry: Omit<ErrorRecord, "timestamp">): Promise<void> {
+	if (DisableWrites) return;
+	try {
+		const line = JSON.stringify({ timestamp: new Date(), ...entry });
+		await appendFile(ERRORS_FILE, `${line}\n`, "utf-8");
+	} catch (err) {
+		console.error("Error appending to errors file:", err);
 	}
 }
 
@@ -2065,6 +2263,7 @@ function getArrayName(array: unknown[]): string {
 
 	// Needs both users and personal links loaded, and still holds the lock.
 	await prunePersonalLinksWithoutApproval();
+	await pruneNonSlackMappings();
 
 	globalThis.__backendInitialized = true;
 	done();

@@ -27,6 +27,15 @@ export const slackRouter = createTRPCRouter({
 	isConfigured: protectedProcedure.query(() => isSlackConfigured()),
 
 	/**
+	 * The current person's own Slack names and whether they follow the rules,
+	 * for the notice on the calendar. Names only gate receiving gate links.
+	 */
+	myNames: protectedProcedure.query(({ ctx }) => ctx.context.getMySlackNames()),
+
+	/** Re-read the current person's Slack names now: the notice's "Check again" button. */
+	recheckMyNames: protectedProcedure.mutation(({ ctx }) => ctx.context.recheckMySlackNames()),
+
+	/**
 	 * Send a test direct message to the *current user*. Admin-only — this
 	 * is just for verifying SLACK_BOT_TOKEN and bot scopes are wired up;
 	 * not user-facing functionality.
@@ -35,7 +44,13 @@ export const slackRouter = createTRPCRouter({
 		.input(z.object({ text: z.string().min(1).max(2000) }))
 		.mutation(async ({ input, ctx }) => {
 			await ctx.context.assertAdmin("Only admins can send test DMs");
-			const slackUserId = ctx.context.getSlackUserId();
+			const slackUserId = await ctx.context.getSlackUserId();
+			if (!slackUserId) {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Slack couldn't identify your account by email; sign out and back in, then try again",
+				});
+			}
 			try {
 				const result = await sendDirectMessage({ slackUserId, text: input.text });
 				return { success: true as const, channel: result.channel, ts: result.ts };

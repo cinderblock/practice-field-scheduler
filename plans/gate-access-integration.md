@@ -57,6 +57,34 @@ reuse the same endpoint with a different `tool` identifier. See
 
 ## Decisions already made (don't re-ask)
 
+- **Four rules from the user, 2026-09-17 evening** (after the Slack-id finding
+  below). These override anything earlier that conflicts:
+  1. **A wrong Slack name must not prevent booking field time** (yet). Team
+     enforcement stays off; nothing on the booking path looks at names.
+  2. **The first sign-in triggers the full-name / display-name checks.** With
+     real Slack ids in sessions, `awaitFirstNameCheck` on the first request
+     does this; the result shows on the first page.
+  3. **Display-name correctness gates exactly one thing: receiving gate
+     links.** So `STRICT_SLACK_NAMES` (refuse sign-in) is removed outright, not
+     just left off, along with the `/login?error=BadSlackName` page.
+  4. **Show clear error messages to users, and save them to the backend for
+     later agent review.** Server-side refusals and unexpected errors, and
+     client-side errors reported by the browser, all land in
+     `data/<year>/errors.txt` (JSONL, next to `logs.txt`). The UI says what
+     went wrong in plain words -- including a per-person notice on the
+     calendar about their own Slack names, since that is now the only place a
+     name problem has any effect.
+  - Slack permissions: none needed beyond what the bot already has
+    (`users:read.email` covers the email repair).
+- **Real Slack id in the session** _(my design, following the finding)_: a
+  `jwt` callback sets `token.sub` from `profile["https://slack.com/user_id"]`,
+  falling back to `account.providerAccountId`, at sign-in. Existing sessions
+  (UUID subs, up to 30 days) are repaired at request time: when the session id
+  isn't Slack-shaped, look the person up by email (`users.lookupByEmail`),
+  remember the answer per session id, and use the real id everywhere. Mappings
+  only ever store real ids from now on; the 215 UUID mappings are pruned at
+  startup (users are still found by email, which every session carries).
+
 - **Two kinds of link** _(user decision, 2026-09-16 — prompted by mentors who
   belong to two teams)_:
   - **Team link** — one per team, shared among members, works only around
@@ -611,8 +639,24 @@ the bot scope **`users:read`**.
       rest are in `/opt/practice-field-scheduler/.env` and get piped
       across during the cutover. - The data bind mount must be chowned to uid 10001 after the copy,
       or the app can't write on first boot.
-- [ ] Cutover: pin filled in, stack activated, Caddy switched, old unit and
-      runner retired (`ops-88` owns it; needs the user's yes).
+- [x] Cutover: done 2026-09-17 16:08 PDT by the ops session (container on the
+      pinned digest); runner retired 16:17 with the user's yes.
+- [x] **Real Slack ids** (2026-09-17 evening, the four rules): `jwt` callback
+      sets `token.sub` from the Slack claim; `getUser` repairs UUID sessions
+      by email (`users.lookupByEmail`, once per session) and never writes a
+      UUID mapping; startup prunes the 215 junk mappings; `getSlackUserId()`
+      is async and nullable. `STRICT_SLACK_NAMES` and the `/login` bad-name
+      page removed. Calendar shows `SlackNameNotice` (what's wrong, suggested
+      names, "Check again" which bypasses the refresh throttle, and that
+      booking is unaffected). Errors: `data/<year>/errors.txt` via
+      `recordError` -- refusals, tRPC failures (route `onError`, now with the
+      real user agent), browser reports (`errors.report`, 30/min/person),
+      `app/error.tsx`, `ErrorReporter` toasts, network-error wording in the
+      calendar. Tests: auth callbacks, UUID-session repair and prune, wrong
+      names can still book, error records. 329 unit tests green.
+- [ ] Deploy: push -> image -> ops pin (needs the user's yes for the pin).
+- [ ] Then on `/users`: grant team access / approve people; the audit's
+      "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Self-hosted runner on a public repo (status 2026-09-17)

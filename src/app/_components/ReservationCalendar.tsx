@@ -7,6 +7,7 @@ import { api } from "~/trpc/react";
 import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
 import { useAppConfig } from "./AppConfig";
+import { describeRequestError } from "./clientErrors";
 import { DayWeather } from "./DayWeather";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
@@ -636,6 +637,9 @@ function TimeSlot({
 	const [error, setError] = useState<string | null>(null);
 	const utils = api.useUtils();
 	const { timeZone } = useAppConfig();
+	// A request that never got an answer is the browser's story to tell; the
+	// server records the ones it refused itself.
+	const reportError = api.errors.report.useMutation();
 
 	const handleCancelAdd = useCallback(() => {
 		setIsAdding(false);
@@ -730,7 +734,9 @@ function TimeSlot({
 			// Restore the temporary team number on error
 			setTempTeamNumber(newReservation.team);
 			// The dialog stays open, so say why rather than looking like nothing happened
-			setError(err.message);
+			const { message, reachedServer } = describeRequestError(err);
+			setError(message);
+			if (!reachedServer) reportError.mutate({ kind: "network", message: err.message, page: window.location.pathname });
 		},
 		onSettled: () => {
 			// Don't refetch
@@ -777,7 +783,9 @@ function TimeSlot({
 				return next;
 			});
 			// The pill reappearing on its own looks like a glitch; say what happened
-			setError(err.message);
+			const { message, reachedServer } = describeRequestError(err);
+			setError(message);
+			if (!reachedServer) reportError.mutate({ kind: "network", message: err.message, page: window.location.pathname });
 		},
 	});
 

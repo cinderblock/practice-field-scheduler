@@ -18,6 +18,7 @@ import { HydrateClient } from "~/trpc/server";
 import CalendarFeedButtons from "./_components/CalendarFeedButtons";
 import { RenderTime } from "./_components/RenderTime";
 import { ShutdownButton } from "./_components/ShutdownButton";
+import { SlackNameNotice } from "./_components/SlackNameNotice";
 import { Title } from "./_components/Title";
 import { TSLLogo } from "./_components/TSLLogo";
 import styles from "./index.module.css";
@@ -177,6 +178,7 @@ async function LoggedIn({ session }: { session: Session }) {
 					</Link>
 				</div>
 			</div>
+			<SlackNameNotice />
 			<ReservationCalendar
 				initialReservations={reservationsByDate}
 				initialHolidays={holidays}

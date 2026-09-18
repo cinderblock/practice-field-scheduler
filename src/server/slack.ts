@@ -167,6 +167,34 @@ export async function getSlackMember(slackUserId: string): Promise<SlackMember |
 	return toMember(raw);
 }
 
+/**
+ * Whether a string is shaped like a Slack user id ("U01ABCDEF"; "W..." on
+ * Enterprise Grid): uppercase alphanumerics after the prefix. Sessions used to
+ * carry a random UUID here instead -- see the `jwt` callback in auth/config.ts
+ * and `getUser` in the backend, which repairs those by email.
+ */
+export function isSlackUserId(id: string | null | undefined): id is string {
+	return typeof id === "string" && /^[UW][A-Z0-9_]{2,}$/.test(id);
+}
+
+/**
+ * Find the person whose Slack profile carries this email
+ * (`users.lookupByEmail`, bot scope `users:read.email`). Returns null when no
+ * account has it, or when it belongs to a bot.
+ */
+export async function lookupSlackMemberByEmail(email: string): Promise<SlackMember | null> {
+	let json: SlackApiResponse;
+	try {
+		json = await callSlack("users.lookupByEmail", { email }, "form");
+	} catch (err) {
+		if (err instanceof SlackApiError && err.slackError === "users_not_found") return null;
+		throw err;
+	}
+	const raw = json.user as RawMember | undefined;
+	if (!raw) throw new SlackApiError("users.lookupByEmail", "response had no user", json);
+	return toMember(raw);
+}
+
 /** Page size for `users.list`; Slack recommends no more than 200. */
 const USERS_LIST_PAGE_SIZE = 200;
 

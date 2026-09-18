@@ -1,0 +1,51 @@
+/* Corner toasts for errors nothing else caught. Above everything, including
+   the add-reservation modal (z-index 1000). */
+.stack {
+	position: fixed;
+	right: 1rem;
+	bottom: 1rem;
+	z-index: 2000;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-width: min(360px, calc(100vw - 2rem));
+}
+
+.toast {
+	padding: 0.75rem 0.9rem;
+	border-radius: 0.6rem;
+	border: 1px solid #a33;
+	background: #232347;
+	color: #dfe6ff;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+	font-size: 0.9rem;
+	line-height: 1.35;
+}
+
+.toastTitle {
+	font-weight: 700;
+	color: #ffc9c9;
+}
+
+.toastMessage {
+	margin-top: 0.2rem;
+	overflow-wrap: anywhere;
+}
+
+.toastHint {
+	margin-top: 0.3rem;
+	font-size: 0.8rem;
+	color: #a7bfff;
+}
+
+.dismiss {
+	margin-top: 0.5rem;
+	padding: 0.3rem 0.7rem;
+	border: none;
+	border-radius: 0.4rem;
+	background: #35356b;
+	color: #dfe6ff;
+	font: inherit;
+	font-size: 0.85rem;
+	cursor: pointer;
+}

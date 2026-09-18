@@ -246,7 +246,7 @@ On `/users`, admins get:
 - **Slack names** — everyone in the Slack workspace whose names need fixing
   (including people who've never signed in), what's wrong, and suggested
   fixes. **Check now**, and **Preview**/**Send DMs** with personalised
-  instructions. Use it before turning on `STRICT_SLACK_NAMES`. Each person's
+  instructions. Each person's
   row also says when their gate links are on hold, and why.
 - **Team gate links** — per-team status, **Reveal link** (to hand a link over
   when Slack isn't reaching someone) and **Rotate** (new link, every old
@@ -282,12 +282,11 @@ The full contract, including every denial reason, lives in
 
 #### Required configuration
 
-| Variable             | Purpose                                                                | If unset                         |
-| -------------------- | ---------------------------------------------------------------------- | -------------------------------- |
-| `SCHEDULER_API_KEY`  | Shared bearer secret consumers present (≥32 chars)                     | endpoint returns `503`           |
-| `SLACK_BOT_TOKEN`    | Slack bot token (`xoxb-…`), bot scopes `chat:write` and `users:read`   | no DMs, no name checks, no links |
-| `GATE_BASE_URL`      | Public Gate Manager base URL, used to build `${base}/g/<token>`        | link omitted from DMs            |
-| `STRICT_SLACK_NAMES` | `"true"`/`"1"` refuses sign-in until both Slack names follow the rules | names are only checked for links |
+| Variable            | Purpose                                                              | If unset                         |
+| ------------------- | -------------------------------------------------------------------- | -------------------------------- |
+| `SCHEDULER_API_KEY` | Shared bearer secret consumers present (≥32 chars)                   | endpoint returns `503`           |
+| `SLACK_BOT_TOKEN`   | Slack bot token (`xoxb-…`), bot scopes `chat:write` and `users:read` | no DMs, no name checks, no links |
+| `GATE_BASE_URL`     | Public Gate Manager base URL, used to build `${base}/g/<token>`      | link omitted from DMs            |
 
 The bot needs **`users:read`** to read names (`users.info`, `users.list`).
 Without it, `/users` says so and nobody's gate links go out. Add the scope in

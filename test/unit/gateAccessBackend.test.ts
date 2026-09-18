@@ -24,12 +24,12 @@ vi.setSystemTime(new Date("2026-05-23T18:00:00Z"));
 type Person = { slack: string; real: string; display: string; email: string };
 
 /** What Slack's Web API says about each account. Tests edit it. */
-const directory = new Map<string, { real_name: string; display_name: string; deleted: boolean }>();
+const directory = new Map<string, { real_name: string; display_name: string; deleted: boolean; email: string }>();
 /** When set, Slack's user-reading methods fail with this error. */
 let readFailure: string | null = null;
 
 function setNames(person: Person, real = person.real, display = person.display, deleted = false) {
-	directory.set(person.slack, { real_name: real, display_name: display, deleted });
+	directory.set(person.slack, { real_name: real, display_name: display, deleted, email: person.email });
 }
 
 const member = (id: string) => {
@@ -39,8 +39,14 @@ const member = (id: string) => {
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 	const method = url.split("/").pop();
-	if (method === "users.info" || method === "users.list") {
+	if (method === "users.info" || method === "users.list" || method === "users.lookupByEmail") {
 		if (readFailure) return Response.json({ ok: false, error: readFailure });
+		if (method === "users.lookupByEmail") {
+			const email = new URLSearchParams(init?.body as string).get("email") ?? "";
+			const id = [...directory.entries()].find(([, entry]) => entry.email && entry.email === email)?.[0];
+			const user = id ? member(id) : undefined;
+			return Response.json(user ? { ok: true, user } : { ok: false, error: "users_not_found" });
+		}
 		if (method === "users.list") {
 			return Response.json({
 				ok: true,
@@ -475,6 +481,71 @@ describe("gate access, end to end", () => {
 		expect(tokensIn(lastDmTo(NIA.slack).text)).toEqual([team5678]);
 	});
 
+	it("identifies a session carrying Auth.js's random UUID instead of a Slack id by email, and stores the real id", async () => {
+		// Every session issued before the jwt callback in auth/config.ts looks like this.
+		const stale: Session = {
+			user: { id: "5d1c0f2e-1111-4222-8333-444455556666", name: JANE.real, email: JANE.email, image: "" },
+			expires: "2099-01-01T00:00:00.000Z",
+		};
+		const ctx = new Context(stale, "vitest", "127.0.0.1");
+		expect(Array.isArray(await ctx.getTeams())).toBe(true);
+		expect(await ctx.getSlackUserId()).toBe(JANE.slack);
+		expect(await ctx.getMySlackNames()).toMatchObject({ identified: true, displayName: JANE.display });
+
+		await settle();
+		const mappings = JSON.parse(readFileSync(join(dataDir, "slack.json"), "utf-8")) as { slackId: string }[];
+		expect(mappings.length).toBeGreaterThan(0);
+		expect(mappings.filter(m => !m.slackId.startsWith("U_"))).toEqual([]);
+	});
+
+	it("still serves someone Slack can't find by email: they can book, and the notice says links are waiting", async () => {
+		const uma: Session = {
+			user: {
+				id: "7a9b8c7d-2222-4333-8444-555566667777",
+				name: "Uma Unknown (1234)",
+				email: "uma@example.com",
+				image: "",
+			},
+			expires: "2099-01-01T00:00:00.000Z",
+		};
+		const ctx = new Context(uma, "vitest", "127.0.0.1");
+		// Teams from the sign-in name, as before Slack could be read
+		expect(await ctx.getTeams()).toEqual([1234]);
+		expect(await ctx.getSlackUserId()).toBeNull();
+		expect(await ctx.getMySlackNames()).toMatchObject({ identified: false, ok: false, issues: ["unverified"] });
+
+		const reservation = await ctx.addReservation({
+			date: "2026-05-27",
+			slot: "07:00pm",
+			team: "1234",
+			notes: "",
+			priority: false,
+		});
+		expect(reservation.team).toBe("1234");
+
+		await settle();
+		// Nothing was DM'd into the void
+		expect(dms().some(d => !d.channel)).toBe(false);
+		const mappings = JSON.parse(readFileSync(join(dataDir, "slack.json"), "utf-8")) as { slackId: string }[];
+		expect(mappings.filter(m => !m.slackId.startsWith("U_"))).toEqual([]);
+	});
+
+	it("lets someone with wrong Slack names book field time -- names only gate links", async () => {
+		setNames(LAPTOP, "Robotics Laptop", "Robotics Laptop");
+		await admin.checkSlackNamesNow();
+		const laptop = await signIn(LAPTOP);
+		expect((await laptop.getMySlackNames()).ok).toBe(false);
+
+		const reservation = await laptop.addReservation({
+			date: "2026-05-28",
+			slot: "10:00am",
+			team: "1234",
+			notes: "",
+			priority: false,
+		});
+		expect(reservation.date).toBe("2026-05-28");
+	});
+
 	it("keeps link and name administration admin-only", async () => {
 		await expect(jane.revealTeamAccessLink(1234)).rejects.toBeInstanceOf(PermissionError);
 		await expect(jane.rotatePersonalAccessLink(bobId)).rejects.toBeInstanceOf(PermissionError);
@@ -500,7 +571,9 @@ describe("gate access, end to end", () => {
 		const users = JSON.parse(readFileSync(join(dataDir, "users.json"), "utf-8")) as Record<string, unknown>[];
 		const approved = users.filter(u => u.generalAccessApproved === true).map(u => u.displayName);
 		expect(approved.sort()).toEqual([ADA.display, BOB.display, JANE.display].sort());
-		expect(users.every(u => typeof u.slackNamesSyncedAt === "string")).toBe(true);
+		// Everyone Slack could identify has verified names; Uma, unknown to Slack, is the one exception
+		const unsynced = users.filter(u => typeof u.slackNamesSyncedAt !== "string").map(u => u.email);
+		expect(unsynced).toEqual(["uma@example.com"]);
 		const laptop = users.find(u => u.displayName === LAPTOP.display);
 		expect(laptop?.slackNameNudgeSentFor).toBe(JSON.stringify([LAPTOP.real, LAPTOP.display]));
 		expect(users.some(u => "accessToken" in u)).toBe(false);

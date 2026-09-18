@@ -28,14 +28,6 @@ export const env = createEnv({
 		SCHEDULER_API_KEY: z.string().min(32).optional(),
 		SLACK_BOT_TOKEN: z.string().startsWith("xoxb-", "Slack bot tokens start with 'xoxb-'").optional(),
 		GATE_BASE_URL: z.string().url().optional(),
-		// When truthy ("true"/"1"), reject Slack logins whose display name doesn't match
-		// the "First Last (1234)" format. Leave unset for a soft rollout where the nudge DM
-		// can run for a while before login starts denying. Unrecognized values fail loudly
-		// so a typo like STRICT_SLACK_NAMES="yes" doesn't silently mean "off".
-		STRICT_SLACK_NAMES: z
-			.enum(["true", "false", "1", "0", ""])
-			.optional()
-			.transform(val => val === "true" || val === "1"),
 
 		// Weather is optional; it is enabled by setting a location.
 		// Either "latitude,longitude" (exact) or a place name / postal code to look up.
@@ -107,7 +99,6 @@ export const env = createEnv({
 		SCHEDULER_API_KEY: process.env.SCHEDULER_API_KEY,
 		SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
 		GATE_BASE_URL: process.env.GATE_BASE_URL,
-		STRICT_SLACK_NAMES: process.env.STRICT_SLACK_NAMES,
 		WEATHER_LOCATION: process.env.WEATHER_LOCATION,
 		WEATHER_API_KEY: process.env.WEATHER_API_KEY,
 		WEATHER_UPDATES_PER_DAY: process.env.WEATHER_UPDATES_PER_DAY,

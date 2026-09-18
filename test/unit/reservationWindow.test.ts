@@ -20,7 +20,7 @@
  * scratch directory before importing the backend, which resolves both at import time.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Session } from "next-auth";
@@ -97,6 +97,12 @@ beforeAll(async () => {
 	// The window is evaluated in TIME_ZONE, so the test pins it rather than depending on whatever
 	// the environment supplies.
 	process.env.TIME_ZONE = "America/Los_Angeles";
+	// Session ids here aren't Slack ids, so the backend would ask Slack who they are. Not over the
+	// network, thanks: Slack says it doesn't know us, and the tests carry on as unidentified.
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ ok: false, error: "invalid_auth" })),
+	);
 
 	const backend = await import("~/server/backend");
 	Context = backend.Context;
@@ -114,6 +120,7 @@ afterEach(() => {
 
 afterAll(() => {
 	vi.useRealTimers();
+	vi.unstubAllGlobals();
 	rmSync(dataDir, { recursive: true, force: true });
 });
 
@@ -171,5 +178,55 @@ describe("team membership", () => {
 		} finally {
 			warn.mockRestore();
 		}
+	});
+});
+
+describe("error records", () => {
+	type ErrorLine = { timestamp: string; source: string; kind: string; message: string; userId?: string; page?: string };
+
+	const errorsFile = () => join(dataDir, String(new Date().getFullYear()), "errors.txt");
+	const records = (): ErrorLine[] =>
+		existsSync(errorsFile())
+			? readFileSync(errorsFile(), "utf-8")
+					.split("\n")
+					.filter(Boolean)
+					.map(line => JSON.parse(line) as ErrorLine)
+			: [];
+
+	it("files every refusal with who and what, for review later", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await expect(book(member(), day(-2), "04:00pm")).rejects.toBeInstanceOf(PermissionError);
+		} finally {
+			warn.mockRestore();
+		}
+		await vi.waitFor(() => {
+			const refused = records().filter(r => r.kind === "refused");
+			expect(refused.at(-1)).toMatchObject({
+				source: "server",
+				message: "Cannot reserve a date in the past",
+				userId: "member-uid",
+			});
+		});
+	});
+
+	it("files what a browser reports, with who and where, and caps a runaway page", async () => {
+		const ctx = member();
+		expect(await ctx.reportClientError({ kind: "render", message: "boom", page: "/" })).toEqual({ recorded: true });
+		await vi.waitFor(() =>
+			expect(records().find(r => r.kind === "render")).toMatchObject({
+				source: "client",
+				message: "boom",
+				userId: "member-uid",
+				page: "/",
+			}),
+		);
+
+		let recorded = 0;
+		for (let i = 0; i < 40; i++) {
+			if ((await ctx.reportClientError({ kind: "unhandled", message: `spam ${i}` })).recorded) recorded++;
+		}
+		// 30 a minute per person, and one was already used above
+		expect(recorded).toBe(29);
 	});
 });

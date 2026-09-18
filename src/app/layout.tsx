@@ -6,6 +6,7 @@ import { Geist } from "next/font/google";
 import { env } from "~/env";
 import { TRPCReactProvider } from "~/trpc/react";
 import { AppConfigProvider } from "./_components/AppConfig";
+import { ErrorReporter } from "./_components/ErrorReporter";
 
 // Every page is rendered per request. Otherwise Next prerenders the ones it
 // thinks are static (/login, /_not-found) at build time, when the deployment's
@@ -40,7 +41,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 		<html lang="en">
 			<body className={geist.className}>
 				<AppConfigProvider value={config}>
-					<TRPCReactProvider>{children}</TRPCReactProvider>
+					<TRPCReactProvider>
+						{children}
+						<ErrorReporter />
+					</TRPCReactProvider>
 				</AppConfigProvider>
 			</body>
 		</html>

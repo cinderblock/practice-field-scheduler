@@ -18,9 +18,9 @@ const NOT_JUST_A_NAME = /[()[\]{}<>\d]/;
 
 /**
  * Approved non-team parens markers. Names ending in `(TSL)` belong to lab
- * mates who aren't on an FRC team. They validate successfully (so they're
- * allowed to log in under STRICT_SLACK_NAMES) but parse to `teams: []`,
- * so they don't get auto gate access from team reservations.
+ * mates who aren't on an FRC team. They validate successfully (so their gate
+ * links aren't held over their names) but parse to `teams: []`, so they don't
+ * get auto gate access from team reservations.
  *
  * Matched case-sensitively — the convention is the exact uppercase string.
  */

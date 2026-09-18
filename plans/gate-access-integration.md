@@ -656,8 +656,12 @@ the bot scope **`users:read`**.
       names can still book, error records. 329 unit tests green.
 - [ ] Deploy: pushed as `19d8a21` (2026-09-17 evening); `next build` verified
       locally the way CI does it (`SKIP_ENV_VALIDATION=1`, throwaway
-      `DATA_DIR`). Image build run `35389981822`. Then the ops pin (needs the
-      user's yes).
+      `DATA_DIR`). Image published by run `35389981822`:
+      `ghcr.io/cinderblock/practice-field-scheduler@sha256:43aced8df5b78173f81900a86a4bc5a373875de824beebe34f286b71ee7ddc24`
+      (registry digest for the `19d8a21` tag confirmed; note the first sha256
+      in a build log is the node base image, not ours). Handed to ops session
+      `ops-2d` -- the earlier `t3code-2ac884c3-7b` session is gone. Waiting on
+      the user's yes for the pin.
 - [ ] Then on `/users`: grant team access / approve people; the audit's
       "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

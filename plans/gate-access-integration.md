@@ -666,8 +666,10 @@ the bot scope **`users:read`**.
       copy `slack.json` aside first and refuse to prune if that fails; honour a
       kept legacy mapping in `getUser`). Verified on the live data first: all
       36 users have a unique non-empty email, no orphan mappings, pre-cutover
-      copy intact. Image build run `35390741831`; ops holds until that digest
-      arrives, then asks the user for the pin.
+      copy intact. Published by run `35390741831` as
+      `ghcr.io/cinderblock/practice-field-scheduler@sha256:507111e5be893254195a6795098d5abaf72b1f219cbf1b7db0becc78559c4a3b`
+      (revision `50dc13f`, registry digest confirmed) and handed to `ops-2d`,
+      which puts it to the user for the pin. **This is the digest to pin.**
 - [ ] Then on `/users`: grant team access / approve people; the audit's
       "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

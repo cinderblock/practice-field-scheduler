@@ -375,6 +375,34 @@ the bot scope **`users:read`**.
 
 ## Findings / gotchas
 
+- **2026-09-17 evening, first production check: `session.user.id` is NOT a
+  Slack user id.** All 215 entries in `slack.json` are UUIDs (one user has
+  38 of them); zero users have `slackNamesSyncedAt`. Cause: `@auth/core`'s
+  OAuth callback (`lib/actions/callback/oauth/callback.js:208`) sets the
+  user's `id` to `crypto.randomUUID()` regardless of what `profile()` returns;
+  the provider's id only survives as `account.providerAccountId`. With the
+  JWT strategy and no adapter that UUID becomes `token.sub`, which our
+  `session` callback copies into `session.user.id`. So every sign-in mints a
+  new "Slack id", `getUser()` creates a new mapping for it, and
+  `users.info` answers `user_not_found` — which `getSlackMember()` maps to
+  `null`, which `refreshSlackNames()` treats as "nothing to do", silently.
+  Verified live: `users.info` for the 17:22 booker's stored id returns
+  `user_not_found`. Consequences: name sync never runs, teams never populate
+  from display names, links stay held, and a DM would go to a channel that
+  doesn't exist. The unit tests fake session ids like `"user-1"`, so nothing
+  was ever shaped like a real id and nothing caught it. The feature was never
+  exercised against production before today because the box had no bot token
+  until the ops cutover. Everything else in the chain is verified working:
+  gate -> scheduler over the real route with matching keys, `auth.test` ok
+  with `chat:write` + `users:read` + `users:read.email`. Fix (not yet done):
+  a `jwt` callback that sets `token.sub` from
+  `profile["https://slack.com/user_id"] ?? account.providerAccountId` on
+  sign-in, plus a runtime repair for existing sessions -- when the session id
+  is not Slack-shaped, resolve the person by email with `users.lookupByEmail`
+  (scope already granted), store the real id, and prune the UUID mappings.
+  Alternative is rotating `AUTH_SECRET` to force everyone to sign in again;
+  abrupt, and it still leaves the junk mappings.
+
 - **`git status` shows ~55 "modified" files in the main tree that don't
   actually differ.** `git diff` on them is empty, and `git hash-object`
   equals the `HEAD` blob. Cause: the files are LF on disk (a formatter

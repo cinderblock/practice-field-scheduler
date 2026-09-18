@@ -8,7 +8,7 @@
  */
 
 import crypto from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { Session } from "next-auth";
@@ -320,11 +320,35 @@ async function resolveSlackIdByEmail(sessionId: string, email: string): Promise<
  * Runs once at startup, while initialization holds `changeLock`.
  */
 async function pruneNonSlackMappings() {
-	const kept = slackMappings.filter(m => isSlackUserId(m.slackId));
+	if (DisableWrites) return;
+
+	// An entry only goes when its person can still be found without it: by a
+	// real mapping, or by email. Anyone else keeps theirs, and `getUser` still
+	// honours it, so nobody ends up with a duplicate user record.
+	const hasRealMapping = new Set(slackMappings.filter(m => isSlackUserId(m.slackId)).map(m => m.userId));
+	const findableWithout = (userId: UserId) =>
+		hasRealMapping.has(userId) || Boolean(users.find(u => u.id === userId)?.email?.trim());
+	const kept = slackMappings.filter(m => isSlackUserId(m.slackId) || !findableWithout(m.userId));
 	const removed = slackMappings.length - kept.length;
 	if (removed === 0) return;
+
+	// The file is the whole gate-links feature's memory of who is who: copy it
+	// aside first, so there is an undo.
+	const backup = `${SLACK_MAPPINGS_FILE}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+	try {
+		await copyFile(SLACK_MAPPINGS_FILE, backup);
+	} catch (err) {
+		console.error(
+			`❌ [${MODULE_INSTANCE_ID}] Not pruning Slack mappings: couldn't back up ${SLACK_MAPPINGS_FILE}:`,
+			err,
+		);
+		return;
+	}
+
 	slackMappings.splice(0, slackMappings.length, ...kept);
-	console.warn(`⚠️ [${MODULE_INSTANCE_ID}] Removed ${removed} Slack mapping(s) that weren't Slack user ids`);
+	console.warn(
+		`⚠️ [${MODULE_INSTANCE_ID}] Removed ${removed} Slack mapping(s) that weren't Slack user ids (backup: ${backup})`,
+	);
 	await writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings);
 }
 
@@ -1284,6 +1308,21 @@ export class Context {
 				await syncUserFromSession(existingUser, sessionName);
 				await this.startNameCheck(existingUser);
 				return existingUser;
+			}
+		}
+
+		// Slack couldn't identify the session and no user has its email: fall
+		// back to the mapping its id was stored under, if the start-up prune kept
+		// it (it does when it's the only way to find the person).
+		if (!slackId) {
+			const legacy = slackMappings.find(m => m.slackId === sessionId);
+			const user = legacy && users.find(u => u.id === legacy.userId);
+			if (user) {
+				if (user.disabled) {
+					throw new PermissionError("User disabled");
+				}
+				await syncUserFromSession(user, sessionName);
+				return user;
 			}
 		}
 

@@ -660,8 +660,14 @@ the bot scope **`users:read`**.
       `ghcr.io/cinderblock/practice-field-scheduler@sha256:43aced8df5b78173f81900a86a4bc5a373875de824beebe34f286b71ee7ddc24`
       (registry digest for the `19d8a21` tag confirmed; note the first sha256
       in a build log is the node base image, not ours). Handed to ops session
-      `ops-2d` -- the earlier `t3code-2ac884c3-7b` session is gone. Waiting on
-      the user's yes for the pin.
+      `ops-2d` -- the earlier `t3code-2ac884c3-7b` session is gone.
+      **Superseded**: ops asked what the undo for the mapping prune was, so
+      `50dc13f` hardens it (only drop an entry whose person can be re-found;
+      copy `slack.json` aside first and refuse to prune if that fails; honour a
+      kept legacy mapping in `getUser`). Verified on the live data first: all
+      36 users have a unique non-empty email, no orphan mappings, pre-cutover
+      copy intact. Image build run `35390741831`; ops holds until that digest
+      arrives, then asks the user for the pin.
 - [ ] Then on `/users`: grant team access / approve people; the audit's
       "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

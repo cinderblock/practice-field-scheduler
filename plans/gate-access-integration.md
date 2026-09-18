@@ -654,7 +654,10 @@ the bot scope **`users:read`**.
       `app/error.tsx`, `ErrorReporter` toasts, network-error wording in the
       calendar. Tests: auth callbacks, UUID-session repair and prune, wrong
       names can still book, error records. 329 unit tests green.
-- [ ] Deploy: push -> image -> ops pin (needs the user's yes for the pin).
+- [ ] Deploy: pushed as `19d8a21` (2026-09-17 evening); `next build` verified
+      locally the way CI does it (`SKIP_ENV_VALIDATION=1`, throwaway
+      `DATA_DIR`). Image build run `35389981822`. Then the ops pin (needs the
+      user's yes).
 - [ ] Then on `/users`: grant team access / approve people; the audit's
       "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

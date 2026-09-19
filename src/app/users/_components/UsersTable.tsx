@@ -174,6 +174,13 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 													status={access.status}
 													isAdmin={user.isAdmin}
 													canApprove={access.nameIssues.length === 0}
+													blockedBy={
+														access.nameIssues.length === 0
+															? null
+															: access.nameIssues.includes("unverified")
+																? "unverified"
+																: "wrong_names"
+													}
 													gateUrlConfigured={accessConfig.data?.gateUrlConfigured ?? false}
 													onChanged={() => personalLinks.refetch()}
 												/>

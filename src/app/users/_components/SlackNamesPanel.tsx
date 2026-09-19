@@ -13,6 +13,8 @@ type RunResult = {
 	total: number;
 	succeeded: number;
 	failed: number;
+	/** Already DM'd by the scheduler about their names; left alone (one message each, for now). */
+	skipped: number;
 	outcomes: Outcome[];
 };
 
@@ -193,7 +195,10 @@ export function SlackNamesPanel() {
 				<div className={styles.spaced}>
 					<p className={lastRun.failed > 0 ? ui.error : ui.success}>
 						{lastRun.dryRun ? "Preview: would DM" : "DM'd"} {lastRun.succeeded} of {lastRun.total}
-						{lastRun.failed > 0 && ` — ${lastRun.failed} couldn't be reached`}.
+						{lastRun.failed > 0 && ` — ${lastRun.failed} couldn't be reached`}
+						{lastRun.skipped > 0 &&
+							` — ${plural(lastRun.skipped, "person", "people")} already told by the scheduler, left alone`}
+						.
 					</p>
 					{lastRun.failed > 0 && (
 						<ul className={styles.issues}>

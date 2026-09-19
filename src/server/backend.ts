@@ -658,16 +658,18 @@ const nudgesInFlight = new Set<UserId>();
 
 /**
  * DM someone what's wrong with their Slack names, unless they've already been
- * told about this exact pair. Does nothing when the names are fine, or when
- * they've never been read from Slack (we can't say what's wrong).
+ * told (once per person, for now). Does nothing when the names are fine, or
+ * when they've never been read from Slack (we can't say what's wrong).
  *
  * Takes `changeLock` (to save). Must NOT be called while holding it.
  */
 async function nudgeAboutNames(user: UserEntry, slackId: string, reason: NameFixReason): Promise<boolean> {
 	const check = slackNameCheckFor(user);
 	if (check.ok || check.issues.includes("unverified")) return false;
+	// Once per person, ever (for now): a second wrong pair of names doesn't
+	// earn a second DM. The calendar keeps telling them on every visit.
+	if (user.slackNameNudgeSentFor !== undefined || nudgesInFlight.has(user.id)) return false;
 	const key = nameNudgeKey(user);
-	if (user.slackNameNudgeSentFor === key || nudgesInFlight.has(user.id)) return false;
 
 	nudgesInFlight.add(user.id);
 	try {
@@ -1845,6 +1847,8 @@ export class Context {
 		total: number;
 		succeeded: number;
 		failed: number;
+		/** People the scheduler had already DM'd about their names, left alone (one message each, for now). */
+		skipped: number;
 		outcomes: Array<{ slackId: string; name: string; ok: boolean; error?: string }>;
 	}> {
 		await this.assertAdmin("Only admins can nudge people about their names");
@@ -1856,8 +1860,14 @@ export class Context {
 
 		const { problems } = slackNameReport();
 		const outcomes: Array<{ slackId: string; name: string; ok: boolean; error?: string }> = [];
+		let skipped = 0;
 		for (const problem of problems) {
 			const name = problem.displayName || problem.realName || problem.slackId;
+			const user = problem.userId ? users.find(u => u.id === problem.userId) : undefined;
+			if (user?.slackNameNudgeSentFor !== undefined) {
+				skipped++;
+				continue;
+			}
 			if (dryRun) {
 				outcomes.push({ slackId: problem.slackId, name, ok: true });
 				continue;
@@ -1871,7 +1881,6 @@ export class Context {
 			outcomes.push({ slackId: problem.slackId, name, ok: true });
 
 			// Only once the stored names match what we just DM'd about.
-			const user = problem.userId ? users.find(u => u.id === problem.userId) : undefined;
 			if (
 				user?.slackNamesSyncedAt &&
 				user.name === problem.realName &&
@@ -1887,7 +1896,7 @@ export class Context {
 			const ctx = await this.getContext();
 			await log({ ...ctx, type: "slackNamesNudge", count: succeeded });
 		}
-		return { dryRun, total: outcomes.length, succeeded, failed: outcomes.length - succeeded, outcomes };
+		return { dryRun, total: outcomes.length, succeeded, failed: outcomes.length - succeeded, skipped, outcomes };
 	}
 
 	/**

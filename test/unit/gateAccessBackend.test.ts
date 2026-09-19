@@ -321,6 +321,14 @@ describe("gate access, end to end", () => {
 		await signIn(LAPTOP);
 		await settle();
 		expect(dmsTo(LAPTOP.slack)).toHaveLength(1);
+
+		// A different wrong pair still earns no second DM: once per person, for now.
+		setNames(LAPTOP, "Robotics Laptop", "Laptop (robotics)");
+		await admin.checkSlackNamesNow();
+		await signIn(LAPTOP);
+		await settle();
+		expect(dmsTo(LAPTOP.slack)).toHaveLength(1);
+		setNames(LAPTOP);
 	});
 
 	it("shuts personal links overnight", async () => {
@@ -431,13 +439,16 @@ describe("gate access, end to end", () => {
 			suggestion: { realName: "Stranger", displayName: "Stranger (42)" },
 		});
 
+		// The laptop was already DM'd by the scheduler, so it's left alone: one message per person, for now.
 		const dry = await admin.nudgeSlackNameProblems(true);
-		expect(dry).toMatchObject({ dryRun: true, total: 2, succeeded: 2, failed: 0 });
+		expect(dry).toMatchObject({ dryRun: true, total: 1, succeeded: 1, failed: 0, skipped: 1 });
 		await settle();
 		expect(dmsTo(STRANGER.slack)).toHaveLength(0);
 
+		const laptopDmsBefore = dmsTo(LAPTOP.slack).length;
 		const sent = await admin.nudgeSlackNameProblems(false);
-		expect(sent).toMatchObject({ dryRun: false, total: 2, succeeded: 2, failed: 0 });
+		expect(sent).toMatchObject({ dryRun: false, total: 1, succeeded: 1, failed: 0, skipped: 1 });
+		expect(dmsTo(LAPTOP.slack)).toHaveLength(laptopDmsBefore);
 		expect(dmsTo(STRANGER.slack)).toHaveLength(1);
 		expect(lastDmTo(STRANGER.slack).text).not.toContain("on hold");
 		expect(lastDmTo(STRANGER.slack).text).toContain("• Display name: `Stranger (42)`");

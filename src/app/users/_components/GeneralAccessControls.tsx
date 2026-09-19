@@ -48,6 +48,7 @@ export function GeneralAccessControls({
 	status,
 	isAdmin,
 	canApprove,
+	blockedBy,
 	gateUrlConfigured,
 	onChanged,
 }: {
@@ -57,6 +58,8 @@ export function GeneralAccessControls({
 	isAdmin: boolean;
 	/** False while their Slack names are unverified or wrong; approval would be refused. */
 	canApprove: boolean;
+	/** Why approval is blocked, when it is: names never read from Slack, or names that break the format. */
+	blockedBy: "unverified" | "wrong_names" | null;
 	gateUrlConfigured: boolean;
 	onChanged: () => Promise<unknown>;
 }) {
@@ -85,7 +88,16 @@ export function GeneralAccessControls({
 								? "Admins always have general gate access. Their link goes out at their next sign-in."
 								: "Admins always have general gate access.",
 					}
-			: STATUS[status];
+			: status === "not_approved" && blockedBy
+				? {
+						chip: "Approval blocked",
+						tone: ui.chipWarn as string,
+						detail:
+							blockedBy === "unverified"
+								? "Their names haven't been read from Slack yet. Press Check now above, then approve."
+								: "Their Slack names don't follow the format. Approve once they've fixed them.",
+					}
+				: STATUS[status];
 
 	async function run(action: () => Promise<string | null>) {
 		setError(null);
@@ -212,9 +224,6 @@ export function GeneralAccessControls({
 						</button>
 					)}
 				</div>
-			)}
-			{!confirming && !approved && !isAdmin && !canApprove && status !== "disabled" && (
-				<p className={ui.note}>Approve once their Slack names follow the format.</p>
 			)}
 
 			{revealed && (

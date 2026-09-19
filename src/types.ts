@@ -75,8 +75,9 @@ export type UserEntry = {
 	// Unset means they've never been verified there (sign-in alone can't see
 	// the display name), so gate links are held.
 	slackNamesSyncedAt?: Date;
-	// The (full name, display name) pair we last DM'd this person about fixing,
-	// so each wrong pair is only raised once.
+	// The (full name, display name) pair we DM'd this person about fixing. Set
+	// at all means they've been told: the scheduler DMs about names once per
+	// person, for now, whatever they change them to afterwards.
 	slackNameNudgeSentFor?: string;
 };
 

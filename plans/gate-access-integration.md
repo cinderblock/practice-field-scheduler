@@ -409,6 +409,14 @@ the bot scope **`users:read`**.
 
 ## Findings / gotchas
 
+- **Never write the CI-skip token anywhere in an ops commit message**, not
+  even in prose in the body ("two docs-only ([skip ci]) commits"). GitHub
+  suppresses the push's workflows on any mention in the head commit's message,
+  so the pin commit `9bb0803` (2026-09-19) produced no deploy run -- the same
+  trap that hit `ca14c35` the day before. Recovery, both times: no force-push;
+  `gh workflow run deploy.yml --ref master` (its `push` trigger also has a
+  `paths:` filter, so an empty commit wouldn't have helped either).
+
 - **2026-09-17 evening, first production check: `session.user.id` is NOT a
   Slack user id.** All 215 entries in `slack.json` are UUIDs (one user has
   38 of them); zero users have `slackNamesSyncedAt`. Cause: `@auth/core`'s
@@ -714,15 +722,20 @@ the bot scope **`users:read`**.
       wrong names). Behaviour, traced: on the first request after their names
       are read (or an admin's refused approval), one DM; the calendar notice
       on every visit while wrong; the workspace sync never DMs by itself.
-- [ ] Re-pin to the `98f7d54` image, published by run `35467836297`:
-      `ghcr.io/cinderblock/practice-field-scheduler@sha256:d7f1e1a19e53615a9b211649269a083b139ed80b1e23cc66ac2faea031af54fa`
-      (registry digest confirmed; Test green). Supersedes `7bb964c1`. Handed
-      to the ops thread (`ops-7c` at the time; names rotate). Needs the user's
-      go there. After it lands, expect
-      `/data/slack.json` to fill (~36) after the first sync and the log line
-      "Matched N scheduler user(s) to their Slack accounts by email".
-- [ ] Then on `/users`: **Check now** (now reaches everyone), then grant team
-      access / approve people.
+- [x] **Re-pinned to `98f7d54` and live** (2026-09-19 13:47 PDT). The user
+      said "do it" in this thread, so I pushed the pin from the shared ops
+      checkout myself (`9bb0803`, pin.json only), then `c84a724` + a manual
+      `workflow_dispatch` after the skip-token trap (see Findings). Deploy run
+      `35468198862`: "pin verified: 98f7d54… (sha256:d7f1e1a1…)", container
+      recreated. Verified on the box: revision label and digest match;
+      "Matched 35 scheduler user(s) to their Slack accounts by email"; 36
+      mappings, all real Slack ids; 36 of 36 users synced from Slack, 11 with
+      teams; POST `/api/access/check` 401 without a key; `/login` 200; no
+      errors. Ops (`ops-7c`) verified its half independently.
+- [ ] On `/users`: names are already synced for everyone, so it's straight to
+      granting team access / approving people. Roughly 23 of 36 have names
+      that don't follow the format; each gets the calendar notice on their
+      next visit and one DM.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Self-hosted runner on a public repo (status 2026-09-17)

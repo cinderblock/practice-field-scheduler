@@ -48,12 +48,15 @@ reuse the same endpoint with a different `tool` identifier. See
 
 ### New env vars
 
-| Var                  | Purpose                                                    | Unset behaviour                 |
-| -------------------- | ---------------------------------------------------------- | ------------------------------- |
-| `SCHEDULER_API_KEY`  | Shared bearer secret Gate Manager presents                 | `/api/access/check` returns 503 |
-| `SLACK_BOT_TOKEN`    | Bot token (`xoxb-`, scope `chat:write`) for DMs            | DMs become logged no-ops        |
-| `GATE_BASE_URL`      | Public Gate Manager base, for `${base}/g/<token>`          | link omitted from DMs           |
-| `STRICT_SLACK_NAMES` | `"true"`/`"1"` rejects logins with malformed display names | soft mode: warn only            |
+| Var                 | Purpose                                           | Unset behaviour                 |
+| ------------------- | ------------------------------------------------- | ------------------------------- |
+| `SCHEDULER_API_KEY` | Shared bearer secret Gate Manager presents        | `/api/access/check` returns 503 |
+| `SLACK_BOT_TOKEN`   | Bot token (`xoxb-`, scope `chat:write`) for DMs   | DMs become logged no-ops        |
+| `GATE_BASE_URL`     | Public Gate Manager base, for `${base}/g/<token>` | link omitted from DMs           |
+
+(`STRICT_SLACK_NAMES` existed until 2026-09-17 and was removed: sign-in is
+never refused over names. `SLACK_BOT_TOKEN` also needs `users:read` and
+`users:read.email`.)
 
 ## Decisions already made (don't re-ask)
 
@@ -96,8 +99,11 @@ reuse the same endpoint with a different `tool` identifier. See
   gate access** _(user decision, 2026-09-16: "'Mark as shared account' is
   wrong. It should be the inverse")_. Nobody is approved by default, so
   shared/unverified accounts simply never get approved. On top of approval,
-  the account must be enabled and its Slack display name must parse. Admins
-  and `(TSL)` lab mates need approval like anyone else.
+  the account must be enabled and its Slack display name must parse.
+  _Revised 2026-09-19 (user): admins hold general gate access by being
+  admins -- no approval, no revoke. Approval of anyone else is refused until
+  their Slack names are verified and correct. Don't mention `(TSL)` in any
+  user-facing text; TSL staff have their own setup in Gate Manager._
   - Stored as `UserEntry.generalAccessApproved` (replaced the earlier
     default-allow `personalAccessBlocked` flag, which never shipped).
   - **Approve** issues the link and DMs it immediately (with "you've been
@@ -697,7 +703,13 @@ the bot scope **`users:read`**.
      read from Slack; empty until that person's names have been checked.
      Plus: "(TSL)" dropped from all user-facing examples (TSL staff have their
      own setup in Gate Manager; parser still accepts it). 333 tests.
-- [ ] Publish `4e4dd29` (run `35464630429`) and re-pin via the ops session.
+- [x] Published `4e4dd29` by run `35464630429`:
+      `ghcr.io/cinderblock/practice-field-scheduler@sha256:7bb964c1b58178301e61b292899453eeb3caddf7a3ab2720379ce54853a4ea8d`
+      (registry digest confirmed; Test workflow green). Handed to the ops
+      session, now named `ops-a2` (session names rotate; use `ListAgents`).
+- [ ] Re-pin: needs the user's go in the ops thread. After it lands, expect
+      `/data/slack.json` to fill (~36) after the first sync and the log line
+      "Matched N scheduler user(s) to their Slack accounts by email".
 - [ ] Then on `/users`: **Check now** (now reaches everyone), then grant team
       access / approve people.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

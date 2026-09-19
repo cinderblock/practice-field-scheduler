@@ -714,9 +714,11 @@ the bot scope **`users:read`**.
       wrong names). Behaviour, traced: on the first request after their names
       are read (or an admin's refused approval), one DM; the calendar notice
       on every visit while wrong; the workspace sync never DMs by itself.
-- [ ] Re-pin: `7bb964c1` (4e4dd29) is superseded by the `98f7d54` image (run
-      `35467836297`, digest pending). Needs the user's go in the ops thread
-      (currently `ops-7c`; names rotate). After it lands, expect
+- [ ] Re-pin to the `98f7d54` image, published by run `35467836297`:
+      `ghcr.io/cinderblock/practice-field-scheduler@sha256:d7f1e1a19e53615a9b211649269a083b139ed80b1e23cc66ac2faea031af54fa`
+      (registry digest confirmed; Test green). Supersedes `7bb964c1`. Handed
+      to the ops thread (`ops-7c` at the time; names rotate). Needs the user's
+      go there. After it lands, expect
       `/data/slack.json` to fill (~36) after the first sync and the log line
       "Matched N scheduler user(s) to their Slack accounts by email".
 - [ ] Then on `/users`: **Check now** (now reaches everyone), then grant team

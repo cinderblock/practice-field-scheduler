@@ -654,7 +654,7 @@ the bot scope **`users:read`**.
       `app/error.tsx`, `ErrorReporter` toasts, network-error wording in the
       calendar. Tests: auth callbacks, UUID-session repair and prune, wrong
       names can still book, error records. 329 unit tests green.
-- [ ] Deploy: pushed as `19d8a21` (2026-09-17 evening); `next build` verified
+- [x] Deploy: pushed as `19d8a21` (2026-09-17 evening); `next build` verified
       locally the way CI does it (`SKIP_ENV_VALIDATION=1`, throwaway
       `DATA_DIR`). Image published by run `35389981822`:
       `ghcr.io/cinderblock/practice-field-scheduler@sha256:43aced8df5b78173f81900a86a4bc5a373875de824beebe34f286b71ee7ddc24`
@@ -669,7 +669,16 @@ the bot scope **`users:read`**.
       copy intact. Published by run `35390741831` as
       `ghcr.io/cinderblock/practice-field-scheduler@sha256:507111e5be893254195a6795098d5abaf72b1f219cbf1b7db0becc78559c4a3b`
       (revision `50dc13f`, registry digest confirmed) and handed to `ops-2d`,
-      which puts it to the user for the pin. **This is the digest to pin.**
+      which put it to the user for the pin.
+- [x] **Pinned and live**: ops commit `ca14c35` (2026-09-18 15:01 PDT, pushed);
+      container restarted 15:23 PDT on revision `50dc13f`, digest `507111e5`.
+      Verified on the box: prune line present with its backup path;
+      `/data/slack.json` is `[]`; `slack.json.bak-2026-09-18T22-23-42-862Z`
+      (25157 bytes) is byte-identical to the pre-cutover copy in
+      `/opt/practice-field-scheduler/data`; `/api/access/check` 401 without a
+      key; `/login` 200; no Slack errors logged. No `errors.txt` yet (nothing
+      has gone wrong). Not yet observed: a real request producing a `U…`
+      mapping -- nobody signed in has loaded the site since the restart.
 - [ ] Then on `/users`: grant team access / approve people; the audit's
       "Check now" populates names and teams for everyone now that ids resolve.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.

@@ -707,7 +707,16 @@ the bot scope **`users:read`**.
       `ghcr.io/cinderblock/practice-field-scheduler@sha256:7bb964c1b58178301e61b292899453eeb3caddf7a3ab2720379ce54853a4ea8d`
       (registry digest confirmed; Test workflow green). Handed to the ops
       session, now named `ops-a2` (session names rotate; use `ListAgents`).
-- [ ] Re-pin: needs the user's go in the ops thread. After it lands, expect
+- [x] **Follow-up from the user (2026-09-19)**, in `98f7d54`: the name-fix DM
+      is sent once per person, ever (was once per wrong pair); the admin's
+      Send DMs skips anyone the scheduler already told and reports the count;
+      `/users` shows an "Approval blocked" chip with the reason (unverified vs
+      wrong names). Behaviour, traced: on the first request after their names
+      are read (or an admin's refused approval), one DM; the calendar notice
+      on every visit while wrong; the workspace sync never DMs by itself.
+- [ ] Re-pin: `7bb964c1` (4e4dd29) is superseded by the `98f7d54` image (run
+      `35467836297`, digest pending). Needs the user's go in the ops thread
+      (currently `ops-7c`; names rotate). After it lands, expect
       `/data/slack.json` to fill (~36) after the first sync and the log line
       "Matched N scheduler user(s) to their Slack accounts by email".
 - [ ] Then on `/users`: **Check now** (now reaches everyone), then grant team

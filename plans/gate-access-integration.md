@@ -679,8 +679,27 @@ the bot scope **`users:read`**.
       key; `/login` 200; no Slack errors logged. No `errors.txt` yet (nothing
       has gone wrong). Not yet observed: a real request producing a `U…`
       mapping -- nobody signed in has loaded the site since the restart.
-- [ ] Then on `/users`: grant team access / approve people; the audit's
-      "Check now" populates names and teams for everyone now that ids resolve.
+- [x] **First look at `/users` after the pin (2026-09-19)**, four findings,
+      all fixed in `4e4dd29`:
+  1. Admins had to approve themselves. Now `hasGeneralAccessGrant()`: being
+     an admin is the grant; link issued on next request; control shows
+     "Admin"; revoking an admin refused.
+  2. "Names not checked with Slack" on nearly everyone -- **my error**: I had
+     said "Check now populates everyone", but `syncSlackNames` only matched
+     people through mappings, which the prune had just emptied. Now the sync
+     matches anyone without a mapping by their Slack profile email
+     (`SlackMember.email` from `users.list`), stores the mapping, and applies
+     names and teams. One Check now covers the club.
+  3. Approving someone with unverified/wrong names: refused server-side with
+     a message (Check now first / they've been DM'd the fix); button disabled
+     with the same hint. Legacy approvals still show "link on hold".
+  4. Teams column explained on the page: from the display name's parentheses,
+     read from Slack; empty until that person's names have been checked.
+     Plus: "(TSL)" dropped from all user-facing examples (TSL staff have their
+     own setup in Gate Manager; parser still accepts it). 333 tests.
+- [ ] Publish `4e4dd29` (run `35464630429`) and re-pin via the ops session.
+- [ ] Then on `/users`: **Check now** (now reaches everyone), then grant team
+      access / approve people.
 - [ ] Live end-to-end: real link → Gate Manager → scheduler → pigate.
 
 ## Self-hosted runner on a public repo (status 2026-09-17)

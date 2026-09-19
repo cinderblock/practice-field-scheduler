@@ -247,8 +247,16 @@ describe("isPersonalAccessEligible", () => {
 		expect(isPersonalAccessEligible({ ...mentor, generalAccessApproved: false })).toBe(false);
 	});
 
-	it("accepts approved admins and lab mates with a valid name — no team needed", () => {
-		expect(isPersonalAccessEligible({ ...mentor, teams: "admin", displayName: "Ada Admin (1234)" })).toBe(true);
+	it("accepts admins without any approval — being an admin is the grant", () => {
+		const { generalAccessApproved: _, ...unapproved } = mentor;
+		expect(isPersonalAccessEligible({ ...unapproved, teams: "admin", displayName: "Ada Admin (1234)" })).toBe(true);
+		// Their names still have to follow the rules
+		expect(
+			isPersonalAccessEligible({ ...unapproved, teams: "admin", name: "Ada Admin", displayName: "Ada Admin" }),
+		).toBe(false);
+	});
+
+	it("accepts approved lab mates with a valid name — no team needed", () => {
 		expect(isPersonalAccessEligible({ ...mentor, teams: [], displayName: "Lab Mate (TSL)" })).toBe(true);
 	});
 

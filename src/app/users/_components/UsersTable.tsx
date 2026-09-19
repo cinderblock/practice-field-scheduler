@@ -123,6 +123,13 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 					))}
 				</div>
 			</div>
+			{isAdmin && (
+				<p className={ui.note}>
+					<strong>Teams</strong> come from the parentheses in each person's Slack display name, read from Slack — so
+					they're empty until that person's names have been checked (their next visit, or <strong>Check now</strong>{" "}
+					above). <strong>General gate access</strong> is an explicit grant; admins have it by being admins.
+				</p>
+			)}
 			<div className={styles.tableContainer}>
 				<table className={styles.usersTable}>
 					<thead>
@@ -165,6 +172,8 @@ export function UsersTable({ users, isAdmin }: { users: User[]; isAdmin: boolean
 												<GeneralAccessControls
 													userId={user.id}
 													status={access.status}
+													isAdmin={user.isAdmin}
+													canApprove={access.nameIssues.length === 0}
 													gateUrlConfigured={accessConfig.data?.gateUrlConfigured ?? false}
 													onChanged={() => personalLinks.refetch()}
 												/>

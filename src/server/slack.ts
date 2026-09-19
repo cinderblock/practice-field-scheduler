@@ -127,6 +127,8 @@ export type SlackMember = {
 	displayName: string;
 	/** Deactivated accounts are reported so their links can be held. */
 	deleted: boolean;
+	/** `profile.email` (bot scope `users:read.email`); empty when Slack doesn't share it. */
+	email: string;
 };
 
 type RawMember = {
@@ -134,7 +136,7 @@ type RawMember = {
 	deleted?: boolean;
 	is_bot?: boolean;
 	is_app_user?: boolean;
-	profile?: { real_name?: string; display_name?: string };
+	profile?: { real_name?: string; display_name?: string; email?: string };
 };
 
 /** Slackbot is a user record, but not a person. */
@@ -147,6 +149,7 @@ function toMember(raw: RawMember): SlackMember | null {
 		realName: raw.profile?.real_name ?? "",
 		displayName: raw.profile?.display_name ?? "",
 		deleted: Boolean(raw.deleted),
+		email: raw.profile?.email ?? "",
 	};
 }
 

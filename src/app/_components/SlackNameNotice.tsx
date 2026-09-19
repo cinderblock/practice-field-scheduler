@@ -69,7 +69,7 @@ export function SlackNameNotice() {
 					<p>
 						<strong>Full name</strong>: just your name, e.g. <code>Jane Doe</code>. <strong>Display name</strong>: your
 						name, then your team number(s) in parentheses, e.g. <code>Jane Doe (1234)</code> or{" "}
-						<code>Jane Doe (1234, 5678)</code>. Lab mates without a team use <code>(TSL)</code>.
+						<code>Jane Doe (1234, 5678)</code>.
 					</p>
 					<p>
 						In Slack, open your profile, choose <em>Edit profile</em>, save, then come back here and press{" "}

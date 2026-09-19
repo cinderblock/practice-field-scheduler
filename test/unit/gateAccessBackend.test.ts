@@ -129,31 +129,27 @@ async function idOf(displayName: string): Promise<string> {
 }
 
 describe("gate access, end to end", () => {
-	it("gives nobody general gate access by default — not even the first admin", async () => {
+	it("issues the first admin their personal link at sign-in — admins hold general gate access by being admins", async () => {
 		admin = await signIn(ADA);
 		expect(await admin.getTeams()).toBe("admin");
 		adaId = await idOf(ADA.display);
 
-		await settle();
-		expect(dmsTo(ADA.slack)).toHaveLength(0); // no teams, not approved, names fine: nothing to send
-		expect((await admin.listPersonalAccess())[adaId]).toMatchObject({ status: "not_approved", nameIssues: [] });
-		await expect(admin.revealPersonalAccessLink(adaId)).rejects.toThrow(/isn't approved/);
-	});
-
-	it("approving someone issues their personal link and DMs it straight away", async () => {
-		const result = await admin.setGeneralAccessApproved(adaId, true);
-		expect(result).toMatchObject({ approved: true, linkIssued: true, notified: 1, failed: 0, skipped: null });
-
-		expect(dmsTo(ADA.slack)).toHaveLength(1);
-		expect(lastDmTo(ADA.slack).text).toContain("approved for general gate access");
+		await vi.waitFor(() => expect(dmsTo(ADA.slack)).toHaveLength(1));
 		const tokens = tokensIn(lastDmTo(ADA.slack).text);
 		expect(tokens).toHaveLength(1);
-
 		expect(await checkAccess(tokens[0] as string, "gate")).toMatchObject({
 			valid: true,
 			grant: "personal",
 			user: { name: ADA.display },
 		});
+		expect((await admin.listPersonalAccess())[adaId]).toMatchObject({ status: "active", nameIssues: [] });
+	});
+
+	it("can't revoke an admin's access, and approving one changes nothing", async () => {
+		await expect(admin.setGeneralAccessApproved(adaId, false)).rejects.toThrow(/always have general gate access/);
+		const result = await admin.setGeneralAccessApproved(adaId, true);
+		expect(result).toMatchObject({ approved: true, linkIssued: true, notified: 0, failed: 0 });
+		expect(dmsTo(ADA.slack)).toHaveLength(1);
 		expect((await admin.listPersonalAccess())[adaId]?.status).toBe("active");
 	});
 
@@ -302,7 +298,7 @@ describe("gate access, end to end", () => {
 		expect(await checkAccess(janePersonal, "gate")).toMatchObject({ valid: true, grant: "personal" });
 	});
 
-	it("tells a newcomer with wrong names what to fix, once, and issues nothing even when approved", async () => {
+	it("tells a newcomer with wrong names what to fix, once, and refuses to approve them", async () => {
 		const laptop = await signIn(LAPTOP);
 		expect(await laptop.getTeams()).toEqual([]);
 		const laptopId = await idOf(LAPTOP.display);
@@ -313,21 +309,18 @@ describe("gate access, end to end", () => {
 		expect(nudge).toContain("Display name doesn't end with team number(s) in parentheses (now `Robotics Laptop`)");
 		expect(tokensIn(nudge)).toEqual([]);
 
-		const result = await admin.setGeneralAccessApproved(laptopId, true);
-		expect(result).toMatchObject({ approved: true, linkIssued: false, notified: 0 });
+		// Approval is refused while the names are wrong; the DM isn't repeated for the same names.
+		await expect(admin.setGeneralAccessApproved(laptopId, true)).rejects.toThrow(/don't follow the format/);
 		expect((await admin.listPersonalAccess())[laptopId]).toMatchObject({
-			status: "invalid_name",
+			status: "not_approved",
 			nameIssues: ["display_name_no_affiliation"],
 		});
-		await expect(admin.revealPersonalAccessLink(laptopId)).rejects.toThrow(/Slack names need fixing/);
+		await expect(admin.revealPersonalAccessLink(laptopId)).rejects.toThrow(/isn't approved/);
 
 		// Same wrong names, so no second DM.
 		await signIn(LAPTOP);
 		await settle();
 		expect(dmsTo(LAPTOP.slack)).toHaveLength(1);
-
-		// Revoke again so it doesn't linger.
-		await admin.setGeneralAccessApproved(laptopId, false);
 	});
 
 	it("shuts personal links overnight", async () => {

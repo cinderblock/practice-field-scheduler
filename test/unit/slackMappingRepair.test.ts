@@ -28,11 +28,24 @@ const JANE_SLACK = "U0JANE";
 const BOB_SLACK = "U0BOB";
 /** Pat has no email on record and a UUID as their only mapping: the prune must keep it. */
 const PAT_UUID = "aaaaaaaa-1111-4222-8333-444444444444";
-const janeProfile = { real_name: "Jane Doe", display_name: "Jane Doe (1234)" };
+const janeProfile = { real_name: "Jane Doe", display_name: "Jane Doe (1234)", email: "jane@example.com" };
+/** Cam uses the scheduler but has no mapping at all; the workspace sync must find them by email. */
+const CAM_SLACK = "U0CAM";
+const camProfile = { real_name: "Cam Cole", display_name: "Cam Cole (4321)", email: "cam@example.com" };
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 	const method = url.split("/").pop();
 	const params = new URLSearchParams(init?.body as string);
+	if (method === "users.list") {
+		return Response.json({
+			ok: true,
+			members: [
+				{ id: JANE_SLACK, profile: janeProfile },
+				{ id: CAM_SLACK, profile: camProfile },
+			],
+			response_metadata: { next_cursor: "" },
+		});
+	}
 	if (method === "users.lookupByEmail") {
 		return params.get("email") === "jane@example.com"
 			? Response.json({ ok: true, user: { id: JANE_SLACK, profile: janeProfile } })
@@ -54,6 +67,7 @@ writeFileSync(
 		{ id: "jane-uid", name: "Jane Doe", created, updated: created, teams: [], email: "jane@example.com", image: "" },
 		{ id: "bob-uid", name: "Bob Roe", created, updated: created, teams: [1234], email: "bob@example.com", image: "" },
 		{ id: "pat-uid", name: "Pat Poe", created, updated: created, teams: [5678], email: "", image: "" },
+		{ id: "cam-uid", name: "Cam Cole", created, updated: created, teams: [], email: "cam@example.com", image: "" },
 	]),
 );
 // Two stale UUIDs for Jane, one for Bob plus Bob's real id, and Pat's only one: what production looked like.
@@ -69,7 +83,7 @@ writeFileSync(
 );
 mkdirSync(join(dataDir, new Date().getFullYear().toString()));
 
-const { Context } = await import("~/server/backend");
+const { Context, syncSlackNames } = await import("~/server/backend");
 
 afterAll(() => {
 	vi.unstubAllGlobals();
@@ -150,5 +164,19 @@ describe("Slack mappings", () => {
 		expect(userCount()).toBe(usersBefore);
 		// No email, so there was nothing to ask Slack
 		expect(lookups()).toBe(lookupsBefore);
+	});
+
+	it("matches people with no mapping by email during the workspace sync, so Check now reaches everyone", async () => {
+		expect(mappings().some(m => m.userId === "cam-uid")).toBe(false);
+
+		await syncSlackNames();
+
+		expect(mappings()).toContainEqual({ slackId: CAM_SLACK, userId: "cam-uid" });
+		const cam = new Context(session(CAM_SLACK, "Cam Cole", "cam@example.com"), "vitest", "127.0.0.1");
+		// Names and teams came from Slack during the sync, before Cam ever visited
+		expect(await cam.getTeams()).toEqual([4321]);
+		expect(await cam.getMySlackNames()).toMatchObject({ identified: true, ok: true, displayName: "Cam Cole (4321)" });
+		// Pat, with no email, is still only findable by their kept UUID mapping
+		expect(mappings().filter(m => m.userId === "pat-uid")).toEqual([{ slackId: PAT_UUID, userId: "pat-uid" }]);
 	});
 });

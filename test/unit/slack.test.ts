@@ -136,6 +136,7 @@ describe("getSlackMember", () => {
 			realName: "Jane Doe",
 			displayName: "Jane Doe (1234)",
 			deleted: false,
+			email: "",
 		});
 		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://slack.com/api/users.info");
 		expect(formBody(fetchMock.mock.calls[0] as unknown[])).toEqual({ user: "U1" });
@@ -143,7 +144,7 @@ describe("getSlackMember", () => {
 
 	it("treats a missing display name as empty and reports deactivated accounts", async () => {
 		fetchMock.mockResolvedValue(jsonResponse({ ok: true, user: { id: "U1", deleted: true, profile: {} } }));
-		expect(await getSlackMember("U1")).toEqual({ id: "U1", realName: "", displayName: "", deleted: true });
+		expect(await getSlackMember("U1")).toEqual({ id: "U1", realName: "", displayName: "", deleted: true, email: "" });
 	});
 
 	it("returns null for bots, app users, Slackbot and unknown IDs", async () => {
@@ -187,8 +188,8 @@ describe("listSlackMembers", () => {
 			);
 
 		expect(await listSlackMembers()).toEqual([
-			{ id: "U1", realName: "Jane Doe", displayName: "Jane Doe (1234)", deleted: false },
-			{ id: "U2", realName: "Old Mentor", displayName: "", deleted: true },
+			{ id: "U1", realName: "Jane Doe", displayName: "Jane Doe (1234)", deleted: false, email: "" },
+			{ id: "U2", realName: "Old Mentor", displayName: "", deleted: true, email: "" },
 		]);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(formBody(fetchMock.mock.calls[0] as unknown[])).toEqual({ limit: "200" });

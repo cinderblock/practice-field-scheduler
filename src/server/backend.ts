@@ -34,6 +34,7 @@ import type {
 import {
 	type AccessCheckResult,
 	evaluateAccess,
+	hasGeneralAccessGrant,
 	hasValidSlackNames,
 	isPersonalAccessEligible,
 	sameTeam,
@@ -742,13 +743,26 @@ export function syncSlackNames(): Promise<void> {
 		Object.assign(slackRoster, { status: "ok", error: null, attemptedAt: now, checkedAt: now, members });
 
 		const byId = new Map(members.map(m => [m.id, m]));
+		// People with no mapping yet (for a year, sessions carried no Slack id)
+		// are matched by the email on their Slack profile, and the match kept.
+		const byEmail = new Map<string, SlackMember>();
+		for (const m of members) {
+			const email = m.email.trim().toLowerCase();
+			if (email && !m.deleted && !byEmail.has(email)) byEmail.set(email, m);
+		}
+		let matchedByEmail = 0;
 		for (const user of [...users]) {
 			if (user.disabled) continue;
 			const found = slackIdsFor(user.id)
 				.map(id => byId.get(id))
 				.filter((m): m is SlackMember => m !== undefined);
-			const member = found.find(m => !m.deleted) ?? found[0];
-			if (!member) continue;
+			let member = found.find(m => !m.deleted) ?? found[0];
+			if (!member) {
+				member = byEmail.get((user.email || "").trim().toLowerCase());
+				if (!member) continue;
+				slackMappings.push({ slackId: member.id, userId: user.id });
+				matchedByEmail++;
+			}
 			slackNamesRefreshedAt.set(user.id, Date.now());
 			try {
 				const change = await applySlackMember(user, member);
@@ -756,6 +770,15 @@ export function syncSlackNames(): Promise<void> {
 			} catch (err) {
 				console.error(`Slack name sync failed for user ${user.id}:`, err);
 			}
+		}
+		if (matchedByEmail > 0) {
+			const release = await changeLock.acquire();
+			try {
+				await writeJsonFile(SLACK_MAPPINGS_FILE, slackMappings);
+			} finally {
+				release();
+			}
+			console.log(`Matched ${matchedByEmail} scheduler user(s) to their Slack accounts by email`);
 		}
 	})().finally(() => {
 		workspaceSync = null;
@@ -1638,7 +1661,7 @@ export class Context {
 			const names = slackNameCheckFor(user);
 			const status: PersonalAccessStatus = user.disabled
 				? "disabled"
-				: !user.generalAccessApproved
+				: !hasGeneralAccessGrant(user)
 					? "not_approved"
 					: !names.ok
 						? "invalid_name"
@@ -1663,7 +1686,7 @@ export class Context {
 			throw new Error(
 				target.disabled
 					? "This account is disabled"
-					: !target.generalAccessApproved
+					: !hasGeneralAccessGrant(target)
 						? "This account isn't approved for general gate access"
 						: "This person's Slack names need fixing, so their link is on hold",
 			);
@@ -1736,6 +1759,26 @@ export class Context {
 		const target = users.find(u => u.id === userId);
 		if (!target) throw new Error("User not found");
 		if (approved && target.disabled) throw new Error("This account is disabled");
+		if (!approved && target.teams === "admin") {
+			throw new Error("Admins always have general gate access; it can't be revoked");
+		}
+
+		if (approved) {
+			// Approving someone whose link can't be issued only misleads: refuse,
+			// and tell them what to fix (once per wrong pair of names).
+			const check = slackNameCheckFor(target);
+			if (check.issues.includes("unverified")) {
+				throw new Error(
+					"Their Slack names haven't been read yet. Press Check now in the Slack names panel, then approve.",
+				);
+			}
+			if (!check.ok) {
+				for (const slackId of slackIdsFor(target.id)) await nudgeAboutNames(target, slackId, "links_held");
+				throw new Error(
+					"Their Slack names don't follow the format yet. They've been DM'd what to fix; approve once it's right.",
+				);
+			}
+		}
 
 		if (Boolean(target.generalAccessApproved) !== approved) {
 			const release = await changeLock.acquire();
@@ -2249,7 +2292,7 @@ async function initializePart(array: unknown[]) {
  * Runs once at startup, while initialization holds `changeLock`.
  */
 async function prunePersonalLinksWithoutApproval() {
-	const approved = new Set(users.filter(u => u.generalAccessApproved).map(u => u.id));
+	const approved = new Set(users.filter(hasGeneralAccessGrant).map(u => u.id));
 	const kept = personalAccess.filter(p => approved.has(p.userId));
 	const removed = personalAccess.length - kept.length;
 	if (removed === 0) return;

@@ -46,11 +46,17 @@ const cx = (...names: Array<string | false | undefined>) => names.filter(Boolean
 export function GeneralAccessControls({
 	userId,
 	status,
+	isAdmin,
+	canApprove,
 	gateUrlConfigured,
 	onChanged,
 }: {
 	userId: string;
 	status: PersonalAccessStatus;
+	/** Admins hold general gate access by being admins: nothing to approve or revoke. */
+	isAdmin: boolean;
+	/** False while their Slack names are unverified or wrong; approval would be refused. */
+	canApprove: boolean;
 	gateUrlConfigured: boolean;
 	onChanged: () => Promise<unknown>;
 }) {
@@ -67,7 +73,19 @@ export function GeneralAccessControls({
 	const busy = reveal.isPending || rotate.isPending || setApproved.isPending;
 	const approved = status === "active" || status === "not_issued" || status === "invalid_name";
 	const hasUsableLink = status === "active" || status === "not_issued";
-	const { chip, tone, detail } = STATUS[status];
+	const { chip, tone, detail } =
+		isAdmin && status !== "disabled"
+			? status === "invalid_name"
+				? { chip: "Admin · link on hold", tone: ui.chipWarn as string, detail: STATUS.invalid_name.detail }
+				: {
+						chip: "Admin",
+						tone: ui.chipGood as string,
+						detail:
+							status === "not_issued"
+								? "Admins always have general gate access. Their link goes out at their next sign-in."
+								: "Admins always have general gate access.",
+					}
+			: STATUS[status];
 
 	async function run(action: () => Promise<string | null>) {
 		setError(null);
@@ -163,8 +181,13 @@ export function GeneralAccessControls({
 
 			{!confirming && status !== "disabled" && (
 				<div className={ui.buttonRow}>
-					{!approved && (
-						<button type="button" onClick={doApprove} disabled={busy} className={cx(ui.button, ui.primary, ui.wide)}>
+					{!approved && !isAdmin && (
+						<button
+							type="button"
+							onClick={doApprove}
+							disabled={busy || !canApprove}
+							className={cx(ui.button, ui.primary, ui.wide)}
+						>
 							{setApproved.isPending ? "Approving…" : "Approve general gate access"}
 						</button>
 					)}
@@ -178,7 +201,7 @@ export function GeneralAccessControls({
 							</button>
 						</>
 					)}
-					{approved && (
+					{approved && !isAdmin && (
 						<button
 							type="button"
 							onClick={() => setConfirming("revoke")}
@@ -189,6 +212,9 @@ export function GeneralAccessControls({
 						</button>
 					)}
 				</div>
+			)}
+			{!confirming && !approved && !isAdmin && !canApprove && status !== "disabled" && (
+				<p className={ui.note}>Approve once their Slack names follow the format.</p>
 			)}
 
 			{revealed && (

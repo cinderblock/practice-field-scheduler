@@ -172,15 +172,19 @@ export function computeAccessWindow(reservation: Reservation): Window | null {
 }
 
 /**
- * Whether a user should hold a working personal link: an admin has approved
- * them for general gate access, the account isn't disabled, and their Slack
- * names follow the rules. Team membership isn't required — admins and `(TSL)`
- * lab mates can be approved too.
+ * Whether a user should hold a working personal link: they have general gate
+ * access (an admin's approval, or being an admin), the account isn't disabled,
+ * and their Slack names follow the rules. Team membership isn't required.
  */
 export function isPersonalAccessEligible(user: UserEntry): boolean {
 	if (user.disabled) return false;
-	if (!user.generalAccessApproved) return false;
+	if (!hasGeneralAccessGrant(user)) return false;
 	return hasValidSlackNames(user);
+}
+
+/** Admins hold general gate access by being admins; everyone else needs an admin's approval. */
+export function hasGeneralAccessGrant(user: Pick<UserEntry, "teams" | "generalAccessApproved">): boolean {
+	return user.teams === "admin" || Boolean(user.generalAccessApproved);
 }
 
 /**

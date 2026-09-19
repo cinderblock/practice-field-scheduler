@@ -199,12 +199,15 @@ every use, so a stable bookmark is not a standing grant.
 - **Site hours are 8am–11pm** (field time) and bound _everything_ the scheduler
   issues, team links included. Overnight, only Gate Manager's own registered
   employees can open the gate; that path never asks the scheduler.
-- **General gate access is an explicit grant.** Nobody has it by default —
-  an admin approves each person, which issues their personal link and DMs it
-  right away. Shared or unverified Slack accounts simply never get approved.
-  The link also stops working if the person is disabled or their Slack names
-  stop following the rules below. Admins and `(TSL)` lab mates can be
-  approved like anyone else; being an admin grants nothing by itself.
+- **General gate access is an explicit grant** — except for admins, who hold
+  it by being admins. Nobody else has it by default: an admin approves each
+  person, which issues their personal link and DMs it right away. Approval is
+  refused until the person's Slack names follow the rules below (they're DM'd
+  what to fix), so shared or unverified accounts never get approved. The link
+  also stops working if the person is disabled or their names stop following
+  the rules. TSL staff have their own setup:
+  Gate Manager registers them directly, so the scheduler never tells anyone
+  to put `(TSL)` in a display name (it accepts one, and gives it no team).
 - **Gate links wait on Slack names.** Nobody is sent a link, team or
   personal, until both of their Slack names follow the format (see
   [Slack names](#slack-names)).

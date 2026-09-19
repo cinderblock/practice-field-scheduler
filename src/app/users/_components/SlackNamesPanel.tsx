@@ -85,8 +85,7 @@ export function SlackNamesPanel() {
 
 			<p className={cx(ui.note, styles.rules)}>
 				<strong>Full name</strong>: just a name, e.g. <code>Jane Doe</code>. <strong>Display name</strong>: the name,
-				then team number(s) in parentheses, e.g. <code>Jane Doe (1234)</code> or <code>Jane Doe (TSL)</code>. Gate links
-				wait until both are right.
+				then team number(s) in parentheses, e.g. <code>Jane Doe (1234)</code>. Gate links wait until both are right.
 			</p>
 
 			{data.status === "not_configured" && (

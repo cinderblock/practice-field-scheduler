@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { findBlackoutForSlot, isWholeDayBlackedOut } from "~/server/util/blackout";
+import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
 import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
@@ -549,7 +549,10 @@ function Day({
 	isAdmin: boolean;
 }) {
 	const { timeSlotBorders } = useAppConfig();
-	const closedAllDay = isWholeDayBlackedOut(blackouts, date);
+	// A blackout with no slot closes the whole day; the slots then read as one block rather than
+	// three, so the notice is drawn once, across all of them.
+	const dayBlackout = findWholeDayBlackout(blackouts, date);
+	const closedAllDay = dayBlackout !== undefined;
 
 	const style = [styles.dayContainer];
 	if (isWeekend(date)) style.push(styles.weekend);
@@ -562,8 +565,8 @@ function Day({
 		<div className={style.join(" ")}>
 			<div className={styles.dayHeader}>
 				<DayName date={date} />
-				<DayDate date={date} holidays={initialHolidays} />
 				{closedAllDay && <span className={styles.dayClosedChip}>Field closed</span>}
+				<DayDate date={date} holidays={initialHolidays} />
 			</div>
 			<div
 				className={styles.timeSlotRow}
@@ -574,6 +577,20 @@ function Day({
 					} as React.CSSProperties & { "--columns": number }
 				}
 			>
+				{/* One block behind every slot of a closed day. It sits under them (they are positioned,
+				    this is not), so reservations already on the books and the admin's add button still
+				    show through, over a single unbroken panel. */}
+				{dayBlackout && (
+					<div className={styles.dayClosedBlock}>
+						{/* Only the reason: the chip in the header has already said the field is closed */}
+						{dayBlackout.reason && (
+							<>
+								<span className={styles.blackoutLabel}>Field reserved for:</span>
+								<span className={styles.blackoutReason}>{dayBlackout.reason}</span>
+							</>
+						)}
+					</div>
+				)}
 				{timeSlotBorders.map((_, index, a) => {
 					if (index === a.length - 1) return null;
 
@@ -594,6 +611,11 @@ function Day({
 							initialHolidays={initialHolidays}
 							blackouts={blackouts}
 							isAdmin={isAdmin}
+							closedAllDay={closedAllDay}
+							// The closed-day block covers the whole row, so the slots can no longer be placed
+							// around it automatically: each one names its own column, and the weather cells
+							// below them go on flowing into the second row.
+							column={index + 1}
 						/>
 					);
 				})}
@@ -612,6 +634,8 @@ function TimeSlot({
 	initialHolidays,
 	blackouts,
 	isAdmin,
+	closedAllDay,
+	column,
 }: {
 	date: string;
 	startHour: number;
@@ -620,6 +644,10 @@ function TimeSlot({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	isAdmin: boolean;
+	/** The whole day is closed, so this slot gives up its panel and notice to the day's one block */
+	closedAllDay: boolean;
+	/** 1-based column of this slot in the day's grid */
+	column: number;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
 	const [teamNumber, setTeamNumber] = useState(() => {
@@ -808,7 +836,8 @@ function TimeSlot({
 	const style = [styles.timeSlotStackContainer];
 	if (current) style.push(styles.timeSlotCurrent);
 	if (hasEnded) style.push(styles.timeSlotOver);
-	if (blackout) style.push(styles.timeSlotBlackedOut);
+	if (blackout && !closedAllDay) style.push(styles.timeSlotBlackedOut);
+	if (closedAllDay) style.push(styles.timeSlotMerged);
 
 	const handleAddReservation = useCallback(() => {
 		if (!teamNumber) return;
@@ -835,13 +864,14 @@ function TimeSlot({
 	}, []);
 
 	return (
-		<div className={style.join(" ")} suppressHydrationWarning>
+		<div className={style.join(" ")} style={{ gridRow: 1, gridColumn: column }} suppressHydrationWarning>
 			{current && <div className={styles.timeSlotProgress} style={{ left: `${progress}%` }} suppressHydrationWarning />}
-			{blackout && (
+			{/* A blackout over part of the day says so in the slot itself. One that covers the whole day
+			    is announced once, by the block behind every slot. */}
+			{blackout && !closedAllDay && (
 				<div className={styles.blackoutNotice}>
-					<span className={styles.blackoutLabel}>Closed</span>
+					<span className={styles.blackoutLabel}>{blackout.reason ? "Reserved for:" : "Closed"}</span>
 					{blackout.reason && <span className={styles.blackoutReason}>{blackout.reason}</span>}
-					{isAdmin && <span className={styles.blackoutAdminHint}>Admins can still book</span>}
 				</div>
 			)}
 			<div className={styles.reservationStack}>

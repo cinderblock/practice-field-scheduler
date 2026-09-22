@@ -8,10 +8,10 @@ import {
 	blackoutsForDate,
 	eachBlackoutDate,
 	findBlackoutForSlot,
+	findWholeDayBlackout,
 	formatBlackoutDates,
 	InvalidBlackoutRangeError,
 	isBlackoutRange,
-	isWholeDayBlackedOut,
 	normalizeBlackoutRange,
 } from "~/server/util/blackout";
 import type { Blackout } from "~/types";
@@ -167,7 +167,7 @@ describe("findBlackoutForSlot", () => {
 	});
 });
 
-describe("blackoutsForDate / isWholeDayBlackedOut / activeBlackouts", () => {
+describe("blackoutsForDate / findWholeDayBlackout / activeBlackouts", () => {
 	const blackouts = [
 		makeBlackout({ id: "slot", date: "2026-05-01", slot: "10:00am" }),
 		makeBlackout({ id: "allDay", date: "2026-05-02", endDate: "2026-05-04" }),
@@ -179,8 +179,8 @@ describe("blackoutsForDate / isWholeDayBlackedOut / activeBlackouts", () => {
 	});
 
 	it("only reports a whole day closed for a blackout with no slot", () => {
-		expect(isWholeDayBlackedOut(blackouts, "2026-05-01")).toBe(false);
-		expect(isWholeDayBlackedOut(blackouts, "2026-05-03")).toBe(true);
+		expect(findWholeDayBlackout(blackouts, "2026-05-01")).toBeUndefined();
+		expect(findWholeDayBlackout(blackouts, "2026-05-03")?.id).toBe("allDay");
 	});
 
 	it("filters out removed blackouts", () => {

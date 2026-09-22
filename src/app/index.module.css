@@ -291,21 +291,30 @@
 	background: var(--background-weekend);
 }
 
+/* Three fixed columns rather than `space-between`, so the date stays hard against the right edge
+   whether or not the day carries a closed chip, and the chip is centered on the card. */
 .dayHeader {
-	display: flex;
-	justify-content: space-between;
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
 	align-items: center;
+	gap: 0.5rem;
 	font-weight: 600;
 	font-size: 1.1rem;
 	margin-bottom: 0.5rem;
 }
 
 .dayName {
+	/* Named columns, so the header lays out the same with and without the closed chip in the middle.
+	   Ignored where these also appear outside the header's grid (the add-reservation dialog). */
+	grid-column: 1;
+	justify-self: start;
 	color: var(--text-secondary);
 	letter-spacing: 0.03em;
 }
 
 .dayDate {
+	grid-column: 3;
+	justify-self: end;
 	color: var(--accent-color);
 	font-family: monospace;
 	display: flex;
@@ -597,6 +606,14 @@
 	}
 	.timeSlotRow {
 		gap: 0.25rem;
+	}
+	/* Day name, chip and date won't fit on one phone-width line: the chip drops to its own row,
+	   still centered, and the date keeps the right edge of the first one. */
+	.dayHeader {
+		grid-template-columns: 1fr auto;
+	}
+	.dayDate {
+		grid-column: 2;
 	}
 	.timeSlotStackContainer {
 		min-width: 0;
@@ -1017,7 +1034,8 @@
 
 .dayClosedChip {
 	display: inline-block;
-	align-self: flex-start;
+	grid-column: 2;
+	justify-self: center;
 	border: 1px solid var(--accent-color);
 	border-radius: 999px;
 	padding: 0 0.5rem;
@@ -1030,6 +1048,15 @@
 	user-select: none;
 }
 
+/* Day name, chip and date won't fit on one phone-width line (see the .dayHeader override there):
+   the chip takes its own row, centered under the two of them. */
+@media (max-width: 640px) {
+	.dayClosedChip {
+		grid-row: 2;
+		grid-column: 1 / -1;
+	}
+}
+
 .timeSlotBlackedOut {
 	background: repeating-linear-gradient(
 		135deg,
@@ -1039,6 +1066,38 @@
 		var(--background-hover) 16px
 	);
 	cursor: not-allowed;
+}
+
+/* A day that is closed start to finish reads as one panel, not three. The slots keep their place in
+   the grid — reservations booked before the blackout, and the admin's add button, still live in
+   them — but give up their own panel to .dayClosedBlock, which is drawn across all of them. */
+.timeSlotMerged,
+.timeSlotMerged:hover {
+	background: none;
+	box-shadow: none;
+	cursor: not-allowed;
+}
+
+.dayClosedBlock {
+	grid-row: 1;
+	grid-column: 1 / -1;
+	border-radius: 0.5rem;
+	background: repeating-linear-gradient(
+		135deg,
+		var(--background-secondary),
+		var(--background-secondary) 8px,
+		var(--background-hover) 8px,
+		var(--background-hover) 16px
+	);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.15rem;
+	padding: 0.5rem;
+	text-align: center;
+	user-select: none;
+	/* It sits under the slots; nothing in it is interactive, and a stray click belongs to the slot */
+	pointer-events: none;
 }
 
 .blackoutNotice {
@@ -1066,12 +1125,22 @@
 	overflow-wrap: anywhere;
 }
 
-/* Admins are exempt from blackouts, so the add button stays: say why it's still there */
-.blackoutAdminHint {
-	font-size: 0.6rem;
-	line-height: 1.2;
-	font-style: italic;
-	opacity: 0.7;
+/* Slots on a day closed with a reason start below the notice, which is the height of its two
+   lines plus the slot's own top padding. Without this the block's words would sit under any
+   reservation made before the blackout. */
+.timeSlotRow:has(.dayClosedBlock:not(:empty)) .timeSlotMerged {
+	padding-top: 3.1rem;
+}
+
+/* The day-wide block has a card's width to work with, where a single slot has a third of one */
+.dayClosedBlock .blackoutLabel {
+	font-size: 0.75rem;
+}
+
+.dayClosedBlock .blackoutReason {
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--text-primary);
 }
 
 /* ===== Weather ===== */

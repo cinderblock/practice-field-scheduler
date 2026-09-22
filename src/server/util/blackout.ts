@@ -91,12 +91,17 @@ export function blackoutsForDate<T extends Pick<Blackout, "date" | "endDate" | "
 	return blackouts.filter(b => !b.deleted && blackoutCoversDate(b, date));
 }
 
-/** True if every slot of the given day is blacked out by a single whole-day blackout. */
-export function isWholeDayBlackedOut<T extends Pick<Blackout, "date" | "endDate" | "slot" | "deleted">>(
+/**
+ * The first active blackout that closes the whole of the given day, or undefined if the day has at
+ * most a slot or two closed.
+ *
+ * Returns the blackout itself so callers can show the reason once for the day.
+ */
+export function findWholeDayBlackout<T extends Pick<Blackout, "date" | "endDate" | "slot" | "deleted">>(
 	blackouts: readonly T[],
 	date: EventDate,
-): boolean {
-	return blackouts.some(b => !b.deleted && b.slot === undefined && blackoutCoversDate(b, date));
+): T | undefined {
+	return blackouts.find(b => !b.deleted && b.slot === undefined && blackoutCoversDate(b, date));
 }
 
 export class InvalidBlackoutRangeError extends Error {

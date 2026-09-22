@@ -43,12 +43,28 @@ blacked-out slot, and the blackout is visible on the calendar and in the iCal fe
    physical field availability rather than a fairness policy like the 7-day window. The user
    chose the other way, so `restrictBlackout` now mirrors `restrictTimeframe` and returns
    early for admins. Because the capability has to be reachable, the calendar also passes
-   `isAdmin` down and keeps the add button on a closed slot for admins, labelled
-   "Admins can still book".
+   `isAdmin` down and keeps the add button on a closed slot for admins. The button was
+   labelled "Admins can still book" until 2026-09-21; the user asked for that line to go,
+   so the hover-revealed button now speaks for itself (decision 9).
 7. **Creating a blackout does not cancel reservations that already exist inside it.**
    Silently destroying teams' bookings is worse than reporting them: `addBlackout` returns
    the conflicting reservations and the admin UI shows them so a human can follow up.
 8. **No `title=` tooltips** in new or touched UI (global user rule — invisible on touch).
+9. **How a closed day reads on the calendar.** Settled by the user on 2026-09-21, after
+   seeing the first version:
+   - The **Field closed** chip is centered in the day header, and the date keeps its usual
+     place hard against the right edge — the header is a three-column grid, not
+     `space-between`, so the date does not move when the chip appears.
+   - A whole-day blackout draws its slots as **one block**, not three: the slots keep their
+     grid cells (reservations made before the blackout, and the admin's add button, still
+     live in them) but give up their own panel to `.dayClosedBlock`, one hatched element
+     spanning the row behind them.
+   - "Closed" was the wrong word for a field held for an event. A blackout with a reason now
+     reads **"Field reserved for:" / "<reason>"** across the block (**"Reserved for:"** on a
+     single-slot blackout). With no reason, the block stays wordless and the header chip
+     carries the message.
+   - The notice is a banner along the **top** of the block, and closed slots are padded down
+     to clear it, so a reservation booked before the blackout never lands on the words.
 
 ## Plan / steps
 
@@ -134,6 +150,11 @@ blacked-out slot, and the blackout is visible on the calendar and in the iCal fe
 - [x] Docs: README admin section, gibon.md feature/type/tree entries.
 - [x] `tsc --noEmit` clean, biome clean on every touched file, prettier clean on docs,
       `next build` succeeds with `/blackouts` routed.
+- [x] 2026-09-21, on `master`: closed-day presentation reworked per decision 9 —
+      `findWholeDayBlackout` replaces `isWholeDayBlackedOut` (it returns the blackout, so the
+      day can show its reason), header grid, merged block, new wording, admin hint removed.
+      Checked live against a throwaway `/visual-check` page (deleted afterwards) at desktop
+      and phone widths, light and dark: 333 unit tests, typecheck, biome and prettier clean.
 
 ## Open questions for the user
 
@@ -152,3 +173,9 @@ Not pushed: the user asked to keep the branch local for now.
   rewrites slot strings and orphans existing reservation data.
 - Don't add `title=` attributes to any UI.
 - Don't auto-cancel reservations when a blackout is created.
+- Don't give `.dayClosedBlock` an explicit `grid-row`, or put it in the row without giving the
+  slots explicit columns: an item with a definite row _and_ column is placed first, and the
+  auto-placed slots then skip past it into the second row, on top of the weather cells.
+- Don't put a `.dayClosedChip` rule inside the phone-width media query near the top of
+  `index.module.css`. The chip's own block is ~400 lines further down and, at equal
+  specificity, wins on order — the override silently does nothing.

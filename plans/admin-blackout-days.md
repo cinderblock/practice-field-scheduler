@@ -155,6 +155,10 @@ blacked-out slot, and the blackout is visible on the calendar and in the iCal fe
       day can show its reason), header grid, merged block, new wording, admin hint removed.
       Checked live against a throwaway `/visual-check` page (deleted afterwards) at desktop
       and phone widths, light and dark: 333 unit tests, typecheck, biome and prettier clean.
+- [x] 2026-09-21 deployed. App `master` at 8a32c5f pushed; image
+      `sha256:94e5d686...7387fd` built by a dispatched _Build image_ run, revision label
+      verified against the registry; ops pinned it in `fe89bd0` and the _Server Deploys_ run
+      35690746001 put it on steamboat, container up on the new digest.
 
 ## Open questions for the user
 
@@ -179,3 +183,10 @@ Not pushed: the user asked to keep the branch local for now.
 - Don't put a `.dayClosedChip` rule inside the phone-width media query near the top of
   `index.module.css`. The chip's own block is ~400 lines further down and, at equal
   specificity, wins on order — the override silently does nothing.
+- Don't let `[skip ci]` be the last commit of a push, and don't write the literal string
+  anywhere in a commit message you want CI to run on — GitHub matches the token anywhere in
+  the head commit's message, body included. It bit twice on 2026-09-21: the app push (head
+  was a plan record, so no image was built) and then the ops pin (whose body _mentioned_
+  `[skip ci]`, so steamboat never deployed). Both were recovered with
+  `gh workflow run "<name>" --ref master`; the ops one deploys whatever `master` holds at
+  that moment, so check what else has landed first.

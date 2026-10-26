@@ -1,0 +1,184 @@
+# Field issue reports (safety / repair / not reset) with snapshots
+
+## Goal
+
+Let a mentor at the practice field report a problem with it, from the calendar, in a few
+taps: pick what kind of problem it is, add a note, attach photos from their phone, and have
+the scheduler grab a frame from the shop's cameras at the same moment. Admins get a viewer
+for the resulting incident log, where they can see the photos and mark a report resolved.
+
+Asked for by the user on 2026-10-26: "a way to report issues with the field. maybe a button
+next to the add reservation button? mentor selects one of: safety issue / repair needed /
+repair made / field not reset / other. use/take/store snapshots to help document. from users
+device and from the shop's cameras. we'll also need a viewer for the incident log."
+
+## Environment / context
+
+- Repo: `C:\Users\camer\git\playgrounds\practice-field-scheduler`, branch `master`, shared
+  working tree. At the start of this task every tracked file showed as modified, but only
+  because of LF→CRLF line endings (`git diff --ignore-cr-at-eol` is empty). Stage only the
+  files this task creates or edits.
+- Next.js 15 App Router, tRPC v11, React 19, TypeScript strict, CSS modules. **npm**, not
+  Bun (`package-lock.json`, `packageManager: npm@11.4.2`). Node 24 locally; the image runs
+  Node 22.
+- Checks: `npm run typecheck`, `npm run check` (biome + prettier; `npm run check:write` to
+  fix), `npm run test:unit` (vitest). `test:e2e` needs a running app with real Slack auth, so
+  it is not part of the loop.
+- Storage is JSON arrays under `DATA_DIR/<year>/`, loaded into module globals at boot in
+  `src/server/backend.ts`. Audit trail is `DATA_DIR/<year>/logs.txt`, one JSON object per
+  line, read by `/logs`.
+- Production: `practice-field-scheduler.tomsawyerlabs.com`, container on `steamboat`,
+  `DATA_DIR` bind-mounted from `/srv/practice-field-scheduler-data`. Deployment settings live
+  in `cinderblock/ops` at `servers/steamboat/stacks/practice-field-scheduler/compose.yml`.
+  Nothing there is touched by this task; see "Open questions".
+- The shop's cameras are UniFi Protect cameras exposed through the TSL Home Assistant
+  (`ha-tsl`, HA 2026.9.3, `America/Los_Angeles`). The one looking at the practice field is
+  `camera.g5_turret_ultra_high_resolution_channel`, friendly name **Field Centered**
+  (verified with a live frame on 2026-10-26 at 9:33 AM PDT: field, ball pile, two goals).
+  Others that may be relevant: `camera.south_rollup_high_resolution_channel`,
+  `camera.g5_bullet_high_resolution_channel`. HA serves a still from any camera at
+  `GET {HA_URL}/api/camera_proxy/{entity_id}` with a long-lived access token as a bearer.
+
+## Decisions already made (don't re-ask)
+
+1. **The report button lives in each time slot, beside the add button.** That is what the
+   user suggested, and it gives every report a date and slot for free (the practice block
+   it is about). Unlike the add button it also shows on slots that have ended, because
+   "field not reset" is usually about the block that just finished.
+2. **Any signed-in user can file a report; only admins can read the log.** Everyone signed
+   in is a mentor or team member. The log holds camera frames of the shop and people's
+   photos, so it is admin-only like `/logs`, `/users` and `/blackouts`. A reporter sees
+   their own report confirmed in the dialog and that is it.
+3. **Five kinds, fixed:** `safety`, `repair_needed`, `repair_made`, `not_reset`, `other`,
+   stored as those identifiers and labelled in the UI. "Other" is the only one where a note
+   is required.
+4. **Two snapshot sources, both best-effort and independent.** Device photos are chosen or
+   taken with `<input type="file" accept="image/*" capture="environment">`, downscaled in
+   the browser (longest side 1600 px, JPEG) so a phone's 12 MP originals never hit the
+   server, and uploaded as multipart to a route handler. Camera frames are fetched by the
+   server from Home Assistant when the report is filed. A camera being unreachable, or an
+   upload failing, never loses the report itself.
+5. **Creation is two steps: file the report over tRPC, then upload photos to it.** The
+   report (and the camera capture) succeed or fail on their own, and a failed upload can be
+   retried against the same report. One giant multipart request would make the report hang
+   on the slowest part of it.
+6. **Files live next to the data, under `DATA_DIR/<year>/issues/<issueId>/`.** Same bind
+   mount, same per-season layout as everything else; the record in `issues.json` names the
+   files. Snapshots are served only through an admin-gated route, never from `public/`.
+7. **Cameras are configured, not discovered.** `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN`
+   and `FIELD_CAMERAS` (`Label=camera.entity_id, Label=camera.other`) are optional runtime
+   settings. Unset, the feature works without camera frames and the dialog does not mention
+   them.
+8. **No `title=` tooltips** in new UI (global user rule).
+9. **Package manager stays npm** for this repo (its own convention; it is not on the Bun
+   list).
+
+## Plan / steps
+
+1. [x] Read the codebase: backend/data layer, blackout router + admin page (UI model),
+       logs page (viewer model), calendar slot + add modal, team-avatar route (binary
+       route model), env/config plumbing, tests.
+2. [x] Confirm what "the shop's cameras" are and how to pull a still (HA camera proxy).
+3. [x] Write this plan.
+4. [x] `src/types.ts`: `FieldIssue`, `FieldIssueKind`, `FieldIssueSnapshot`, `AddFieldIssueArgs`.
+5. [x] `src/server/util/fieldIssue.ts`: pure helpers (kind labels, `FIELD_CAMERAS`
+       parsing, snapshot filename rules, image sniffing, limits) with unit tests.
+6. [x] `src/env.js` + `.env.example`: the three optional camera settings.
+7. [x] `src/server/cameras.ts`: fetch a frame from each configured camera via HA, with a
+       10 s timeout, never throwing. `fetch` is injectable for tests.
+8. [x] `src/server/backend.ts`: `fieldIssues` store + `issues.json`, `addFieldIssue`,
+       `attachFieldIssuePhoto`, `listFieldIssues`, `setFieldIssueResolved`,
+       `removeFieldIssue`, `readFieldIssueSnapshot`, `InvalidRequestError`, log entries
+       (`fieldIssueAdd/Photo/Resolve/Reopen/Remove`), startup warning for a half-configured
+       camera setup.
+9. [x] `src/server/api/routers/fieldIssue.ts` (`add`, `list`, `setResolved`, `remove`) +
+       registered in `root.ts` as `fieldIssue`.
+10. [x] `src/app/api/issues/[id]/photos/route.ts` (multipart upload, one photo per request)
+        and `src/app/api/issues/[id]/snapshots/[file]/route.ts` (admin-only download).
+        Both build their `Context` through the new `src/server/requestContext.ts`.
+11. [x] `AppConfig.fieldCameras` (labels only, and only when all three settings are set);
+        `layout.tsx` supplies them.
+12. [x] `src/app/_components/ReportFieldIssue.tsx` (+ `.module.css`): the `!` button and
+        the dialog, wired into `TimeSlot` beside the add button; browser-side downscale to
+        1600 px JPEG; per-photo upload with retry; positioning rules in `index.module.css`
+        (`.reportIssueBtn`, `.reportIssueBtnAlone`).
+13. [x] `src/app/issues/` admin page + `IssuesList` client component + CSS (open/resolved
+        tabs, kind filter, thumbnails with a lightbox, resolve with note, reopen, remove);
+        **Field Issues** link on the calendar header.
+14. [x] Tests: `fieldIssue.test.ts` (helpers), `cameras.test.ts` (HA capture),
+        `fieldIssueBackend.test.ts` (real backend on a scratch `DATA_DIR`, with a stubbed
+        HA camera proxy), `fieldIssueRoutes.test.ts` (route handlers).
+15. [x] README section, `gibon.md` feature line, `/logs` shows `kind`, `snapshots` and
+        `cameraErrors`.
+16. [x] typecheck, `npm run check`, 381 unit tests passing, production build; commit.
+
+## Findings / gotchas
+
+- The add button (`.addReservationBtn`) is absolutely positioned at the bottom centre of
+  the slot and revealed on hover; `.timeSlotOver .addReservationBtn { display: none }` hides
+  it once the slot has ended. The report button needs its own class so it can stay visible
+  on ended slots and sit to the right of the add button without moving it.
+- `TimeSlot` already owns an Escape-key handler for the add modal; a second dialog in the
+  same component needs its own, or they fight. The report dialog is its own component with
+  its own handler.
+- `Context` resolves the user lazily (`this.user` promise); `getContext()` gives
+  `{ timestamp, userId, userAgent, ip }` for log lines. Every mutating method takes
+  `changeLock`, appends a log entry, writes the JSON file, and releases under
+  `ContinueOnError`.
+- tRPC here uses superjson, so `Date` survives the wire; `Buffer` does not belong in it.
+  Binary goes through route handlers (`src/app/api/team-avatar/.../route.ts` is the model).
+- Route handlers get the session from `auth()` and build a `Context` by hand, exactly as
+  the pages do (`src/app/blackouts/page.tsx`).
+- `initializePart` only knows arrays and dispatches on identity (`getFilePath`,
+  `getArrayName`); a new store needs entries in both, plus date revival for its records.
+- Home Assistant's camera proxy returns the camera's native JPEG (UniFi high-resolution
+  channel is 4K, roughly 500 KB to 1 MB per frame). Stored as-is; downscaling on the
+  server would need `sharp`, which is not a direct dependency.
+- **Backend tests find people by email, not session id.** A test session's `user.id` is
+  not a Slack id, so `getUser` resolves it by email (`<id>@example.test`); the seeded
+  `users.json` entries must carry exactly that email or every session lands on a fresh
+  non-admin user. First run of the backend test failed on this with "Only admins can…".
+- Biome's `useKeyWithClickEvents` rejects a click-to-close backdrop `div`. The report
+  dialog closes with Cancel/Close/Escape only (as the add dialog does); the lightbox's
+  backdrop is a full-size `<button>` so it stays clickable and keyboard-reachable.
+- Biome also flags a `vh` + `dvh` fallback pair as a duplicate property; only `dvh` is
+  used (supported by every current browser).
+- **The UI was not exercised in a browser.** Sign-in is Slack OAuth with no test bypass
+  and there is no local `.env`, so the calendar can't be reached locally without a tunnel
+  and the real Slack app. Coverage is typecheck, lint, the four test files and a full
+  `next build`. First real look will be on staging/production.
+
+## Progress log
+
+- [x] 2026-10-26 (morning, PDT): exploration, camera identification, plan written.
+- [x] Types, helpers, env, camera client.
+- [x] Backend store, router, routes.
+- [x] Calendar button + dialog.
+- [x] Admin viewer.
+- [x] Tests, docs; typecheck + check + unit suite green; build run.
+- [ ] Commit (this session, once the build finishes).
+- [ ] Ops: camera settings in the compose file (needs the user's authorization; see open
+      question 1).
+- [ ] First look at the dialog and `/issues` on a real deployment.
+
+## Open questions for the user
+
+1. **Which cameras, and how does the container reach Home Assistant?** The feature is
+   configured by `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN` and `FIELD_CAMERAS` in the
+   ops compose file. My recommendation: `FIELD_CAMERAS="Field=camera.g5_turret_ultra_high_resolution_channel"`
+   to start, adding `South rollup=camera.south_rollup_high_resolution_channel` if that view
+   is useful. The token is a long-lived HA access token for a dedicated HA user. That ops
+   change needs your per-change authorization and is not staged.
+2. **Should safety reports DM the admins on Slack?** The Slack DM plumbing exists
+   (`sendDirectMessage`); a safety report that nobody sees until someone opens `/issues` is
+   weaker than one that pings. Not built; easy follow-up if wanted.
+3. **Should open "repair needed" reports show on the calendar for everyone?** Teams might
+   like to know the field has a known problem before they drive over. Not built.
+
+## Things not to do
+
+- Don't put snapshots under `public/` or serve them unauthenticated.
+- Don't send photos through tRPC as base64; use the multipart route.
+- Don't make the report button hide on ended slots like the add button does.
+- Don't edit the ops repo or Home Assistant for this; configuration is the user's call.
+- Don't stage the line-ending-only changes that litter `git status`.

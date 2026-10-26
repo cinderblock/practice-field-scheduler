@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 
 import { env } from "~/env";
+import { camerasConfigured, configuredCameras } from "~/server/cameras";
 import { TRPCReactProvider } from "~/trpc/react";
 import { AppConfigProvider } from "./_components/AppConfig";
 import { ErrorReporter } from "./_components/ErrorReporter";
@@ -35,6 +36,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 		timeZone: env.TIME_ZONE,
 		timeSlotBorders: env.TIME_SLOT_BORDERS,
 		reservationDays: env.RESERVATION_DAYS,
+		// Only the labels, and only when frames can actually be fetched: a half-configured
+		// setup shouldn't promise cameras the report will never get.
+		fieldCameras: camerasConfigured() ? configuredCameras().map(c => c.label) : [],
 	};
 
 	return (

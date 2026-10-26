@@ -19,6 +19,10 @@ type LogEntry = {
 	reason?: string;
 	name?: string;
 	teams?: number[] | "admin";
+	// Field issue reports
+	kind?: string;
+	snapshots?: number;
+	cameraErrors?: string[];
 };
 
 export function LogsTable({ logs }: { logs: LogEntry[] }) {
@@ -216,6 +220,9 @@ export function LogsTable({ logs }: { logs: LogEntry[] }) {
 									{log.reason && <div>Reason: {log.reason}</div>}
 									{log.name && <div>Name: {log.name}</div>}
 									{log.teams && <div>Teams: {log.teams === "admin" ? "Admin" : log.teams.join(", ")}</div>}
+									{log.kind && <div>Kind: {log.kind}</div>}
+									{log.snapshots !== undefined && <div>Snapshots: {log.snapshots}</div>}
+									{log.cameraErrors && <div>Cameras failed: {log.cameraErrors.join("; ")}</div>}
 								</td>
 								<td className={styles.userCell} title={log.userFullName}>
 									{log.userName}

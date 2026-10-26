@@ -47,6 +47,18 @@ export const env = createEnv({
 			.max(16, "Open-Meteo forecasts at most 16 days")
 			.default(10),
 
+		// Field issue reports can include a still from the shop's cameras, fetched from
+		// Home Assistant's camera proxy with a long-lived access token. All optional:
+		// unset, reports simply carry no camera frames. FIELD_CAMERAS is a comma-separated
+		// list of `Label=camera.entity_id`; see src/server/util/fieldIssue.ts.
+		HOME_ASSISTANT_URL: z.string().url().optional(),
+		HOME_ASSISTANT_TOKEN: z.string().min(20, "Home Assistant long-lived access tokens are long").optional(),
+		FIELD_CAMERAS: z
+			.string()
+			.trim()
+			.optional()
+			.refine(isValidFieldCameras, "FIELD_CAMERAS must be Label=camera.entity_id pairs, separated by commas"),
+
 		// Settings the browser needs too. They are read here, on the server, and handed to
 		// client components by the provider in the root layout — NOT with a NEXT_PUBLIC_
 		// prefix, which Next.js would bake into the bundle at build time. The image is built
@@ -103,6 +115,9 @@ export const env = createEnv({
 		WEATHER_API_KEY: process.env.WEATHER_API_KEY,
 		WEATHER_UPDATES_PER_DAY: process.env.WEATHER_UPDATES_PER_DAY,
 		WEATHER_FORECAST_DAYS: process.env.WEATHER_FORECAST_DAYS,
+		HOME_ASSISTANT_URL: process.env.HOME_ASSISTANT_URL,
+		HOME_ASSISTANT_TOKEN: process.env.HOME_ASSISTANT_TOKEN,
+		FIELD_CAMERAS: process.env.FIELD_CAMERAS,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially
@@ -115,6 +130,22 @@ export const env = createEnv({
 	 */
 	emptyStringAsUndefined: true,
 });
+
+/**
+ * Shape check only; the full parse (which also rejects duplicate labels) is
+ * `parseFieldCameras` in src/server/util/fieldIssue.ts. This file is plain JS loaded by
+ * next.config.js, so it can't import that TypeScript module.
+ *
+ * @param {string | undefined} value
+ */
+function isValidFieldCameras(value) {
+	if (!value) return true;
+	return value
+		.split(",")
+		.map(part => part.trim())
+		.filter(Boolean)
+		.every(part => /^[^=]+=camera\.[a-z0-9_]+$/.test(part));
+}
 
 /**
  * @param {string} timeZone

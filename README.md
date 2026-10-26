@@ -139,6 +139,43 @@ slots immediately.
 
 Blackouts, like all scheduling data, are scoped to the current calendar year.
 
+### Field issue reports
+
+Anyone signed in can report a problem with the field from the calendar: every time slot has a **!** button
+beside its add button (it stays on slots that have already ended, since a field that wasn't reset is
+usually noticed by the next team). The report names the slot it came from, and asks for:
+
+- **What's wrong:** safety issue, repair needed, repair made, field not reset, or other (which needs a note).
+- **Details** and the reporter's **team**, both optional.
+- **Photos** from the phone, taken on the spot or chosen from the gallery. They're downscaled in the browser
+  (longest side 1600 px) before upload, up to 10 per report.
+- **A frame from the shop cameras**, grabbed by the server from Home Assistant the moment the report is
+  filed, when cameras are configured (below). A camera that doesn't answer within 10 seconds is reported as
+  missing; the report is filed either way.
+
+The report is filed first, then each photo is uploaded to it on its own, so a bad connection at the field
+loses a picture, not the report, and the dialog offers to retry the ones that failed. Reporters may add
+photos to their own report for an hour after filing it; admins at any time.
+
+Admins read the incident log at **Field Issues** (`/issues`): each report with its pictures, filterable by
+kind and by open/resolved. **Resolve…** records who closed it and an optional note; **Reopen** undoes that;
+**Remove** hides a report for good. Only admins can see reports or their pictures, which are served through
+an authenticated route, never from `public/`. Everything is written to the audit log (`/logs`).
+
+Reports live in `DATA_DIR/<year>/issues.json`, and their pictures under `DATA_DIR/<year>/issues/<id>/`. A
+camera frame from a 4K UniFi camera is roughly 0.5–1 MB; a downscaled phone photo a few hundred KB. Removing
+a report hides it but leaves its files.
+
+| Variable               | Default | Meaning                                                                                                        |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `HOME_ASSISTANT_URL`   | unset   | Base URL of the Home Assistant the cameras are in, e.g. `http://homeassistant.local:8123`                      |
+| `HOME_ASSISTANT_TOKEN` | unset   | A long-lived access token for it (Profile → Security). Only needs to read cameras                              |
+| `FIELD_CAMERAS`        | unset   | Comma-separated `Label=camera.entity_id`, e.g. `Field=camera.field_centered, South rollup=camera.south_rollup` |
+
+All three are needed for camera frames; with any of them unset, the dialog doesn't mention cameras and the
+server warns once at startup if `FIELD_CAMERAS` is set but the others aren't. Frames come from Home
+Assistant's camera proxy (`/api/camera_proxy/<entity_id>`), so any camera Home Assistant shows will do.
+
 ### Weather
 
 Set `WEATHER_LOCATION` to show the forecast under each day of the calendar. Leave it unset and nothing

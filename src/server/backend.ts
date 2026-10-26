@@ -15,9 +15,13 @@ import type { Session } from "next-auth";
 import { env } from "~/env";
 import type {
 	AddBlackoutArgs,
+	AddFieldIssueArgs,
 	AddReservationArgs,
 	Blackout,
 	EventDate,
+	FieldIssue,
+	FieldIssueKind,
+	FieldIssueSnapshot,
 	Holiday,
 	PersonalAccess,
 	PersonalAccessStatus,
@@ -40,6 +44,7 @@ import {
 	sameTeam,
 	slackNameCheckFor,
 } from "./access";
+import { cameraConfigProblem, captureFieldCameras } from "./cameras";
 import {
 	type GateLink,
 	type LinkDmKind,
@@ -63,6 +68,15 @@ import {
 } from "./slack";
 import { activeBlackouts, blackoutCoversSlot, findBlackoutForSlot, normalizeBlackoutRange } from "./util/blackout";
 import { exit } from "./util/exit";
+import {
+	fieldIssueKindInfo,
+	MAX_PHOTO_BYTES,
+	MAX_PHOTOS_PER_ISSUE,
+	PHOTO_UPLOAD_WINDOW_MS,
+	type SnapshotImageType,
+	snapshotFileName,
+	sniffImageType,
+} from "./util/fieldIssue";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
 import { checkSlackNames, parseSlackName, type SlackNameIssue, type SuggestedNames } from "./util/slackName";
@@ -94,6 +108,7 @@ declare global {
 	var __blackouts: Blackout[] | undefined;
 	var __siteEvents: SiteEvent[] | undefined;
 	var __holidays: Holiday[] | undefined;
+	var __fieldIssues: FieldIssue[] | undefined;
 	var __users: UserEntry[] | undefined;
 	var __houseTeams: Team[] | undefined;
 	var __slackMappings: { slackId: string; userId: UserId }[] | undefined;
@@ -112,6 +127,7 @@ globalThis.__reservations ||= [];
 globalThis.__blackouts ||= [];
 globalThis.__siteEvents ||= [];
 globalThis.__holidays ||= [];
+globalThis.__fieldIssues ||= [];
 globalThis.__users ||= [];
 globalThis.__houseTeams ||= [];
 globalThis.__slackMappings ||= [];
@@ -125,6 +141,7 @@ const reservations = globalThis.__reservations;
 const blackouts = globalThis.__blackouts;
 const siteEvents = globalThis.__siteEvents;
 const holidays = globalThis.__holidays;
+const fieldIssues = globalThis.__fieldIssues;
 const users = globalThis.__users;
 const houseTeams = globalThis.__houseTeams;
 const slackMappings = globalThis.__slackMappings;
@@ -927,6 +944,24 @@ type LogSlackNamesEntry = LogCommon & {
 	count: number;
 };
 
+/**
+ * Field issue reports. `fieldIssueAdd` is the reporter's doing; the rest are admin actions
+ * on the report. `snapshots` counts what the entry attached (camera frames on add, device
+ * photos on `fieldIssuePhoto`).
+ */
+type LogFieldIssueEntry = LogCommon & {
+	type: "fieldIssueAdd" | "fieldIssuePhoto" | "fieldIssueResolve" | "fieldIssueReopen" | "fieldIssueRemove";
+	id: string;
+	kind: FieldIssueKind;
+	date: EventDate;
+	slot: TimeSlot;
+	team?: TeamFull;
+	notes?: string;
+	snapshots?: number;
+	/** Cameras that didn't answer when the report was filed, and why. */
+	cameraErrors?: string[];
+};
+
 type LogEntry =
 	| LogReservationEntry
 	| LogBlackoutEntry
@@ -934,7 +969,8 @@ type LogEntry =
 	| LogUserEntry
 	| LogTeamAccessEntry
 	| LogPersonalAccessEntry
-	| LogSlackNamesEntry;
+	| LogSlackNamesEntry
+	| LogFieldIssueEntry;
 
 export class PermissionError extends Error {
 	constructor(message: string) {
@@ -943,8 +979,61 @@ export class PermissionError extends Error {
 	}
 }
 
+/**
+ * A request that can't be honoured as asked: not a permissions matter, just wrong (a
+ * missing note, a file that isn't an image, a report that doesn't exist). `status` is the
+ * HTTP status a route handler should answer with; tRPC callers just see the message.
+ */
+export class InvalidRequestError extends Error {
+	constructor(
+		message: string,
+		public readonly status: 400 | 404 | 413 | 415 = 400,
+	) {
+		super(message);
+		this.name = "InvalidRequestError";
+	}
+}
+
+/** What became of one camera when a report was filed, for the reporter to see. */
+export type CameraOutcome = { camera: string; ok: true } | { camera: string; ok: false; error: string };
+
 function getReservation(id: string): Reservation | undefined {
 	return reservations.find(reservation => reservation.id === id && !reservation.abandoned);
+}
+
+function findFieldIssue(id: string): FieldIssue | undefined {
+	return fieldIssues.find(issue => issue.id === id && !issue.deleted);
+}
+
+/** A copy callers can't mutate the store through: the snapshot list is copied too. */
+function copyFieldIssue(issue: FieldIssue): FieldIssue {
+	return { ...issue, snapshots: issue.snapshots.map(s => ({ ...s })) };
+}
+
+/**
+ * Write one snapshot's bytes under its report's directory and describe it. Returns null
+ * (after logging) if the write failed, so the caller can carry on without it.
+ */
+async function saveSnapshot(
+	issueId: string,
+	source: FieldIssueSnapshot["source"],
+	contentType: SnapshotImageType,
+	bytes: Buffer,
+	{ camera, taken }: { camera?: string; taken: Date },
+): Promise<FieldIssueSnapshot | null> {
+	const id = crypto.randomUUID();
+	const file = snapshotFileName(id, source, contentType);
+	if (!DisableWrites) {
+		try {
+			const dir = join(ISSUES_DIR, issueId);
+			await mkdir(dir, { recursive: true });
+			await writeFile(join(dir, file), bytes);
+		} catch (err) {
+			console.error(`Error saving ${source} snapshot for field issue ${issueId}:`, err);
+			return null;
+		}
+	}
+	return { id, source, camera, file, contentType, bytes: bytes.length, taken };
 }
 
 async function log(entry: LogEntry) {
@@ -1275,6 +1364,273 @@ export class Context {
 	async getHolidays(): Promise<Holiday[]> {
 		await initialized();
 		return holidays.filter(h => !h.deleted);
+	}
+
+	// ===== Field issue reports =====
+
+	/**
+	 * File a report about the field. Anyone signed in may: everyone here is a mentor or
+	 * team member, and the point is to hear about a hazard from whoever noticed it.
+	 *
+	 * Camera frames are grabbed before the change lock is taken, because a camera can take
+	 * up to CAMERA_CAPTURE_TIMEOUT_MS to answer and nothing else should wait on it. Their
+	 * files land on disk before the record that names them, so a crash in between leaves
+	 * at worst an orphaned directory, never a record pointing at nothing.
+	 */
+	async addFieldIssue(args: AddFieldIssueArgs): Promise<{ issue: FieldIssue; cameras: CameraOutcome[] }> {
+		await this.user; // Throws if not signed in
+
+		const info = fieldIssueKindInfo(args.kind);
+		const notes = args.notes?.trim() || undefined;
+		if (info.notesRequired && !notes) {
+			throw new InvalidRequestError(`A "${info.label}" report needs a note saying what happened`);
+		}
+		const team = typeof args.team === "string" ? args.team.trim() || undefined : args.team;
+
+		const id = crypto.randomUUID();
+		const captures = args.captureCameras === false ? [] : await captureFieldCameras();
+
+		const snapshots: FieldIssueSnapshot[] = [];
+		const cameras: CameraOutcome[] = [];
+		for (const capture of captures) {
+			if (!capture.ok) {
+				cameras.push({ camera: capture.camera, ok: false, error: capture.error });
+				continue;
+			}
+			const snapshot = await saveSnapshot(id, "camera", capture.frame.contentType, capture.frame.bytes, {
+				camera: capture.camera,
+				taken: capture.frame.taken,
+			});
+			if (!snapshot) {
+				cameras.push({ camera: capture.camera, ok: false, error: "The frame couldn't be saved" });
+				continue;
+			}
+			snapshots.push(snapshot);
+			cameras.push({ camera: capture.camera, ok: true });
+		}
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		const issue: FieldIssue = {
+			id,
+			kind: args.kind,
+			date: args.date,
+			slot: args.slot,
+			created: ctx.timestamp,
+			userId: ctx.userId,
+			team,
+			notes,
+			snapshots,
+		};
+
+		fieldIssues.push(issue);
+
+		const cameraErrors = cameras.filter(c => !c.ok).map(c => `${c.camera}: ${c.error}`);
+		jobs.push(
+			log({
+				...ctx,
+				type: "fieldIssueAdd",
+				id,
+				kind: issue.kind,
+				date: issue.date,
+				slot: issue.slot,
+				team,
+				notes,
+				snapshots: snapshots.length,
+				cameraErrors: cameraErrors.length ? cameraErrors : undefined,
+			}),
+		);
+
+		jobs.push(writeJsonFile(ISSUES_FILE, fieldIssues));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return { issue: copyFieldIssue(issue), cameras };
+	}
+
+	/**
+	 * Add a photo from the reporter's device to their report. The browser sends photos
+	 * right after filing, one request each, so a failed one can be retried on its own.
+	 * Admins may add to any report; the reporter only to their own, and only for a while
+	 * (PHOTO_UPLOAD_WINDOW_MS), so old reports don't stay open to new pictures forever.
+	 */
+	async attachFieldIssuePhoto(id: string, bytes: Buffer): Promise<FieldIssueSnapshot> {
+		const user = await this.user;
+
+		const issue = findFieldIssue(id);
+		if (!issue) throw new InvalidRequestError("Report not found", 404);
+
+		if (!(await this.isAdmin())) {
+			if (issue.userId !== user.id) {
+				throw new PermissionError("Only the person who filed a report can add photos to it");
+			}
+			if (Date.now() - issue.created.getTime() > PHOTO_UPLOAD_WINDOW_MS) {
+				throw new PermissionError("Photos can only be added to a report within an hour of filing it");
+			}
+		}
+
+		if (bytes.length > MAX_PHOTO_BYTES) {
+			throw new InvalidRequestError(`Photos must be under ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} MB`, 413);
+		}
+		const contentType = sniffImageType(bytes);
+		if (!contentType) throw new InvalidRequestError("That file isn't a JPEG, PNG or WebP image", 415);
+
+		const release = await changeLock.acquire();
+		try {
+			// Counted under the lock: two uploads racing shouldn't both squeeze in as the last one.
+			const devicePhotos = issue.snapshots.filter(s => s.source === "device").length;
+			if (devicePhotos >= MAX_PHOTOS_PER_ISSUE) {
+				throw new InvalidRequestError(`A report can have at most ${MAX_PHOTOS_PER_ISSUE} photos`);
+			}
+
+			const ctx = await this.getContext();
+			const snapshot = await saveSnapshot(issue.id, "device", contentType, bytes, { taken: ctx.timestamp });
+			if (!snapshot) throw new Error("The photo couldn't be saved");
+
+			issue.snapshots.push(snapshot);
+
+			const done = Promise.all([
+				log({
+					...ctx,
+					type: "fieldIssuePhoto",
+					id: issue.id,
+					kind: issue.kind,
+					date: issue.date,
+					slot: issue.slot,
+					team: issue.team,
+					snapshots: 1,
+				}),
+				writeJsonFile(ISSUES_FILE, fieldIssues),
+			]);
+			if (ContinueOnError) await done.catch(() => undefined);
+			else await done;
+
+			return { ...snapshot };
+		} finally {
+			release();
+		}
+	}
+
+	/** Every report not removed, newest first. Admin-only: reports carry photos of the shop. */
+	async listFieldIssues(): Promise<FieldIssue[]> {
+		await this.restrictToAdmin("Only admins can read field issue reports");
+
+		return fieldIssues
+			.filter(i => !i.deleted)
+			.map(copyFieldIssue)
+			.sort((a, b) => b.created.getTime() - a.created.getTime());
+	}
+
+	/** Mark a report dealt with (or not, if it was marked by mistake), with an optional note. */
+	async setFieldIssueResolved({
+		id,
+		resolved,
+		resolution,
+	}: {
+		id: string;
+		resolved: boolean;
+		resolution?: string;
+	}): Promise<FieldIssue> {
+		await this.restrictToAdmin("Only admins can resolve field issue reports");
+
+		const issue = findFieldIssue(id);
+		if (!issue) throw new InvalidRequestError("Report not found", 404);
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		if (resolved) {
+			issue.resolved = ctx.timestamp;
+			issue.resolvedBy = ctx.userId;
+			issue.resolution = resolution?.trim() || undefined;
+		} else {
+			issue.resolved = undefined;
+			issue.resolvedBy = undefined;
+			issue.resolution = undefined;
+		}
+
+		jobs.push(
+			log({
+				...ctx,
+				type: resolved ? "fieldIssueResolve" : "fieldIssueReopen",
+				id: issue.id,
+				kind: issue.kind,
+				date: issue.date,
+				slot: issue.slot,
+				team: issue.team,
+				notes: issue.resolution,
+			}),
+		);
+
+		jobs.push(writeJsonFile(ISSUES_FILE, fieldIssues));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return copyFieldIssue(issue);
+	}
+
+	/** Hide a report for good. Its files stay on disk; nothing links to them any more. */
+	async removeFieldIssue({ id }: { id: string }): Promise<FieldIssue> {
+		await this.restrictToAdmin("Only admins can remove field issue reports");
+
+		const issue = findFieldIssue(id);
+		if (!issue) throw new InvalidRequestError("Report not found", 404);
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		issue.deleted = ctx.timestamp;
+
+		jobs.push(
+			log({
+				...ctx,
+				type: "fieldIssueRemove",
+				id: issue.id,
+				kind: issue.kind,
+				date: issue.date,
+				slot: issue.slot,
+				team: issue.team,
+				notes: issue.notes,
+				snapshots: issue.snapshots.length,
+			}),
+		);
+
+		jobs.push(writeJsonFile(ISSUES_FILE, fieldIssues));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return copyFieldIssue(issue);
+	}
+
+	/**
+	 * The bytes of one snapshot, for the admin viewer. The record decides which files a
+	 * report has; a name that isn't in it is simply not found, so nothing from the URL ever
+	 * reaches the filesystem unchecked.
+	 */
+	async readFieldIssueSnapshot(
+		id: string,
+		file: string,
+	): Promise<{ bytes: Buffer; contentType: string; snapshot: FieldIssueSnapshot } | null> {
+		await this.restrictToAdmin("Only admins can view field issue snapshots");
+
+		const issue = findFieldIssue(id);
+		const snapshot = issue?.snapshots.find(s => s.file === file);
+		if (!issue || !snapshot) return null;
+
+		try {
+			const bytes = await readFile(join(ISSUES_DIR, issue.id, snapshot.file));
+			return { bytes, contentType: snapshot.contentType, snapshot: { ...snapshot } };
+		} catch (err) {
+			if (err instanceof Error && "code" in err && err.code === "ENOENT") return null;
+			throw err;
+		}
 	}
 
 	private async getUser(): Promise<UserEntry> {
@@ -2031,6 +2387,10 @@ const BLACKOUTS_FILE = join(DATA_DIR, YEAR, "blackouts.json");
 const SITE_EVENTS_FILE = join(DATA_DIR, YEAR, "events.json");
 const HOLIDAYS_FILE = join(DATA_DIR, YEAR, "holidays.json");
 const HOUSE_TEAMS_FILE = join(DATA_DIR, YEAR, "teams.json");
+// Field issue reports, and the directory their snapshots live under: one subdirectory per
+// report, named by its id, holding the files its record lists.
+const ISSUES_FILE = join(DATA_DIR, YEAR, "issues.json");
+const ISSUES_DIR = join(DATA_DIR, YEAR, "issues");
 // Access links are per season: the server restarts when the year changes, and
 // a new year's empty files mean everyone is issued (and DM'd) fresh links.
 const TEAM_ACCESS_FILE = join(DATA_DIR, YEAR, "teamAccess.json");
@@ -2153,6 +2513,7 @@ function getFilePath(array: unknown[]) {
 	if (array === blackouts) return BLACKOUTS_FILE;
 	if (array === siteEvents) return SITE_EVENTS_FILE;
 	if (array === holidays) return HOLIDAYS_FILE;
+	if (array === fieldIssues) return ISSUES_FILE;
 	if (array === users) return USERS_FILE;
 	if (array === houseTeams) return HOUSE_TEAMS_FILE;
 	if (array === slackMappings) return SLACK_MAPPINGS_FILE;
@@ -2257,6 +2618,19 @@ async function initializePart(array: unknown[]) {
 					}
 				}
 
+				// Field issue reports: revive every date, including the ones on each snapshot,
+				// and never trust a record without a snapshot list.
+				if (array === fieldIssues) {
+					if (typeof item !== "object" || item === null) return false;
+					const issue = item as FieldIssue;
+					if (!issue.id || !issue.kind) return false;
+					issue.created = new Date(issue.created);
+					if (issue.resolved) issue.resolved = new Date(issue.resolved);
+					if (issue.deleted) issue.deleted = new Date(issue.deleted);
+					if (!Array.isArray(issue.snapshots)) issue.snapshots = [];
+					for (const snapshot of issue.snapshots) snapshot.taken = new Date(snapshot.taken);
+				}
+
 				if (array === blackouts) {
 					if (typeof item !== "object" || item === null) return false;
 					if (item.created) item.created = new Date(item.created);
@@ -2321,6 +2695,7 @@ function getArrayName(array: unknown[]): string {
 	if (array === blackouts) return "blackouts";
 	if (array === siteEvents) return "siteEvents";
 	if (array === holidays) return "holidays";
+	if (array === fieldIssues) return "fieldIssues";
 	if (array === users) return "users";
 	if (array === houseTeams) return "houseTeams";
 	if (array === slackMappings) return "slackMappings";
@@ -2344,6 +2719,7 @@ function getArrayName(array: unknown[]): string {
 	jobs.push(initializePart(blackouts));
 	jobs.push(initializePart(siteEvents));
 	jobs.push(initializePart(holidays));
+	jobs.push(initializePart(fieldIssues));
 	jobs.push(initializePart(users));
 	jobs.push(initializePart(houseTeams));
 	jobs.push(initializePart(slackMappings));
@@ -2358,6 +2734,11 @@ function getArrayName(array: unknown[]): string {
 
 	globalThis.__backendInitialized = true;
 	done();
+
+	// Half a camera setup is the kind of thing nobody notices until a report arrives
+	// without its frames. Say so once, at startup.
+	const cameraProblem = cameraConfigProblem();
+	if (cameraProblem) console.warn(`⚠️ [${MODULE_INSTANCE_ID}] Field cameras won't be captured: ${cameraProblem}`);
 
 	startSlackNameSync();
 })().catch(err => {

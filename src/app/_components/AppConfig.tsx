@@ -20,6 +20,12 @@ export type AppConfig = {
 	timeSlotBorders: number[];
 	/** How many days ahead the calendar shows. */
 	reservationDays: number;
+	/**
+	 * Labels of the shop cameras a field issue report can include a frame from, in the
+	 * order they'll be captured. Empty when none are configured, and the report dialog
+	 * then says nothing about cameras.
+	 */
+	fieldCameras: string[];
 };
 
 const AppConfigContext = createContext<AppConfig | null>(null);

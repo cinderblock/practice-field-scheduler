@@ -152,3 +152,58 @@ export type Holiday = {
 	userId?: UserId; // Optional for system holidays
 	deleted?: Date;
 };
+
+/** What kind of problem a field issue report is about. */
+export type FieldIssueKind = "safety" | "repair_needed" | "repair_made" | "not_reset" | "other";
+
+/**
+ * One picture attached to a field issue report: either a photo from the reporter's device
+ * or a frame the server grabbed from one of the shop's cameras when the report was filed.
+ *
+ * The bytes live on disk under `DATA_DIR/<year>/issues/<issueId>/<file>`; the record only
+ * names the file.
+ */
+export type FieldIssueSnapshot = {
+	id: string;
+	source: "device" | "camera";
+	/** Which camera, as labelled in `FIELD_CAMERAS`. Only for `camera` snapshots. */
+	camera?: string;
+	/** Filename inside the issue's directory, e.g. `3f2a…-camera.jpg`. Never a path. */
+	file: string;
+	contentType: string;
+	/** Size on disk, in bytes. */
+	bytes: number;
+	taken: Date;
+};
+
+/**
+ * A problem with the practice field, reported by whoever noticed it from the calendar.
+ *
+ * Reports are tied to the day and time slot whose button they came from: that's the
+ * practice block the report is about, which is not always the one happening when it is
+ * filed (a field that wasn't reset is noticed by the next team).
+ */
+export type FieldIssue = {
+	id: string;
+	kind: FieldIssueKind;
+	date: EventDate;
+	slot: TimeSlot;
+	created: Date;
+	/** Who filed it. */
+	userId: UserId;
+	/** The reporter's team, when they gave one. */
+	team?: TeamFull;
+	notes?: string;
+	snapshots: FieldIssueSnapshot[];
+	/** Set by an admin once the report has been dealt with. */
+	resolved?: Date;
+	resolvedBy?: UserId;
+	resolution?: string;
+	/** Set when an admin removed the report outright (it stays in the file, hidden). */
+	deleted?: Date;
+};
+
+export type AddFieldIssueArgs = Pick<FieldIssue, "kind" | "date" | "slot" | "team" | "notes"> & {
+	/** Grab a frame from each configured shop camera as well. Defaults to true. */
+	captureCameras?: boolean;
+};

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
@@ -916,6 +917,20 @@ function TimeSlot({
 					+
 				</button>
 			)}
+			{/* Report a problem with the field. Unlike the add button it stays on slots that have
+			    ended, and it takes the centre whenever there is no add button beside it. */}
+			<ReportFieldIssueButton
+				date={date}
+				slot={slot}
+				className={`${styles.reportIssueBtn} ${hasEnded || (blackout && !isAdmin) ? styles.reportIssueBtnAlone : ""}`}
+				heading={
+					<>
+						<DayName date={date} />
+						<DayDate date={date} holidays={initialHolidays} />
+						<TimeRangeDisplay date={date} start={startHour} end={endHour} />
+					</>
+				}
+			/>
 			{/* Add reservation modal */}
 			{isAdding && (
 				<div className={styles.addReservationModal}>

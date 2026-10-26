@@ -1,6 +1,7 @@
 import { accessRouter } from "~/server/api/routers/access";
 import { blackoutRouter } from "~/server/api/routers/blackout";
 import { errorsRouter } from "~/server/api/routers/errors";
+import { fieldIssueRouter } from "~/server/api/routers/fieldIssue";
 import { holidayRouter } from "~/server/api/routers/holiday";
 import { reservationRouter } from "~/server/api/routers/reservation";
 import { slackRouter } from "~/server/api/routers/slack";
@@ -20,6 +21,7 @@ export const appRouter = createTRPCRouter({
 	blackout: blackoutRouter,
 	weather: weatherRouter,
 	errors: errorsRouter,
+	fieldIssue: fieldIssueRouter,
 });
 
 // export type definition of API

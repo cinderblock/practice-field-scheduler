@@ -14,7 +14,12 @@ jobs:
   test:
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moved to Ubuntu 26.04 on
+    # 2026-10-19 and Playwright has no Chromium build for it yet
+    # ("Playwright does not support chromium on ubuntu26.04-x64"), so the
+    # browser install failed before a single test ran. Revisit when
+    # Playwright lists 26.04 as supported.
+    runs-on: ubuntu-24.04
     env:
       DATA_DIR: .tmp/ci-data
       TEST_AUTH_BYPASS: "1"

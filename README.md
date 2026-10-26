@@ -141,9 +141,10 @@ Blackouts, like all scheduling data, are scoped to the current calendar year.
 
 ### Field issue reports
 
-Anyone signed in can report a problem with the field from the calendar: every time slot has a **!** button
-beside its add button (it stays on slots that have already ended, since a field that wasn't reset is
-usually noticed by the next team). The report names the slot it came from, and asks for:
+Anyone signed in can report a problem with the field from the calendar: a **!** button on every time slot
+that has started, beside the add button on the current one. The add button is for blocks still to come;
+the report button is for blocks that have begun or ended, since a problem is noticed during or after a
+block (a field that wasn't reset, by the next team). The report names the slot it came from, and asks for:
 
 - **What's wrong:** safety issue, repair needed, repair made, field not reset, or other (which needs a note).
 - **Details** and the reporter's **team**, both optional.

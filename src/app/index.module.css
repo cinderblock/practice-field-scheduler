@@ -594,9 +594,10 @@
 	display: none;
 }
 
-/* The "report a problem" button, to the right of the add button. Revealed the same way,
-   but kept on slots that have ended: a field that wasn't reset is noticed by the next
-   team, about the block before theirs. Once there's no add button, it takes the centre. */
+/* The "report a problem" button, to the right of the add button and revealed the same way.
+   It is only rendered on blocks that have started (the add button only on ones that
+   haven't ended), so the two meet on the current block; once the add button is gone this
+   one takes the centre. */
 .reportIssueBtn {
 	position: absolute;
 	left: calc(50% + 1.5rem);

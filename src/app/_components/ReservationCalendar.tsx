@@ -917,20 +917,24 @@ function TimeSlot({
 					+
 				</button>
 			)}
-			{/* Report a problem with the field. Unlike the add button it stays on slots that have
-			    ended, and it takes the centre whenever there is no add button beside it. */}
-			<ReportFieldIssueButton
-				date={date}
-				slot={slot}
-				className={`${styles.reportIssueBtn} ${hasEnded || (blackout && !isAdmin) ? styles.reportIssueBtnAlone : ""}`}
-				heading={
-					<>
-						<DayName date={date} />
-						<DayDate date={date} holidays={initialHolidays} />
-						<TimeRangeDisplay date={date} start={startHour} end={endHour} />
-					</>
-				}
-			/>
+			{/* Report a problem with the field. The mirror image of the add button: that one is for
+			    blocks still to come, this one for blocks that have started, since a problem is
+			    noticed during or after a block (a field that wasn't reset, by the next team). The two
+			    share the current block; once the add button is gone this one takes the centre. */}
+			{hasStarted && (
+				<ReportFieldIssueButton
+					date={date}
+					slot={slot}
+					className={`${styles.reportIssueBtn} ${hasEnded || (blackout && !isAdmin) ? styles.reportIssueBtnAlone : ""}`}
+					heading={
+						<>
+							<DayName date={date} />
+							<DayDate date={date} holidays={initialHolidays} />
+							<TimeRangeDisplay date={date} start={startHour} end={endHour} />
+						</>
+					}
+				/>
+			)}
 			{/* Add reservation modal */}
 			{isAdding && (
 				<div className={styles.addReservationModal}>

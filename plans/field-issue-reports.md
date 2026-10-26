@@ -31,20 +31,33 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
   `DATA_DIR` bind-mounted from `/srv/practice-field-scheduler-data`. Deployment settings live
   in `cinderblock/ops` at `servers/steamboat/stacks/practice-field-scheduler/compose.yml`.
   Nothing there is touched by this task; see "Open questions".
-- The shop's cameras are UniFi Protect cameras exposed through the TSL Home Assistant
-  (`ha-tsl`, HA 2026.9.3, `America/Los_Angeles`). The one looking at the practice field is
-  `camera.g5_turret_ultra_high_resolution_channel`, friendly name **Field Centered**
-  (verified with a live frame on 2026-10-26 at 9:33 AM PDT: field, ball pile, two goals).
-  Others that may be relevant: `camera.south_rollup_high_resolution_channel`,
-  `camera.g5_bullet_high_resolution_channel`. HA serves a still from any camera at
+- The shop's cameras are UniFi Protect cameras (NVR at `10.255.0.2:7447`). **The field
+  view the user wants is not a single camera.** It is `all-field`, a composite built by
+  `restitch`/`stitchd` on `sentinel` (ops: `servers/sentinel/stacks/restitch/config.yaml`):
+  `the-field` (a crop of the five ceiling "Bay" cameras, flipped 180°, right-trimmed)
+  stacked over the **Field Centered** turret, 3686×3290, cropped to the field. It is what
+  pFMS records matches from (`http://pfms.tsl/admin` → VIDEO → stream `all-field` =
+  `rtsp://sentinel.tsl:8554/all-field`) and what the public stream shows
+  (`https://stream.tomsawyerlabs.com/all-field/`, HLS; LAN HLS on `sentinel.tsl:9000`).
+  Restitch offers RTSP/HLS/WebRTC only, no JPEG snapshot endpoint.
+- Home Assistant (`https://homeassistant.tomsawyerlabs.com`, IPv4 `10.255.0.9`, HA 2026.9.3)
+  has no camera for `all-field` yet. It does have three **generic** cameras on restitch's
+  RTSP outputs (`camera.field_centered_restitch` = `rtsp://sentinel.tsl:8554/raw/field-centered`,
+  plus doorbell and foyer), which is exactly the pattern needed: a generic camera with only
+  a `stream_source` gets its stills from the stream via ffmpeg, and HA serves them at
   `GET {HA_URL}/api/camera_proxy/{entity_id}` with a long-lived access token as a bearer.
+  The single turret `camera.g5_turret_ultra_high_resolution_channel` was my first guess and
+  is wrong (user, 2026-10-26).
 
 ## Decisions already made (don't re-ask)
 
-1. **The report button lives in each time slot, beside the add button.** That is what the
-   user suggested, and it gives every report a date and slot for free (the practice block
-   it is about). Unlike the add button it also shows on slots that have ended, because
-   "field not reset" is usually about the block that just finished.
+1. **The report button lives in each time slot, beside the add button, on blocks that have
+   started.** That is what the user suggested, and it gives every report a date and slot
+   for free (the practice block it is about). It is the mirror image of the add button:
+   add is on blocks that haven't ended, report on blocks that have begun (current and
+   past), so the two meet on the current block. Confirmed with the user on 2026-10-26
+   ("Is the add report button only on now and past blocks?"); the first version showed it
+   on future blocks too.
 2. **Any signed-in user can file a report; only admins can read the log.** Everyone signed
    in is a mentor or team member. The log holds camera frames of the shop and people's
    photos, so it is admin-only like `/logs`, `/users` and `/blackouts`. A reporter sees
@@ -156,19 +169,24 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - [x] Calendar button + dialog.
 - [x] Admin viewer.
 - [x] Tests, docs; typecheck + check + unit suite green; build run.
-- [ ] Commit (this session, once the build finishes).
-- [ ] Ops: camera settings in the compose file (needs the user's authorization; see open
-      question 1).
+- [x] Committed as `8e22acb`.
+- [x] 2026-10-26: user corrected the camera (it's the `all-field` composite, not the
+      turret); report button limited to blocks that have started.
+- [ ] HA: generic camera for `all-field`; ops: camera settings in the compose file (both
+      need the user's authorization; see open question 1).
 - [ ] First look at the dialog and `/issues` on a real deployment.
 
 ## Open questions for the user
 
-1. **Which cameras, and how does the container reach Home Assistant?** The feature is
-   configured by `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN` and `FIELD_CAMERAS` in the
-   ops compose file. My recommendation: `FIELD_CAMERAS="Field=camera.g5_turret_ultra_high_resolution_channel"`
-   to start, adding `South rollup=camera.south_rollup_high_resolution_channel` if that view
-   is useful. The token is a long-lived HA access token for a dedicated HA user. That ops
-   change needs your per-change authorization and is not staged.
+1. **Getting a still of `all-field` to the scheduler.** Recommended path, no scheduler code
+   change: add a Home Assistant **generic camera** on `rtsp://sentinel.tsl:8554/all-field`
+   (RTSP over TCP, like the existing "(restitch)" cameras; call it "All field"), then set in
+   the ops compose file `HOME_ASSISTANT_URL=https://homeassistant.tomsawyerlabs.com`,
+   `HOME_ASSISTANT_TOKEN=<long-lived token for a dedicated read-only HA user>` and
+   `FIELD_CAMERAS="Field=camera.all_field"`. Both the HA change and the ops change need the
+   user's per-change authorization; neither is staged. A 3686×3290 JPEG from HA will be
+   roughly 1–2 MB per report. The alternative, pulling a frame from the HLS/RTSP stream in
+   the scheduler itself, needs ffmpeg in the image and is not worth it while HA can do it.
 2. **Should safety reports DM the admins on Slack?** The Slack DM plumbing exists
    (`sendDirectMessage`); a safety report that nobody sees until someone opens `/issues` is
    weaker than one that pings. Not built; easy follow-up if wanted.
@@ -181,4 +199,5 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - Don't send photos through tRPC as base64; use the multipart route.
 - Don't make the report button hide on ended slots like the add button does.
 - Don't edit the ops repo or Home Assistant for this; configuration is the user's call.
+- Don't point `FIELD_CAMERAS` at the single turret camera; the user wants the composite.
 - Don't stage the line-ending-only changes that litter `git status`.

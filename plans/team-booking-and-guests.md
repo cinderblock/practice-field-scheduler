@@ -81,8 +81,15 @@ Requested 2026-10-26.
       explanation; admin at phone width gets free text.
 - [x] README "Booking: your own team, or a guest"; Gate Manager contract note
       (`e0931f0` in that repo, not pushed)
-- [ ] Deploy: needs a push to `master` (CI publishes an image) and an ops pin.
-      Not done; waiting on the user.
+- [x] Pushed `fa74f29` (user's yes). Image
+      `sha256:2eb55e2f3a1498e2dddbecb619b2496e6cb564bb4107efe412e5d4518428973f`.
+      Test and lint green; the report upload hit a registry 429 and passed on
+      re-run. Gate Manager `e0931f0` pushed too.
+- [x] Deployed 2026-10-26 4:54 PM PDT (23:54Z), with the user's yes for the
+      pin: ops `eb840df` (pin.json only, committed from a throwaway worktree),
+      deploy run `40422738479` "pin verified: fa74f29…". On steamboat the
+      container's revision label is `fa74f29`; `/login` 200 directly and
+      through Caddy; `/api/access/check` 401 without a key.
 
 ## Findings / gotchas
 
@@ -95,14 +102,16 @@ Requested 2026-10-26.
   until they fix their display name; the dialog and the refusal both say how.
 - The dev server's env schema requires an `https://` `NEXTAUTH_URL`; keep
   `.env.test`'s `https://not-used` for local checks.
+- Windows `curl` here failed every HTTPS request with "A libcurl function was
+  given a bad argument" (status `000`). Check the site from steamboat instead
+  (`curl --resolve <host>:443:127.0.0.1`).
 - Re-running the screenshot script against the same scratch data needs a new
   guest number each time, or the duplicate check refuses it.
 
 ## Open questions for the user
 
-1. Push and deploy? Recommendation: yes, but warn the club first. About
-   two-thirds of accounts had no team in September, and they can't book until
-   they fix their display names.
+(none. Pushed and deployed with the user's yes; telling the club about the
+display-name requirement is the user's call.)
 
 ## Things not to do
 

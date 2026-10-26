@@ -186,9 +186,16 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - [x] 2026-10-26: restitch `f86818a` merged to master, built by CI, pinned on sentinel
       (ops `8536ed7`), verified: `http://sentinel.tsl:9000/api/still/all-field` is the
       3686×3290 composite in 0.13 s.
-- [ ] Ops: `FIELD_CAMERAS` line in the scheduler's compose file (needs the user's
-      authorization; see open question 1).
-- [ ] First look at the dialog and `/issues` on a real deployment.
+- [x] 2026-10-26: scheduler master pushed (`478f324`), image built, pinned in ops `981a277`
+      with the `FIELD_CAMERAS` line in the same commit (both authorized), live on steamboat
+      by 1:20 PM PDT (20:20Z). On the way: CI's `ubuntu-latest` had moved to 26.04 and
+      Playwright has no Chromium for it (`e8e698e` pins the test job to 24.04), and two
+      reports filed in one millisecond tied on `created` (`478f324` breaks the tie toward
+      the later one).
+- [x] 2026-10-26: first look at the dialog on the live site, in the user's Chrome: all nine
+      kinds render, the camera checkbox reads "Include a frame from the shop camera
+      (Field)", so the config reached the container. No report filed (that is the user's
+      call on production), so the capture itself is unproven until the first real report.
 - [x] 2026-10-26: four more kinds (`game_pieces`, `left_behind`, `gate_access`, `pfms`), the
       user's pick; sample notes moved into the kind table (`d4f848f`). 383 tests green.
 

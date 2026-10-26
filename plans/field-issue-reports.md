@@ -183,7 +183,9 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - [x] 2026-10-26: user corrected the camera (it's the `all-field` composite, not the
       turret); report button limited to blocks that have started.
 - [x] 2026-10-26: `FIELD_CAMERAS` accepts URL sources; README/.env.example/tests updated.
-- [ ] restitch `field-still-export` branch reviewed, merged, built and pinned on sentinel.
+- [x] 2026-10-26: restitch `f86818a` merged to master, built by CI, pinned on sentinel
+      (ops `8536ed7`), verified: `http://sentinel.tsl:9000/api/still/all-field` is the
+      3686×3290 composite in 0.13 s.
 - [ ] Ops: `FIELD_CAMERAS` line in the scheduler's compose file (needs the user's
       authorization; see open question 1).
 - [ ] First look at the dialog and `/issues` on a real deployment.

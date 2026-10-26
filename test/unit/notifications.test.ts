@@ -213,6 +213,18 @@ describe("notifyTeamOfReservation", () => {
 		expect(bodyOf(1).text).toContain("https://gate.example.test/g/tok-team-1234");
 	});
 
+	it("tells a host's members it's for their guest", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+		await notifyTeamOfReservation(
+			{ ...reservation, team: 9999, host: 1234 },
+			[{ user, slackUserId: "U111", withLink: true }],
+			"tok-team-1234",
+		);
+		expect(bodyOf().text).toContain("*Team 9999*, as a guest of your team (1234)");
+		expect(bodyOf().text).toContain("https://gate.example.test/g/tok-team-1234");
+		expect(bodyOf().text).toContain("for your guests");
+	});
+
 	it("still sends the reservation details when the team has no link yet", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
 		const outcomes = await notifyTeamOfReservation(

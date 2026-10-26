@@ -1,6 +1,7 @@
 import type { ICalCalendar, ICalEventData } from "ical-generator";
 import ical from "ical-generator";
 import { env } from "~/env";
+import { sameTeam } from "~/server/access";
 import { getPublicFeedData } from "~/server/backend";
 import { blackoutEndDate, eachBlackoutDate } from "~/server/util/blackout";
 import type { Reservation } from "~/types";
@@ -72,7 +73,11 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 
 	// Add reservations
 	if (kind === "all" || (kind === "team" && team)) {
-		const resList = kind === "all" ? reservations : reservations.filter(r => (r.team as string).toString() === team);
+		// A team's feed includes the guests it hosts: it's responsible for them.
+		const resList =
+			kind === "all" || !team
+				? reservations
+				: reservations.filter(r => sameTeam(r.team, team) || (r.host !== undefined && sameTeam(r.host, team)));
 		// Sort by date and the *actual* temporal start of each slot so that sequential
 		// reservations appear next to each other even when the slot strings don't
 		// sort correctly lexicographically (e.g. "10:00am" vs "9:00am").
@@ -83,21 +88,29 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 			return aStart - bStart;
 		});
 
-		// Map to track an open group per team
+		// Map to track an open group per team. A guest's block is kept apart from the same team's
+		// own block, and from one with a different host.
 		interface Group {
+			team: Reservation["team"];
+			host?: Reservation["host"];
 			start: Date;
 			end: Date;
 			description?: string;
 		}
-		const openGroups = new Map<Reservation["team"], Group>();
+		const openGroups = new Map<string, Group>();
+		const groupKey = (r: Pick<Reservation, "team" | "host">) =>
+			r.host === undefined ? String(r.team) : `${r.team}-guest-of-${r.host}`;
 
-		const flushGroup = (teamKey: Reservation["team"], group: Group) => {
-			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${teamKey}`;
+		const flushGroup = (teamKey: string, group: Group) => {
+			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${group.team}`;
 			push({
 				id: `${group.start.toISOString()}-${teamKey}`,
 				start: group.start,
 				end: group.end,
-				summary: `Team ${teamKey} Reservation`,
+				summary:
+					group.host === undefined
+						? `Team ${group.team} Reservation`
+						: `Team ${group.team} Reservation (guest of ${group.host})`,
 				description: group.description ?? "",
 				x: {
 					"X-image": avatar,
@@ -110,7 +123,7 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 			const dateTimes = parseSlotToDate(r.date, r.slot);
 			if (!dateTimes) continue;
 
-			const teamKey = r.team;
+			const teamKey = groupKey(r);
 			const current = openGroups.get(teamKey);
 			if (current && dateTimes.start.getTime() === current.end.getTime()) {
 				// Extend the existing contiguous block for this team
@@ -121,6 +134,8 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 				// Flush previous block for this team (if any) and start a new one
 				if (current) flushGroup(teamKey, current);
 				openGroups.set(teamKey, {
+					team: r.team,
+					host: r.host,
 					start: dateTimes.start,
 					end: dateTimes.end,
 					description: r.notes ?? undefined,

@@ -236,6 +236,32 @@ describe("team links", () => {
 	});
 });
 
+describe("guest reservations", () => {
+	const guest: Reservation = { ...teamReservation, id: "res-guest", team: 9999, host: 1234 };
+
+	it("open the gate on the host's link, reported as the host's", () => {
+		expect(team(1234, [guest], inside)).toMatchObject({
+			valid: true,
+			reservation_id: "res-guest",
+			team: { id: "1234", name: "Team 1234" },
+		});
+	});
+
+	it("don't open the gate on the guest team's own link", () => {
+		expect(team(9999, [guest], inside)).toMatchObject({ valid: false, reason: "outside_window", team: null });
+	});
+
+	it("give the host its nearest window when outside it", () => {
+		const later = new Date("2026-05-24T18:00:00Z");
+		expect(team(1234, [guest], later)).toMatchObject({
+			valid: false,
+			reason: "outside_window",
+			team: { id: "1234" },
+			window_starts_at: expectedStart,
+		});
+	});
+});
+
 describe("isPersonalAccessEligible", () => {
 	it("accepts a member an admin approved", () => {
 		expect(isPersonalAccessEligible(mentor)).toBe(true);

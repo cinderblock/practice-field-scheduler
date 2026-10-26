@@ -118,6 +118,22 @@ npm test
 
 The `test` script runs unit/integration tests with Vitest first and then the browser E2E tests with Playwright.
 
+### Booking: your own team, or a guest
+
+- **You book for your own team.** The Add dialog offers the teams your Slack
+  display name lists in its parentheses (see [Slack names](#slack-names)): one
+  team is filled in for you, several give you a picker. Someone whose display
+  name lists no team is told how to fix it, with a **Check again** button, and
+  the server refuses their bookings with the same explanation.
+- **A guest (buddy) reservation** is for a visiting team that isn't in the
+  scheduler. Tick **Guest team** and enter its number. It is its own
+  reservation under the guest's number, linked to your team as its **host**,
+  and shows as `5678 guest of 1234`. The host team's gate link covers it (the
+  guest's own link, if it has one, doesn't), the host's members get the
+  reservation DM, and it's in the host's team calendar feed. Members of either
+  team can cancel it.
+- Admins can book for any team, and host a guest as any team.
+
 ### Blackouts (admin)
 
 Admins can close the field from the **Blackouts** page (linked from the calendar header, or at `/blackouts`).
@@ -239,10 +255,10 @@ answer is yes.
 Both have the shape `${GATE_BASE_URL}/g/<token>`, and both are checked live on
 every use, so a stable bookmark is not a standing grant.
 
-| Link         | Who gets one                                         | When it works                                            | Share it?       |
-| ------------ | ---------------------------------------------------- | -------------------------------------------------------- | --------------- |
-| **Team**     | one per team, sent to every member                   | the team's reserved slots, 20 min before to 60 min after | within the team |
-| **Personal** | people an admin has approved for general gate access | any day, within site hours                               | no              |
+| Link         | Who gets one                                         | When it works                                                             | Share it?       |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------- | --------------- |
+| **Team**     | one per team, sent to every member                   | the team's reserved slots, and its guests', 20 min before to 60 min after | within the team |
+| **Personal** | people an admin has approved for general gate access | any day, within site hours                                                | no              |
 
 - **Site hours are 8am–11pm** (field time) and bound _everything_ the scheduler
   issues, team links included. Overnight, only Gate Manager's own registered
@@ -259,9 +275,10 @@ every use, so a stable bookmark is not a standing grant.
 - **Gate links wait on Slack names.** Nobody is sent a link, team or
   personal, until both of their Slack names follow the format (see
   [Slack names](#slack-names)).
-- **Team membership comes from the display name's parentheses.** Until
-  someone's names have been read from Slack, teams come from their sign-in
-  name instead, so booking works without the Web API.
+- **Team membership comes from the display name's parentheses**, and it
+  decides which teams someone can book for. Until someone's names have been
+  read from Slack, teams come from their sign-in name instead, so booking works
+  without the Web API.
 - **Blackouts don't affect personal links** — they only stop bookings.
 - **Delivery is one Slack DM** listing whichever links someone hasn't been sent
   yet (a mentor on two teams gets three links in one message), plus a DM when

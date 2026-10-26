@@ -518,6 +518,13 @@
 	text-align: left;
 }
 
+/* A guest reservation's host, after the guest team's number */
+.guestOf {
+	margin-left: 0.35em;
+	font-size: 0.75em;
+	opacity: 0.8;
+}
+
 .reservationPill.pendingDeletion {
 	opacity: 0.6;
 }
@@ -792,13 +799,31 @@
 	color: #a7bfff;
 }
 
-.formGroup input {
+.formGroup input,
+.formGroup select {
 	width: 100%;
 	padding: 0.5rem;
 	border-radius: 0.5rem;
 	border: 1px solid #35356b;
 	background: #1a1a3a;
 	color: white;
+}
+
+/* The one team someone can book for, shown where the team picker would be */
+.fixedTeam {
+	display: block;
+	padding: 0.5rem;
+	font-size: 1.1rem;
+	font-weight: 500;
+	color: white;
+}
+
+.modalNote {
+	margin: 0.5rem 0 1rem;
+	color: #a7bfff;
+	font-size: 0.9rem;
+	line-height: 1.3;
+	max-width: 22rem;
 }
 
 .checkboxLabel {

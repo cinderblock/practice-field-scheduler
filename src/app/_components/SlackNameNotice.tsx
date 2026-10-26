@@ -6,8 +6,9 @@ import styles from "./SlackNameNotice.module.css";
 
 /**
  * Tells the signed-in person about their own Slack names when they need
- * fixing. The names decide exactly one thing -- whether they receive gate
- * links -- so the notice says so, and that booking is unaffected either way.
+ * fixing. The names decide two things: whether they receive gate links (both
+ * names must follow the rules), and which teams they can book for (the team
+ * numbers in the display name). The notice says so.
  *
  * "Check again" re-reads Slack straight away (the background refresh is
  * throttled), so fixing the profile and coming back is a two-step loop.
@@ -16,7 +17,11 @@ export function SlackNameNotice() {
 	const utils = api.useUtils();
 	const names = api.slack.myNames.useQuery();
 	const recheck = api.slack.recheckMyNames.useMutation({
-		onSuccess: data => utils.slack.myNames.setData(undefined, data),
+		onSuccess: async data => {
+			utils.slack.myNames.setData(undefined, data);
+			// Teams come from the display name, so a fix can change who they can book for
+			await utils.reservation.bookableTeams.invalidate();
+		},
 	});
 
 	const data = names.data;
@@ -89,7 +94,9 @@ export function SlackNameNotice() {
 				</>
 			)}
 
-			<p className={styles.footnote}>This only affects gate links. Booking field time works either way.</p>
+			<p className={styles.footnote}>
+				Gate links wait on both names. Booking field time only needs your team number in your display name.
+			</p>
 		</section>
 	);
 }

@@ -214,13 +214,21 @@ export function sameTeam(a: TeamFull, b: TeamFull): boolean {
 	return String(a).trim() === String(b).trim();
 }
 
+/**
+ * The team whose access a reservation grants: its host for a guest
+ * reservation (the host is responsible for its guest), otherwise its own team.
+ */
+export function accessTeamFor(reservation: Pick<Reservation, "team" | "host">): TeamFull {
+	return reservation.host ?? reservation.team;
+}
+
 type WindowedReservation = { reservation: Reservation; window: Window };
 
 function windowsFor(team: TeamFull, reservations: readonly Reservation[]): WindowedReservation[] {
 	const out: WindowedReservation[] = [];
 	for (const reservation of reservations) {
 		if (reservation.abandoned) continue;
-		if (!sameTeam(reservation.team, team)) continue;
+		if (!sameTeam(accessTeamFor(reservation), team)) continue;
 		const window = computeAccessWindow(reservation);
 		if (window) out.push({ reservation, window });
 	}
@@ -263,7 +271,7 @@ function evaluateTeam(
 			grant: "team",
 			tool,
 			user: null,
-			team: teamFor(active.reservation.team),
+			team: teamFor(accessTeamFor(active.reservation)),
 			reservation_id: active.reservation.id,
 			window_starts_at: active.window.start.toISOString(),
 			window_ends_at: active.window.end.toISOString(),
@@ -272,7 +280,7 @@ function evaluateTeam(
 
 	const near = nearest(now, candidates);
 	return deny("outside_window", "team", tool, {
-		team: near ? teamFor(near.reservation.team) : null,
+		team: near ? teamFor(accessTeamFor(near.reservation)) : null,
 		window: near?.window ?? null,
 	});
 }

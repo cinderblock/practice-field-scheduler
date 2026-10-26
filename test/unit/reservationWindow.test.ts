@@ -52,14 +52,16 @@ function session(id: string): Session {
 
 const admin = () => new Context(session("admin"), "vitest", "127.0.0.1");
 const member = () => new Context(session("member"), "vitest", "127.0.0.1");
+/** Someone whose display name lists no team */
+const loner = () => new Context(session("loner"), "vitest", "127.0.0.1");
 
 /** A date `n` days from the field's today, worked out independently of the code under test. */
 function day(n: number): string {
 	return new Date(Date.UTC(Year, 8, 17 + n)).toISOString().slice(0, 10);
 }
 
-function book(ctx: ContextClass, date: string, slot = Slot, team = MemberTeam) {
-	return ctx.addReservation({ date, slot, team, notes: "", priority: false });
+function book(ctx: ContextClass, date: string, slot = Slot, team = MemberTeam, host?: string) {
+	return ctx.addReservation({ date, slot, team, host, notes: "", priority: false });
 }
 
 beforeAll(async () => {
@@ -83,6 +85,15 @@ beforeAll(async () => {
 				name: "Team Member",
 				email: "member@example.test",
 				teams: [Number(MemberTeam)],
+				created: now,
+				updated: now,
+				image: "",
+			},
+			{
+				id: "loner-uid",
+				name: "No Team",
+				email: "loner@example.test",
+				teams: [],
 				created: now,
 				updated: now,
 				image: "",
@@ -165,19 +176,73 @@ describe("the bookable window", () => {
 	});
 });
 
+/** Refusals warn as they're filed; keep the test output clean. */
+async function quietly<T>(run: () => Promise<T>): Promise<T> {
+	const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+	try {
+		return await run();
+	} finally {
+		warn.mockRestore();
+	}
+}
+
 describe("team membership", () => {
-	it("lets a user book for a team they are not recorded on, and logs it", async () => {
-		// EnforceTeamMembership is off: user records mostly have no teams, so enforcing it would
-		// lock the club out. The refusal is logged instead, so the journal shows what turning it on
-		// would block. Flip that constant and this test is the one that tells you.
-		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-		try {
-			const reservation = await book(member(), FieldToday, "07:00pm", "5940");
-			expect(reservation.team).toBe("5940");
-			expect(warn).toHaveBeenCalledWith(expect.stringContaining("team mismatch"), expect.anything());
-		} finally {
-			warn.mockRestore();
-		}
+	it("refuses a team the booker isn't on, and says which team they are on", async () => {
+		await quietly(async () => {
+			await expect(book(member(), FieldToday, "07:00pm", "5940")).rejects.toBeInstanceOf(PermissionError);
+			await expect(book(member(), FieldToday, "07:00pm", "5940")).rejects.toThrow(/own team.*team 1234/);
+		});
+	});
+
+	it("tells someone with no team how to get one", async () => {
+		await quietly(async () => {
+			await expect(book(loner(), FieldToday, "07:00pm", "5940")).rejects.toThrow(/doesn't list a team.*display name/);
+		});
+	});
+
+	it("lets admins book for any team", async () => {
+		const reservation = await book(admin(), FieldToday, "07:00pm", "5940");
+		expect(reservation.team).toBe("5940");
+	});
+
+	it("offers each person the teams they can book for", async () => {
+		expect(await member().getBookableTeams()).toEqual({ admin: false, teams: [Number(MemberTeam)] });
+		expect(await loner().getBookableTeams()).toEqual({ admin: false, teams: [] });
+		expect(await admin().getBookableTeams()).toEqual({ admin: true, teams: [] });
+	});
+});
+
+describe("guest reservations", () => {
+	it("books a visiting team as the booker's own team's guest", async () => {
+		const reservation = await book(member(), day(1), "07:00pm", "5940", MemberTeam);
+		expect(reservation).toMatchObject({ team: "5940", host: MemberTeam });
+	});
+
+	it("leaves an ordinary reservation without a host", async () => {
+		const reservation = await book(member(), day(1), "04:00pm", MemberTeam, "");
+		expect(reservation).not.toHaveProperty("host");
+	});
+
+	it("refuses hosting as a team the booker isn't on", async () => {
+		await quietly(async () => {
+			await expect(book(member(), day(2), "07:00pm", "5940", "4321")).rejects.toThrow(/host guests for your own team/);
+			await expect(book(loner(), day(2), "07:00pm", "5940", MemberTeam)).rejects.toBeInstanceOf(PermissionError);
+		});
+	});
+
+	it("refuses a team as its own guest", async () => {
+		await expect(book(member(), day(2), "07:00pm", MemberTeam, MemberTeam)).rejects.toThrow(/its own guest/);
+	});
+
+	it("lets the host's members cancel it, and nobody else", async () => {
+		const reservation = await book(admin(), day(3), "07:00pm", "5940", "4321");
+		await quietly(() =>
+			expect(member().removeReservation({ id: reservation.id })).rejects.toBeInstanceOf(PermissionError),
+		);
+
+		const hosted = await book(member(), day(3), "04:00pm", "5940", MemberTeam);
+		const removed = await member().removeReservation({ id: hosted.id });
+		expect(removed.abandoned).toBeDefined();
 	});
 });
 

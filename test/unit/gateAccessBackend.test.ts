@@ -534,20 +534,34 @@ describe("gate access, end to end", () => {
 		expect(mappings.filter(m => !m.slackId.startsWith("U_"))).toEqual([]);
 	});
 
-	it("lets someone with wrong Slack names book field time -- names only gate links", async () => {
-		setNames(LAPTOP, "Robotics Laptop", "Robotics Laptop");
-		await admin.checkSlackNamesNow();
+	const booking = { date: "2026-05-28", slot: "10:00am", team: "1234", notes: "", priority: false };
+
+	it("refuses booking for someone whose display name lists no team, and says how to fix it", async () => {
 		const laptop = await signIn(LAPTOP);
 		expect((await laptop.getMySlackNames()).ok).toBe(false);
 
-		const reservation = await laptop.addReservation({
-			date: "2026-05-28",
-			slot: "10:00am",
-			team: "1234",
-			notes: "",
-			priority: false,
-		});
-		expect(reservation.date).toBe("2026-05-28");
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await expect(laptop.addReservation(booking)).rejects.toThrow(/doesn't list a team.*\(1234\)/);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
+	it("lets someone book once their display name lists the team, even with the full name still wrong", async () => {
+		// Booking only needs the display name's team; gate links still wait on both names.
+		setNames(LAPTOP, "Robotics Laptop 1234", "Robotics Laptop (1234)");
+		try {
+			await admin.checkSlackNamesNow();
+			const laptop = await signIn(LAPTOP);
+			expect((await laptop.getMySlackNames()).ok).toBe(false);
+
+			const reservation = await laptop.addReservation(booking);
+			expect(reservation.date).toBe("2026-05-28");
+		} finally {
+			setNames(LAPTOP);
+			await admin.checkSlackNamesNow();
+		}
 	});
 
 	it("keeps link and name administration admin-only", async () => {

@@ -2,11 +2,15 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { isValidDate, isValidTime, isValidTimeSlot } from "~/server/util/timeUtils";
 
+const teamSchema = z.string().refine(val => !val.includes("\n") && /^\d+/.test(val), "Invalid team reservation");
+
 const reservationSchema = z
 	.object({
 		date: z.string().refine(val => isValidDate(val), "Invalid date"),
 		slot: z.string().refine(val => isValidTime(val), "Invalid time"),
-		team: z.string().refine(val => !val.includes("\n") && /^\d+/.test(val), "Invalid team reservation"),
+		team: teamSchema,
+		/** Set for a guest reservation: the booker's team, which hosts `team`. */
+		host: teamSchema.optional(),
 		notes: z.string(),
 		priority: z.boolean(),
 	})
@@ -35,4 +39,7 @@ export const reservationRouter = createTRPCRouter({
 	list: protectedProcedure.input(z.object({ date: z.string() })).query(async ({ input, ctx }) => {
 		return ctx.context.listReservations(input.date);
 	}),
+
+	/** Which teams the current person may book for (and host guests as), for the Add dialog. */
+	bookableTeams: protectedProcedure.query(({ ctx }) => ctx.context.getBookableTeams()),
 });

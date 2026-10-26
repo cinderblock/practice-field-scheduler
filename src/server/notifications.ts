@@ -100,7 +100,9 @@ export function reservationNoticeMessage(
 	withLink: boolean,
 ): string {
 	const lines = [
-		`New practice-field reservation for *Team ${reservation.team}*:`,
+		reservation.host === undefined
+			? `New practice-field reservation for *Team ${reservation.team}*:`
+			: `New practice-field reservation for *Team ${reservation.team}*, as a guest of your team (${reservation.host}):`,
 		`• Date: ${reservation.date}`,
 		`• Slot: ${reservation.slot}`,
 	];
@@ -109,7 +111,11 @@ export function reservationNoticeMessage(
 	if (url && withLink) {
 		lines.push("");
 		lines.push(`Your team's gate link: <${url}>`);
-		lines.push("(Use it during the reservation window to open the gate.)");
+		lines.push(
+			reservation.host === undefined
+				? "(Use it during the reservation window to open the gate.)"
+				: "(Use it during the reservation window to open the gate for your guests.)",
+		);
 	} else if (url) {
 		lines.push("");
 		lines.push("Your team's gate link isn't included: your Slack names need fixing first.");

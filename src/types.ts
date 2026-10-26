@@ -1,4 +1,4 @@
-export type AddReservationArgs = Pick<Reservation, "date" | "slot" | "team" | "notes" | "priority">;
+export type AddReservationArgs = Pick<Reservation, "date" | "slot" | "team" | "notes" | "priority" | "host">;
 
 export type RemoveReservationArgs = {
 	id: string;
@@ -14,6 +14,10 @@ export type Reservation = {
 	priority: boolean; // True if the team requested priority on this reservation
 	abandoned?: Date;
 	team: TeamFull;
+	// Set on a guest ("buddy") reservation: the team that booked field time for
+	// the visiting `team`. The host is responsible for the guest, and it is the
+	// host's access that covers the block.
+	host?: TeamFull;
 	notes?: string;
 };
 /////// Public-ish Interfaces //////

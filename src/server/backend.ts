@@ -37,6 +37,7 @@ import type {
 } from "~/types";
 import {
 	type AccessCheckResult,
+	accessTeamFor,
 	evaluateAccess,
 	hasGeneralAccessGrant,
 	hasValidSlackNames,
@@ -79,7 +80,13 @@ import {
 } from "./util/fieldIssue";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
-import { checkSlackNames, parseSlackName, type SlackNameIssue, type SuggestedNames } from "./util/slackName";
+import {
+	checkSlackNames,
+	HOW_TO_LIST_YOUR_TEAM,
+	parseSlackName,
+	type SlackNameIssue,
+	type SuggestedNames,
+} from "./util/slackName";
 import { addFieldDays, fieldToday } from "./util/slotTime";
 import {
 	tellClientsAboutBlackoutChange,
@@ -90,13 +97,11 @@ import {
 const FirstUserIsAdmin = true; // If true, the first user created will be an admin
 const ContinueOnError = true; // If true, the server will continue running even if an error occurs
 const AdvancedReservationDays = 7; // Number of days in the future that reservations can be made
-// If true, a non-admin may only book for a team they're recorded as belonging to.
-// Off, because the data isn't there yet: almost no user record lists a team, so
-// enforcing it locks nearly everyone out (and it was silently never enforced for
-// over a year -- two commits adding a missing `await` turned it on by accident).
-// Refusals are logged either way, so the journal shows what enabling this would
-// block. Turn it on once user records carry teams. See plans/booking-regression.md.
-const EnforceTeamMembership = false;
+// If true, a non-admin may only book for (or host guests as) a team their Slack
+// display name lists. It was off from September until teams were read from
+// Slack; someone without a team is now told how to fix their display name.
+// See plans/booking-regression.md and plans/team-booking-and-guests.md.
+const EnforceTeamMembership = true;
 const DisableWrites = false; // If true, the server will not write to the database
 
 // Add unique module instance ID for tracking reinitialization
@@ -491,18 +496,20 @@ function fireLinkDms(user: UserEntry, slackId: string): void {
 }
 
 /**
- * Fire-and-forget DMs to every member of the reservation's team (excluding the
- * creator), carrying the team's link — issued now if the team has none yet.
+ * Fire-and-forget DMs to every member of the reservation's team (its host's,
+ * for a guest reservation), excluding the creator, carrying that team's link — issued now if the team has none yet.
  * Best-effort: logs failures but never blocks the caller.
  *
  * Must be called after the caller has released `changeLock`.
  */
 function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
-	const { recipients } = selectTeamMemberRecipients(users, slackMappings, reservation.team, excludeUserId);
+	// A guest reservation goes to its host, whose link covers it.
+	const team = accessTeamFor(reservation);
+	const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, excludeUserId);
 	if (recipients.length === 0) return;
 
 	void (async () => {
-		const entry = await ensureAccess(teamStore(reservation.team));
+		const entry = await ensureAccess(teamStore(team));
 		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token);
 
 		const failed = outcomes.filter(o => !o.sent);
@@ -896,6 +903,7 @@ type LogReservationEntry = LogCommon & {
 	date: EventDate;
 	slot: TimeSlot;
 	team: TeamFull;
+	host?: TeamFull; // A guest reservation's host
 	notes?: string;
 };
 
@@ -971,6 +979,15 @@ type LogEntry =
 	| LogPersonalAccessEntry
 	| LogSlackNamesEntry
 	| LogFieldIssueEntry;
+
+/**
+ * A team refusal that says what the person's teams are, and how to get one
+ * when they have none: their Slack display name is the only place teams come from.
+ */
+function teamRefusal(message: string, teams: readonly Team[]): string {
+	if (teams.length === 0) return `${message}, and Slack doesn't list a team for you. ${HOW_TO_LIST_YOUR_TEAM}`;
+	return `${message}. Slack lists you on team ${teams.join(", ")}.`;
+}
 
 export class PermissionError extends Error {
 	constructor(message: string) {
@@ -1055,9 +1072,18 @@ export class Context {
 		this.user = this.getUser();
 	}
 
-	async addReservation(reservation: AddReservationArgs) {
+	async addReservation({ host, ...args }: AddReservationArgs) {
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation START - PID: ${process.pid}`);
-		await this.restrictToTeam(reservation.team, "Only team members can add reservations");
+		// A guest reservation is booked by its host's members; any other is booked by the team's own.
+		const reservation: AddReservationArgs = host === undefined || host === "" ? args : { ...args, host };
+		if (reservation.host === undefined) {
+			await this.restrictToTeams([reservation.team], "You can only book for your own team");
+		} else {
+			if (sameTeam(reservation.host, reservation.team)) {
+				throw new InvalidRequestError("A team can't be its own guest");
+			}
+			await this.restrictToTeams([reservation.host], "You can only host guests for your own team");
+		}
 		await this.restrictTimeframe(reservation.date);
 
 		await this.restrictBlackout(reservation.date, reservation.slot);
@@ -1094,6 +1120,7 @@ export class Context {
 				date: reservation.date,
 				slot: reservation.slot,
 				team: reservation.team,
+				host: reservation.host,
 				notes: reservation.notes,
 			}),
 		);
@@ -1124,7 +1151,11 @@ export class Context {
 			throw new Error("Reservation not found");
 		}
 
-		await this.restrictToTeam(reservation.team, "Only team members can remove reservations");
+		// Either side of a guest reservation may call it off.
+		await this.restrictToTeams(
+			reservation.host === undefined ? [reservation.team] : [reservation.team, reservation.host],
+			"Only the team, or the team hosting it, can remove a reservation",
+		);
 		await this.restrictTimeframe(reservation.date);
 
 		const release = await changeLock.acquire();
@@ -1138,6 +1169,7 @@ export class Context {
 				date: reservation.date,
 				slot: reservation.slot,
 				team: reservation.team,
+				host: reservation.host,
 				notes: reason,
 			}),
 		);
@@ -1760,6 +1792,12 @@ export class Context {
 		return (await this.user).teams;
 	}
 
+	/** What the Add dialog offers: everything for an admin, otherwise the person's own teams. */
+	async getBookableTeams(): Promise<{ admin: boolean; teams: Team[] }> {
+		const teams = await this.getEditPermissions();
+		return teams === "admin" ? { admin: true, teams: [] } : { admin: false, teams: [...teams] };
+	}
+
 	async getName() {
 		return (await this.user).name;
 	}
@@ -2288,25 +2326,24 @@ export class Context {
 		);
 	}
 
-	private async restrictToTeam(team: Team | TeamFull, message: string) {
-		if (typeof team === "string") team = Number.parseInt(team, 10);
-
+	/** Allow admins, and anyone whose teams include one of `teams`. */
+	private async restrictToTeams(teams: readonly TeamFull[], message: string) {
 		const permissions = await this.getEditPermissions();
 		if (permissions === "admin") return;
-		if (permissions.includes(team)) return;
+		if (teams.some(team => permissions.some(mine => sameTeam(mine, team)))) return;
 
 		// Logged but allowed while EnforceTeamMembership is off, so the journal
-		// shows who this rule would have blocked before it's switched on.
+		// shows who this rule would block.
 		if (!EnforceTeamMembership) {
 			console.warn(`⚠️ allowed despite team mismatch: ${message}`, {
 				userId: await this.userIdForLog(),
-				team,
+				team: teams,
 				teams: permissions,
 			});
 			return;
 		}
 
-		await this.refuse(message, { team, teams: permissions });
+		await this.refuse(teamRefusal(message, permissions), { team: teams, teams: permissions });
 	}
 
 	/**

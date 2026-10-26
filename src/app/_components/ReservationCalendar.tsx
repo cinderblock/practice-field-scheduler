@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
+import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Blackout, Holiday, Reservation, WeatherForecast } from "~/types";
+import type { Blackout, Holiday, Reservation, TeamFull, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
 import { useAppConfig } from "./AppConfig";
 import { describeRequestError } from "./clientErrors";
@@ -163,8 +164,51 @@ function pluralize(count: number, singular = "", plural = `${singular}s`) {
 	return count === 1 ? singular : plural;
 }
 
+/** The team this browser last booked as, so the dialog opens on it. */
+function lastTeamNumber(): string {
+	return typeof window === "undefined" ? "" : (localStorage.getItem("lastTeamNumber") ?? "");
+}
+
+function rememberTeamNumber(team: string) {
+	if (typeof window !== "undefined") localStorage.setItem("lastTeamNumber", team);
+}
+
+/**
+ * What the Add dialog shows someone with no team: booking is for your own team, and teams only
+ * come from the Slack display name. "Check again" re-reads it, so the fix is a two-step loop.
+ */
+function NoTeamNotice({ onCancel }: { onCancel: () => void }) {
+	const utils = api.useUtils();
+	const recheck = api.slack.recheckMyNames.useMutation({
+		onSuccess: async data => {
+			utils.slack.myNames.setData(undefined, data);
+			await utils.reservation.bookableTeams.invalidate();
+		},
+	});
+
+	return (
+		<div role="alert">
+			<p className={styles.modalNote}>
+				You can only book field time for your own team, and Slack doesn't list a team for you. {HOW_TO_LIST_YOUR_TEAM}
+			</p>
+			{recheck.isSuccess && <p className={styles.modalNote}>Still no team in your display name.</p>}
+			{recheck.error && <p className={styles.modalNote}>{recheck.error.message}</p>}
+			<div className={styles.modalActions}>
+				<button type="button" onClick={() => recheck.mutate()} disabled={recheck.isPending}>
+					{recheck.isPending ? "Checking..." : "Check again"}
+				</button>
+				<button type="button" onClick={onCancel}>
+					Cancel
+				</button>
+			</div>
+		</div>
+	);
+}
+
 interface ReservationPillProps {
 	teamNumber: string | number;
+	/** A guest reservation's host */
+	guestOf?: TeamFull;
 	onRemove?: () => void;
 	isTemp?: boolean;
 	isPendingDeletion?: boolean;
@@ -175,6 +219,7 @@ interface ReservationPillProps {
 
 function ReservationPill({
 	teamNumber,
+	guestOf,
 	onRemove,
 	isTemp = false,
 	isPendingDeletion = false,
@@ -228,6 +273,7 @@ function ReservationPill({
 			{avatar}
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}
+				{guestOf !== undefined && guestOf !== "" && <span className={styles.guestOf}>guest of {guestOf}</span>}
 			</span>
 			{onRemove && !hasEnded && (
 				<button
@@ -651,16 +697,20 @@ function TimeSlot({
 	column: number;
 }) {
 	const [isAdding, setIsAdding] = useState(false);
-	const [teamNumber, setTeamNumber] = useState(() => {
-		// Load last used team number from localStorage
-		if (typeof window !== "undefined") {
-			return localStorage.getItem("lastTeamNumber") || "";
-		}
-		return "";
-	});
+	// The booker's own team: the one booked for, or the host of a guest
+	const [teamNumber, setTeamNumber] = useState(lastTeamNumber);
+	// Set when booking for a visiting team, hosted by `teamNumber`
+	const [isGuest, setIsGuest] = useState(false);
+	const [guestTeam, setGuestTeam] = useState("");
 	const [priority, setPriority] = useState(false);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
-	const [tempTeamNumber, setTempTeamNumber] = useState<string | null>(null);
+	// Admins type any team. Everyone else picks from the teams their Slack display name lists.
+	const bookable = api.reservation.bookableTeams.useQuery().data;
+	const ownTeams = bookable && !bookable.admin ? bookable.teams.map(String) : null;
+	const bookerTeam = ownTeams ? (ownTeams.includes(teamNumber) ? teamNumber : (ownTeams[0] ?? "")) : teamNumber;
+	const pending = isGuest ? { team: guestTeam, host: bookerTeam } : { team: bookerTeam };
+	const canSubmit =
+		/^\d+$/.test(bookerTeam) && (!isGuest || (/^\d+$/.test(guestTeam) && Number(guestTeam) !== Number(bookerTeam)));
 	// Why the last add or remove failed. Without this the server's refusal was
 	// invisible: the dialog just sat there, because it only closes on success.
 	const [error, setError] = useState<string | null>(null);
@@ -672,9 +722,10 @@ function TimeSlot({
 
 	const handleCancelAdd = useCallback(() => {
 		setIsAdding(false);
-		setTeamNumber("");
+		setTeamNumber(lastTeamNumber());
+		setIsGuest(false);
+		setGuestTeam("");
 		setPriority(false);
-		setTempTeamNumber(null);
 		setError(null);
 	}, []);
 
@@ -740,9 +791,6 @@ function TimeSlot({
 				];
 			});
 
-			// Clear the temporary team number after the optimistic update
-			setTempTeamNumber(null);
-
 			return { previousData };
 		},
 		onSuccess: ({ reservation }) => {
@@ -753,15 +801,15 @@ function TimeSlot({
 				return old.map(r => (r.id === "temp-id" ? reservation : r));
 			});
 			setIsAdding(false);
-			setTeamNumber("");
+			setTeamNumber(lastTeamNumber());
+			setIsGuest(false);
+			setGuestTeam("");
 		},
-		onError: (err, newReservation, context) => {
-			// Rollback on error
+		onError: (err, _newReservation, context) => {
+			// Rollback on error. The dialog is still open, so its pending pill comes back with it.
 			if (context?.previousData) {
 				utils.reservation.list.setData({ date }, context.previousData);
 			}
-			// Restore the temporary team number on error
-			setTempTeamNumber(newReservation.team);
 			// The dialog stays open, so say why rather than looking like nothing happened
 			const { message, reachedServer } = describeRequestError(err);
 			setError(message);
@@ -841,26 +889,12 @@ function TimeSlot({
 	if (closedAllDay) style.push(styles.timeSlotMerged);
 
 	const handleAddReservation = useCallback(() => {
-		if (!teamNumber) return;
-		// Don't clear tempTeamNumber here - let the optimistic update handle it
-		addReservation.mutate({
-			date: date,
-			slot: slot,
-			team: teamNumber,
-			notes: "",
-			priority,
-		});
-	}, [
-		date,
-		slot,
-		teamNumber,
-		priority, // Don't clear tempTeamNumber here - let the optimistic update handle it
-		addReservation.mutate,
-	]);
+		if (!canSubmit) return;
+		addReservation.mutate({ date, slot, ...pending, notes: "", priority });
+	}, [date, slot, pending, canSubmit, priority, addReservation.mutate]);
 
 	const handleOpenAddModal = useCallback(() => {
 		setIsAdding(true);
-		setTempTeamNumber(""); // Start with empty temporary pill
 		setPriority(false); // Reset priority when opening modal
 	}, []);
 
@@ -881,6 +915,7 @@ function TimeSlot({
 					<ReservationPill
 						key={r.id}
 						teamNumber={r.team}
+						guestOf={r.host}
 						isPendingDeletion={pendingDeletions.has(r.id)}
 						isPendingAddition={r.id === "temp-id"}
 						hasEnded={hasEnded}
@@ -895,9 +930,10 @@ function TimeSlot({
 						}}
 					/>
 				))}
-				{/* Pending addition */}
-				{tempTeamNumber !== null && isAdding && (
-					<ReservationPill teamNumber={tempTeamNumber} isTemp={true} isPendingAddition={true} />
+				{/* Pending addition, while there's a form to fill in. Once sent, the optimistic entry above
+				    stands in for it. */}
+				{isAdding && !addReservation.isPending && bookable && ownTeams?.length !== 0 && (
+					<ReservationPill teamNumber={pending.team} guestOf={pending.host} isTemp={true} isPendingAddition={true} />
 				)}
 			</div>
 			{/* A failed removal has no dialog to report into. Tap to dismiss. */}
@@ -950,50 +986,104 @@ function TimeSlot({
 								{error}
 							</div>
 						)}
-						<form
-							onSubmit={e => {
-								e.preventDefault();
-								handleAddReservation();
-							}}
-						>
-							<div className={styles.formGroup}>
-								<label className={styles.checkboxLabel}>
-									<input
-										type="checkbox"
-										checked={priority}
-										onChange={e => setPriority(e.target.checked)}
-										className={styles.hiddenCheckbox}
-									/>
-									<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
-									<span className={styles.checkboxText}>Prioritize</span>
-								</label>
-							</div>
-							<div className={styles.formGroup}>
-								<input
-									type="text"
-									id="teamNumber"
-									value={teamNumber}
-									onChange={e => {
-										const value = e.target.value;
-										setTeamNumber(value);
-										setTempTeamNumber(value);
-										// Save to localStorage for next time
-										if (typeof window !== "undefined") {
-											localStorage.setItem("lastTeamNumber", value);
-										}
-									}}
-									placeholder="Enter team number"
-								/>
-							</div>
-							<div className={styles.modalActions}>
-								<button type="submit" disabled={!teamNumber || addReservation.isPending}>
-									{addReservation.isPending ? "Adding..." : "Add"}
-								</button>
-								<button type="button" onClick={handleCancelAdd}>
-									Cancel
-								</button>
-							</div>
-						</form>
+						{!bookable ? (
+							<p className={styles.modalNote}>Checking which teams you can book for...</p>
+						) : ownTeams?.length === 0 ? (
+							<NoTeamNotice onCancel={handleCancelAdd} />
+						) : (
+							<form
+								onSubmit={e => {
+									e.preventDefault();
+									handleAddReservation();
+								}}
+							>
+								<div className={styles.formGroup}>
+									<label className={styles.checkboxLabel}>
+										<input
+											type="checkbox"
+											checked={priority}
+											onChange={e => setPriority(e.target.checked)}
+											className={styles.hiddenCheckbox}
+										/>
+										<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
+										<span className={styles.checkboxText}>Prioritize</span>
+									</label>
+								</div>
+								<div className={styles.formGroup}>
+									<label htmlFor={`team-${date}-${slot}`}>{isGuest ? "Host team" : "Team"}</label>
+									{ownTeams === null ? (
+										<input
+											type="text"
+											inputMode="numeric"
+											id={`team-${date}-${slot}`}
+											value={teamNumber}
+											onChange={e => {
+												setTeamNumber(e.target.value);
+												rememberTeamNumber(e.target.value);
+											}}
+											placeholder="Enter team number"
+										/>
+									) : ownTeams.length === 1 ? (
+										<output id={`team-${date}-${slot}`} className={styles.fixedTeam}>
+											{bookerTeam}
+										</output>
+									) : (
+										<select
+											id={`team-${date}-${slot}`}
+											value={bookerTeam}
+											onChange={e => {
+												setTeamNumber(e.target.value);
+												rememberTeamNumber(e.target.value);
+											}}
+										>
+											{ownTeams.map(team => (
+												<option key={team} value={team}>
+													{team}
+												</option>
+											))}
+										</select>
+									)}
+								</div>
+								<div className={styles.formGroup}>
+									<label className={styles.checkboxLabel}>
+										<input
+											type="checkbox"
+											checked={isGuest}
+											onChange={e => setIsGuest(e.target.checked)}
+											className={styles.hiddenCheckbox}
+										/>
+										<span className={styles.checkboxEmoji}>{isGuest ? "✔️" : ""}</span>
+										<span className={styles.checkboxText}>Guest team</span>
+									</label>
+								</div>
+								{isGuest && (
+									<div className={styles.formGroup}>
+										<label htmlFor={`guest-${date}-${slot}`}>Guest team</label>
+										<input
+											type="text"
+											inputMode="numeric"
+											id={`guest-${date}-${slot}`}
+											value={guestTeam}
+											onChange={e => setGuestTeam(e.target.value.trim())}
+											placeholder="Visiting team's number"
+										/>
+										<p className={styles.modalNote}>
+											{bookerTeam
+												? `Booked for the visiting team, as team ${bookerTeam}'s guest. Team ${bookerTeam}'s gate link covers it, and either team can cancel it.`
+												: "Booked for the visiting team, as the host team's guest. The host's gate link covers it."}
+										</p>
+									</div>
+								)}
+								<div className={styles.modalActions}>
+									<button type="submit" disabled={!canSubmit || addReservation.isPending}>
+										{addReservation.isPending ? "Adding..." : "Add"}
+									</button>
+									<button type="button" onClick={handleCancelAdd}>
+										Cancel
+									</button>
+								</div>
+							</form>
+						)}
 					</div>
 				</div>
 			)}

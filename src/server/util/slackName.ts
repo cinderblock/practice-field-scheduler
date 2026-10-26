@@ -176,6 +176,13 @@ function suggestNames(real: string, display: string, parsed: ParsedSlackName | n
 	return suggestion.realName || suggestion.displayName ? suggestion : null;
 }
 
+/**
+ * How someone gets a team, for anyone told they have none: booking needs one,
+ * and it only ever comes from the display name.
+ */
+export const HOW_TO_LIST_YOUR_TEAM =
+	'Set your Slack display name to your name with your team number in parentheses, like "Jane Doe (1234)", then press Check again.';
+
 /** One-line, human description of an issue, for admins and DMs. */
 export function describeSlackNameIssue(issue: SlackNameIssue): string {
 	switch (issue) {

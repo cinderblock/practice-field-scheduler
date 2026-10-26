@@ -4,11 +4,12 @@ import { type FieldCamera, parseFieldCameras, type SnapshotImageType, sniffImage
 /*
  * Stills from the shop's cameras, for field issue reports.
  *
- * The cameras are UniFi Protect units that Home Assistant already knows about, so rather
- * than talk to the NVR the scheduler asks Home Assistant for a frame:
- * `GET {HOME_ASSISTANT_URL}/api/camera_proxy/{entity_id}` with a long-lived access token.
- * Which cameras, and what to call them, is `FIELD_CAMERAS`. All three settings are
- * optional; without them there are simply no camera frames on reports.
+ * Which cameras, and what to call them, is `FIELD_CAMERAS`. Each one is either a URL that
+ * answers with an image (restitch's `/api/still/<stream>` serves the composite field view
+ * that way) or a Home Assistant camera entity, fetched through HA's camera proxy
+ * (`GET {HOME_ASSISTANT_URL}/api/camera_proxy/{entity_id}` with a long-lived access token).
+ * Everything is optional; with nothing configured there are simply no camera frames on
+ * reports.
  */
 
 /** How long to wait for one camera before giving up on it. The report is filed regardless. */
@@ -34,37 +35,52 @@ export function configuredCameras(): FieldCamera[] {
 	return parsed;
 }
 
-/** Whether frames can be captured at all: cameras listed, and Home Assistant reachable in principle. */
+/** Whether frames can be captured at all: cameras listed, and whatever they need configured. */
 export function camerasConfigured(): boolean {
-	return configuredCameras().length > 0 && !!env.HOME_ASSISTANT_URL && !!env.HOME_ASSISTANT_TOKEN;
+	return configuredCameras().length > 0 && cameraConfigProblem() === null;
 }
 
 /** Why `camerasConfigured()` is false, for the startup log. Null when it's true. */
 export function cameraConfigProblem(): string | null {
-	if (configuredCameras().length === 0) return null; // Not wanted; nothing to complain about
-	if (!env.HOME_ASSISTANT_URL) return "FIELD_CAMERAS is set but HOME_ASSISTANT_URL is not";
-	if (!env.HOME_ASSISTANT_TOKEN) return "FIELD_CAMERAS is set but HOME_ASSISTANT_TOKEN is not";
+	const needsHomeAssistant = configuredCameras().some(c => c.source.kind === "homeAssistant");
+	if (!needsHomeAssistant) return null; // URL cameras need nothing else; no cameras need nothing at all
+	if (!env.HOME_ASSISTANT_URL) return "FIELD_CAMERAS names a Home Assistant camera but HOME_ASSISTANT_URL is not set";
+	if (!env.HOME_ASSISTANT_TOKEN)
+		return "FIELD_CAMERAS names a Home Assistant camera but HOME_ASSISTANT_TOKEN is not set";
 	return null;
 }
 
-async function captureOne(camera: FieldCamera, fetchImpl: typeof fetch): Promise<CameraCaptureResult> {
+/** The request for one camera's still, or why there can't be one. */
+function requestFor(camera: FieldCamera): { url: string; headers: Record<string, string> } | { error: string } {
+	if (camera.source.kind === "url") return { url: camera.source.url, headers: {} };
+
 	const base = env.HOME_ASSISTANT_URL?.replace(/\/+$/, "");
 	const token = env.HOME_ASSISTANT_TOKEN;
-	if (!base || !token) return { camera: camera.label, ok: false, error: "Home Assistant is not configured" };
+	if (!base || !token) return { error: "Home Assistant is not configured" };
+	return {
+		url: `${base}/api/camera_proxy/${encodeURIComponent(camera.source.entityId)}`,
+		headers: { Authorization: `Bearer ${token}` },
+	};
+}
+
+async function captureOne(camera: FieldCamera, fetchImpl: typeof fetch): Promise<CameraCaptureResult> {
+	const request = requestFor(camera);
+	if ("error" in request) return { camera: camera.label, ok: false, error: request.error };
+	const who = camera.source.kind === "url" ? "The camera" : "Home Assistant";
 
 	const taken = new Date();
 	try {
-		const res = await fetchImpl(`${base}/api/camera_proxy/${encodeURIComponent(camera.entityId)}`, {
-			headers: { Authorization: `Bearer ${token}` },
+		const res = await fetchImpl(request.url, {
+			headers: request.headers,
 			signal: AbortSignal.timeout(CAMERA_CAPTURE_TIMEOUT_MS),
 		});
 		if (!res.ok) {
-			return { camera: camera.label, ok: false, error: `Home Assistant answered ${res.status} ${res.statusText}` };
+			return { camera: camera.label, ok: false, error: `${who} answered ${res.status} ${res.statusText}` };
 		}
 		const bytes = Buffer.from(await res.arrayBuffer());
 		const contentType = sniffImageType(bytes);
 		if (!contentType) {
-			return { camera: camera.label, ok: false, error: "Home Assistant didn't send an image" };
+			return { camera: camera.label, ok: false, error: `${who} didn't send an image` };
 		}
 		return { camera: camera.label, ok: true, frame: { camera: camera.label, contentType, bytes, taken } };
 	} catch (err) {

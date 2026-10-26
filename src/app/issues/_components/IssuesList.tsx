@@ -97,8 +97,7 @@ export function IssuesList({
 				{!camerasConfigured && (
 					<>
 						{" "}
-						Shop camera frames are off: set <code>HOME_ASSISTANT_URL</code>, <code>HOME_ASSISTANT_TOKEN</code> and{" "}
-						<code>FIELD_CAMERAS</code> to include them.
+						Shop camera frames are off: set <code>FIELD_CAMERAS</code> to include them.
 					</>
 				)}
 			</p>

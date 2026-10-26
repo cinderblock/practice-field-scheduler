@@ -78,13 +78,18 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 6. **Files live next to the data, under `DATA_DIR/<year>/issues/<issueId>/`.** Same bind
    mount, same per-season layout as everything else; the record in `issues.json` names the
    files. Snapshots are served only through an admin-gated route, never from `public/`.
-7. **Cameras are configured, not discovered.** `HOME_ASSISTANT_URL`, `HOME_ASSISTANT_TOKEN`
-   and `FIELD_CAMERAS` (`Label=camera.entity_id, Label=camera.other`) are optional runtime
-   settings. Unset, the feature works without camera frames and the dialog does not mention
-   them.
-8. **No `title=` tooltips** in new UI (global user rule).
-9. **Package manager stays npm** for this repo (its own convention; it is not on the Bun
-   list).
+7. **Cameras are configured, not discovered.** `FIELD_CAMERAS` is an optional runtime
+   setting listing `Label=<source>` pairs. Unset, the feature works without camera frames and
+   the dialog does not mention them.
+8. **A camera source is a URL or a Home Assistant entity.** Settled on 2026-10-26 when the
+   user offered to add a JPEG still export to restitch. A `http(s)://` source is fetched
+   as-is and must answer with a JPEG, PNG or WebP; a `camera.<entity>` source goes through
+   HA's camera proxy and needs `HOME_ASSISTANT_URL` and `HOME_ASSISTANT_TOKEN`. The composite
+   field view is reached directly from restitch (`http://sentinel.tsl:9000/api/still/all-field`),
+   so no HA camera has to be created for it.
+9. **No `title=` tooltips** in new UI (global user rule).
+10. **Package manager stays npm** for this repo (its own convention; it is not on the Bun
+    list).
 
 ## Plan / steps
 
@@ -172,21 +177,22 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - [x] Committed as `8e22acb`.
 - [x] 2026-10-26: user corrected the camera (it's the `all-field` composite, not the
       turret); report button limited to blocks that have started.
-- [ ] HA: generic camera for `all-field`; ops: camera settings in the compose file (both
-      need the user's authorization; see open question 1).
+- [x] 2026-10-26: `FIELD_CAMERAS` accepts URL sources; README/.env.example/tests updated.
+- [ ] restitch `field-still-export` branch reviewed, merged, built and pinned on sentinel.
+- [ ] Ops: `FIELD_CAMERAS` line in the scheduler's compose file (needs the user's
+      authorization; see open question 1).
 - [ ] First look at the dialog and `/issues` on a real deployment.
 
 ## Open questions for the user
 
-1. **Getting a still of `all-field` to the scheduler.** Recommended path, no scheduler code
-   change: add a Home Assistant **generic camera** on `rtsp://sentinel.tsl:8554/all-field`
-   (RTSP over TCP, like the existing "(restitch)" cameras; call it "All field"), then set in
-   the ops compose file `HOME_ASSISTANT_URL=https://homeassistant.tomsawyerlabs.com`,
-   `HOME_ASSISTANT_TOKEN=<long-lived token for a dedicated read-only HA user>` and
-   `FIELD_CAMERAS="Field=camera.all_field"`. Both the HA change and the ops change need the
-   user's per-change authorization; neither is staged. A 3686×3290 JPEG from HA will be
-   roughly 1–2 MB per report. The alternative, pulling a frame from the HLS/RTSP stream in
-   the scheduler itself, needs ffmpeg in the image and is not worth it while HA can do it.
+1. **Getting a still of `all-field` to the scheduler.** Decided 2026-10-26: restitch grows
+   a full-size still export (branch `field-still-export`, worktree
+   `C:/Users/camer/git/restitch-still-export`, plan `plans/field-still-export.md` there) and
+   the scheduler fetches it directly. Once that restitch build is pinned on sentinel, the only
+   ops change is one line in the scheduler's compose file:
+   `FIELD_CAMERAS="Field=http://sentinel.tsl:9000/api/still/all-field"`. No HA camera, no
+   token. Needs the user's per-change authorization; not staged. The HA route (a generic
+   camera on `rtsp://sentinel.tsl:8554/all-field`) still works if ever wanted.
 2. **Should safety reports DM the admins on Slack?** The Slack DM plumbing exists
    (`sendDirectMessage`); a safety report that nobody sees until someone opens `/issues` is
    weaker than one that pings. Not built; easy follow-up if wanted.

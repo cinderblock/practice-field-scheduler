@@ -9,7 +9,10 @@ const { envState } = vi.hoisted(() => ({
 	envState: {
 		HOME_ASSISTANT_URL: "http://ha.test:8123/" as string | undefined,
 		HOME_ASSISTANT_TOKEN: "a-long-lived-token-of-some-length" as string | undefined,
-		FIELD_CAMERAS: "Field=camera.field_centered, Rollup=camera.south_rollup" as string | undefined,
+		FIELD_CAMERAS:
+			"Field=camera.field_centered, Rollup=camera.south_rollup, Still=http://sentinel.test:9000/api/still/all-field" as
+				| string
+				| undefined,
 	},
 }));
 
@@ -29,16 +32,20 @@ describe("captureFieldCameras", () => {
 		envState.HOME_ASSISTANT_TOKEN = "a-long-lived-token-of-some-length";
 	});
 
-	it("asks Home Assistant's camera proxy for each camera, with the token", async () => {
+	it("asks Home Assistant's camera proxy for entities, with the token, and URLs as they are", async () => {
 		const fetchMock = vi.fn(async () => imageResponse());
 		const results = await cameras.captureFieldCameras(fetchMock as unknown as typeof fetch);
 
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 		const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
 		expect(url).toBe("http://ha.test:8123/api/camera_proxy/camera.field_centered");
 		expect((init.headers as Record<string, string>).Authorization).toBe("Bearer a-long-lived-token-of-some-length");
 
-		expect(results.map(r => r.camera)).toEqual(["Field", "Rollup"]);
+		const [stillUrl, stillInit] = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
+		expect(stillUrl).toBe("http://sentinel.test:9000/api/still/all-field");
+		expect(stillInit.headers).toEqual({});
+
+		expect(results.map(r => r.camera)).toEqual(["Field", "Rollup", "Still"]);
 		for (const r of results) {
 			expect(r.ok).toBe(true);
 			if (r.ok) {
@@ -73,22 +80,25 @@ describe("captureFieldCameras", () => {
 		expect(results[0]).toMatchObject({ ok: false, error: "ECONNREFUSED" });
 	});
 
-	it("fails every camera, without calling out, when Home Assistant isn't configured", async () => {
+	it("fails the Home Assistant cameras, without calling out, when HA isn't configured; URLs still work", async () => {
 		envState.HOME_ASSISTANT_TOKEN = undefined;
-		const fetchMock = vi.fn();
+		const fetchMock = vi.fn(async () => imageResponse());
 		const results = await cameras.captureFieldCameras(fetchMock as unknown as typeof fetch);
-		expect(fetchMock).not.toHaveBeenCalled();
-		expect(results).toHaveLength(2);
-		expect(results.every(r => !r.ok)).toBe(true);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(results.map(r => [r.camera, r.ok])).toEqual([
+			["Field", false],
+			["Rollup", false],
+			["Still", true],
+		]);
 	});
 });
 
 describe("camera configuration", () => {
 	it("lists the configured cameras in order", () => {
-		expect(cameras.configuredCameras().map(c => c.label)).toEqual(["Field", "Rollup"]);
+		expect(cameras.configuredCameras().map(c => c.label)).toEqual(["Field", "Rollup", "Still"]);
 	});
 
-	it("is only configured when all three settings are present", () => {
+	it("needs the Home Assistant settings only when an entity is listed", () => {
 		envState.HOME_ASSISTANT_URL = "http://ha.test:8123/";
 		envState.HOME_ASSISTANT_TOKEN = "a-long-lived-token-of-some-length";
 		expect(cameras.camerasConfigured()).toBe(true);

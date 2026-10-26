@@ -167,15 +167,22 @@ Reports live in `DATA_DIR/<year>/issues.json`, and their pictures under `DATA_DI
 camera frame from a 4K UniFi camera is roughly 0.5–1 MB; a downscaled phone photo a few hundred KB. Removing
 a report hides it but leaves its files.
 
-| Variable               | Default | Meaning                                                                                                        |
-| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `HOME_ASSISTANT_URL`   | unset   | Base URL of the Home Assistant the cameras are in, e.g. `http://homeassistant.local:8123`                      |
-| `HOME_ASSISTANT_TOKEN` | unset   | A long-lived access token for it (Profile → Security). Only needs to read cameras                              |
-| `FIELD_CAMERAS`        | unset   | Comma-separated `Label=camera.entity_id`, e.g. `Field=camera.field_centered, South rollup=camera.south_rollup` |
+| Variable               | Default | Meaning                                                                                                               |
+| ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `FIELD_CAMERAS`        | unset   | Comma-separated `Label=<source>`: a URL that answers with an image, or a Home Assistant camera entity id (`camera.…`) |
+| `HOME_ASSISTANT_URL`   | unset   | Base URL of the Home Assistant the entity cameras are in, e.g. `http://homeassistant.local:8123`                      |
+| `HOME_ASSISTANT_TOKEN` | unset   | A long-lived access token for it (Profile → Security). Only needs to read cameras                                     |
 
-All three are needed for camera frames; with any of them unset, the dialog doesn't mention cameras and the
-server warns once at startup if `FIELD_CAMERAS` is set but the others aren't. Frames come from Home
-Assistant's camera proxy (`/api/camera_proxy/<entity_id>`), so any camera Home Assistant shows will do.
+The composite field view comes from [restitch](https://github.com/cinderblock/restitch), which serves a fresh
+full-size JPEG of any stream at `/api/still/<stream>` on its dashboard port:
+
+```text
+FIELD_CAMERAS="Field=http://sentinel.tsl:9000/api/still/all-field"
+```
+
+A Home Assistant camera entity works too, fetched through HA's camera proxy (`/api/camera_proxy/<entity_id>`),
+and needs the two `HOME_ASSISTANT_*` settings; the server warns once at startup if an entity is listed without
+them. With no cameras configured the dialog doesn't mention them.
 
 ### Weather
 

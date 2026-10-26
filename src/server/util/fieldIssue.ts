@@ -142,20 +142,42 @@ export function isSnapshotFileName(name: string): boolean {
 	return /^[0-9a-f-]{36}-(device|camera)\.(jpg|png|webp)$/.test(name);
 }
 
+/**
+ * Where a camera's still comes from.
+ *
+ * - `url`: any address that answers a GET with a JPEG, PNG or WebP, fetched as-is. This is
+ *   how restitch's composite field view is reached (`http://sentinel:9000/api/still/all-field`).
+ * - `homeAssistant`: a camera entity, fetched through Home Assistant's camera proxy with the
+ *   deployment's `HOME_ASSISTANT_URL` and `HOME_ASSISTANT_TOKEN`.
+ */
+export type FieldCameraSource = { kind: "url"; url: string } | { kind: "homeAssistant"; entityId: string };
+
 /** One of the shop's cameras, as configured in `FIELD_CAMERAS`. */
 export type FieldCamera = {
 	/** How the camera is named to people, e.g. "Field". */
 	label: string;
-	/** Home Assistant entity id, e.g. `camera.field_centered`. */
-	entityId: string;
+	source: FieldCameraSource;
 };
 
 const ENTITY_ID = /^camera\.[a-z0-9_]+$/;
 
+function parseCameraSource(value: string): FieldCameraSource | null {
+	if (ENTITY_ID.test(value)) return { kind: "homeAssistant", entityId: value };
+	if (/^https?:\/\//i.test(value)) {
+		try {
+			return { kind: "url", url: new URL(value).toString() };
+		} catch {
+			return null;
+		}
+	}
+	return null;
+}
+
 /**
- * Parse `FIELD_CAMERAS`: comma-separated `Label=camera.entity_id` pairs. Labels may contain
- * spaces; entity ids are Home Assistant's lowercase form. Throws on anything malformed so a
- * typo fails at startup rather than silently dropping a camera.
+ * Parse `FIELD_CAMERAS`: comma-separated `Label=<source>` pairs, where a source is either a
+ * Home Assistant camera entity id (`camera.field_centered`) or an `http(s)://` URL that
+ * answers with an image. Labels may contain spaces. Throws on anything malformed so a typo
+ * fails at startup rather than silently dropping a camera.
  */
 export function parseFieldCameras(value: string | undefined): FieldCamera[] {
 	if (!value || !value.trim()) return [];
@@ -165,14 +187,18 @@ export function parseFieldCameras(value: string | undefined): FieldCamera[] {
 		const part = raw.trim();
 		if (!part) continue;
 		const eq = part.indexOf("=");
-		if (eq <= 0) throw new Error(`FIELD_CAMERAS entry "${part}" must look like Label=camera.entity_id`);
+		if (eq <= 0) {
+			throw new Error(`FIELD_CAMERAS entry "${part}" must look like Label=camera.entity_id or Label=http://…`);
+		}
 		const label = part.slice(0, eq).trim();
-		const entityId = part.slice(eq + 1).trim();
+		const value = part.slice(eq + 1).trim();
 		if (!label) throw new Error(`FIELD_CAMERAS entry "${part}" has no label`);
-		if (!ENTITY_ID.test(entityId))
-			throw new Error(`FIELD_CAMERAS entry "${part}": "${entityId}" is not a camera entity id`);
+		const source = parseCameraSource(value);
+		if (!source) {
+			throw new Error(`FIELD_CAMERAS entry "${part}": "${value}" is neither a camera entity id nor an http(s) URL`);
+		}
 		if (cameras.some(c => c.label === label)) throw new Error(`FIELD_CAMERAS lists "${label}" twice`);
-		cameras.push({ label, entityId });
+		cameras.push({ label, source });
 	}
 	return cameras;
 }

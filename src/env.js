@@ -47,17 +47,21 @@ export const env = createEnv({
 			.max(16, "Open-Meteo forecasts at most 16 days")
 			.default(10),
 
-		// Field issue reports can include a still from the shop's cameras, fetched from
-		// Home Assistant's camera proxy with a long-lived access token. All optional:
-		// unset, reports simply carry no camera frames. FIELD_CAMERAS is a comma-separated
-		// list of `Label=camera.entity_id`; see src/server/util/fieldIssue.ts.
+		// Field issue reports can include a still from the shop's cameras. FIELD_CAMERAS is a
+		// comma-separated list of `Label=<source>`, where a source is a URL that answers with
+		// an image (restitch's /api/still/<stream>) or a Home Assistant camera entity id,
+		// fetched through HA's camera proxy with the token. All optional: unset, reports
+		// simply carry no camera frames. See src/server/util/fieldIssue.ts.
 		HOME_ASSISTANT_URL: z.string().url().optional(),
 		HOME_ASSISTANT_TOKEN: z.string().min(20, "Home Assistant long-lived access tokens are long").optional(),
 		FIELD_CAMERAS: z
 			.string()
 			.trim()
 			.optional()
-			.refine(isValidFieldCameras, "FIELD_CAMERAS must be Label=camera.entity_id pairs, separated by commas"),
+			.refine(
+				isValidFieldCameras,
+				"FIELD_CAMERAS must be Label=camera.entity_id or Label=http://… pairs, separated by commas",
+			),
 
 		// Settings the browser needs too. They are read here, on the server, and handed to
 		// client components by the provider in the root layout — NOT with a NEXT_PUBLIC_
@@ -144,7 +148,7 @@ function isValidFieldCameras(value) {
 		.split(",")
 		.map(part => part.trim())
 		.filter(Boolean)
-		.every(part => /^[^=]+=camera\.[a-z0-9_]+$/.test(part));
+		.every(part => /^[^=]+=(camera\.[a-z0-9_]+|https?:\/\/\S+)$/i.test(part));
 }
 
 /**

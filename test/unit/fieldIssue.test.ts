@@ -86,16 +86,29 @@ describe("parseFieldCameras", () => {
 
 	it("parses labelled entity ids, keeping their order and trimming whitespace", () => {
 		expect(parseFieldCameras("Field=camera.field_centered, South rollup = camera.south_rollup ,")).toEqual([
-			{ label: "Field", entityId: "camera.field_centered" },
-			{ label: "South rollup", entityId: "camera.south_rollup" },
+			{ label: "Field", source: { kind: "homeAssistant", entityId: "camera.field_centered" } },
+			{ label: "South rollup", source: { kind: "homeAssistant", entityId: "camera.south_rollup" } },
 		]);
+	});
+
+	it("takes a URL as a source, alongside entities", () => {
+		expect(parseFieldCameras("Field=http://sentinel.tsl:9000/api/still/all-field, Door=camera.doorbell")).toEqual([
+			{ label: "Field", source: { kind: "url", url: "http://sentinel.tsl:9000/api/still/all-field" } },
+			{ label: "Door", source: { kind: "homeAssistant", entityId: "camera.doorbell" } },
+		]);
+		expect(parseFieldCameras("Field=HTTPS://cams.example/still?width=1600")[0]?.source).toEqual({
+			kind: "url",
+			url: "https://cams.example/still?width=1600",
+		});
 	});
 
 	it("refuses malformed entries so a typo fails at startup", () => {
 		expect(() => parseFieldCameras("camera.field_centered")).toThrow(/Label=camera/);
 		expect(() => parseFieldCameras("=camera.field_centered")).toThrow(/Label=camera/);
-		expect(() => parseFieldCameras("Field=light.kitchen")).toThrow(/not a camera entity id/);
-		expect(() => parseFieldCameras("Field=camera.Field")).toThrow(/not a camera entity id/);
+		expect(() => parseFieldCameras("Field=light.kitchen")).toThrow(/neither a camera entity id nor an http/);
+		expect(() => parseFieldCameras("Field=camera.Field")).toThrow(/neither/);
+		expect(() => parseFieldCameras("Field=ftp://sentinel/still")).toThrow(/neither/);
+		expect(() => parseFieldCameras("Field=http://")).toThrow(/neither/);
 		expect(() => parseFieldCameras("Field=camera.a, Field=camera.b")).toThrow(/twice/);
 	});
 });

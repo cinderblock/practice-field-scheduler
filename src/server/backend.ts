@@ -1518,8 +1518,11 @@ export class Context {
 	async listFieldIssues(): Promise<FieldIssue[]> {
 		await this.restrictToAdmin("Only admins can read field issue reports");
 
+		// Two reports filed in the same millisecond tie on `created`; the array is in filing
+		// order, so walking it backwards before the (stable) sort keeps the later one first.
 		return fieldIssues
 			.filter(i => !i.deleted)
+			.reverse()
 			.map(copyFieldIssue)
 			.sort((a, b) => b.created.getTime() - a.created.getTime());
 	}

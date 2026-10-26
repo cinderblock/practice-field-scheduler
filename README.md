@@ -146,7 +146,9 @@ that has started, beside the add button on the current one. The add button is fo
 the report button is for blocks that have begun or ended, since a problem is noticed during or after a
 block (a field that wasn't reset, by the next team). The report names the slot it came from, and asks for:
 
-- **What's wrong:** safety issue, repair needed, repair made, field not reset, or other (which needs a note).
+- **What's wrong:** safety issue, repair needed, repair made, field not reset, game pieces low or missing,
+  something left behind, gate or access problem, a pFMS problem (which needs a note, and is better reported
+  through pFMS's own support widget), or other (which needs a note).
 - **Details** and the reporter's **team**, both optional.
 - **Photos** from the phone, taken on the spot or chosen from the gallery. They're downscaled in the browser
   (longest side 1600 px) before upload, up to 10 per report.

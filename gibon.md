@@ -9,7 +9,7 @@ This is a **Practice Field Reservation System** built with the T3 Stack (Next.js
 - **Field Reservations**: Teams can book practice time slots on specific dates
 - **Blackout Management**: Admins can close the field for a single day or a range of days, either entirely or for one time slot per day. Teams cannot reserve a blacked-out slot; admins are exempt and can book over one.
 - **Site Events**: Track field-wide events that affect availability
-- **Field Issue Reports**: Anyone signed in can report a problem with the field (safety issue, repair needed, repair made, field not reset, other) from a button on each calendar slot, with photos from their phone and, when `FIELD_CAMERAS` is configured, a frame fetched from the shop's cameras via Home Assistant. Admins review and resolve reports at `/issues`.
+- **Field Issue Reports**: Anyone signed in can report a problem with the field (safety issue, repair needed, repair made, field not reset, game pieces low or missing, something left behind, gate or access problem, pFMS problem, other) from a button on each calendar slot, with photos from their phone and, when `FIELD_CAMERAS` is configured, a frame fetched from the shop's cameras via Home Assistant. Admins review and resolve reports at `/issues`.
 - **Weather**: Optional Open-Meteo forecast under each day, lined up with the time slots: a temperature/rain sparkline plus the temperature at each slot border, each slot's chance of rain, and condition icons. Enabled by `WEATHER_LOCATION`.
 - **User Management**: Role-based access control (admin vs team members)
 - **Calendar Feeds**: Public iCalendar (ICS) exports for integration with calendar apps

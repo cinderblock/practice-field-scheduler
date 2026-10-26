@@ -127,6 +127,18 @@
 .kind_not_reset {
 	border-left-color: #8ab4ff;
 }
+.kind_game_pieces {
+	border-left-color: #ffb27a;
+}
+.kind_left_behind {
+	border-left-color: #c9a7f5;
+}
+.kind_gate_access {
+	border-left-color: #e9a0d6;
+}
+.kind_pfms {
+	border-left-color: #7fd6d1;
+}
 .kind_other {
 	border-left-color: #b0b0c8;
 }
@@ -161,6 +173,18 @@
 }
 .chip_not_reset {
 	background: #8ab4ff;
+}
+.chip_game_pieces {
+	background: #ffb27a;
+}
+.chip_left_behind {
+	background: #c9a7f5;
+}
+.chip_gate_access {
+	background: #e9a0d6;
+}
+.chip_pfms {
+	background: #7fd6d1;
 }
 
 .when {

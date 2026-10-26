@@ -12,16 +12,33 @@ import {
 } from "~/server/util/fieldIssue";
 
 describe("field issue kinds", () => {
-	it("offers the five kinds the user asked for, in order", () => {
-		expect(FIELD_ISSUE_KIND_IDS).toEqual(["safety", "repair_needed", "repair_made", "not_reset", "other"]);
+	it("offers the nine kinds the user asked for, in order, with 'other' last", () => {
+		expect(FIELD_ISSUE_KIND_IDS).toEqual([
+			"safety",
+			"repair_needed",
+			"repair_made",
+			"not_reset",
+			"game_pieces",
+			"left_behind",
+			"gate_access",
+			"pfms",
+			"other",
+		]);
 	});
 
-	it("only requires a note for 'other'", () => {
-		expect(FIELD_ISSUE_KINDS.filter(k => k.notesRequired).map(k => k.kind)).toEqual(["other"]);
+	it("only requires a note where a picture can't tell the story: pFMS and 'other'", () => {
+		expect(FIELD_ISSUE_KINDS.filter(k => k.notesRequired).map(k => k.kind)).toEqual(["pfms", "other"]);
 	});
 
-	it("labels every kind", () => {
-		for (const kind of FIELD_ISSUE_KIND_IDS) expect(fieldIssueKindInfo(kind).label).toBeTruthy();
+	it("points pFMS problems at pFMS's own support widget", () => {
+		expect(fieldIssueKindInfo("pfms").description).toMatch(/pFMS itself/);
+	});
+
+	it("labels every kind and gives each a sample note", () => {
+		for (const kind of FIELD_ISSUE_KIND_IDS) {
+			expect(fieldIssueKindInfo(kind).label).toBeTruthy();
+			expect(fieldIssueKindInfo(kind).example).toBeTruthy();
+		}
 	});
 
 	it("rejects unknown kinds", () => {

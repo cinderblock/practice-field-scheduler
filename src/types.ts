@@ -154,7 +154,16 @@ export type Holiday = {
 };
 
 /** What kind of problem a field issue report is about. */
-export type FieldIssueKind = "safety" | "repair_needed" | "repair_made" | "not_reset" | "other";
+export type FieldIssueKind =
+	| "safety"
+	| "repair_needed"
+	| "repair_made"
+	| "not_reset"
+	| "game_pieces"
+	| "left_behind"
+	| "gate_access"
+	| "pfms"
+	| "other";
 
 /**
  * One picture attached to a field issue report: either a photo from the reporter's device

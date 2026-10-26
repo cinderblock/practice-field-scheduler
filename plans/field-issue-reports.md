@@ -62,9 +62,14 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
    in is a mentor or team member. The log holds camera frames of the shop and people's
    photos, so it is admin-only like `/logs`, `/users` and `/blackouts`. A reporter sees
    their own report confirmed in the dialog and that is it.
-3. **Five kinds, fixed:** `safety`, `repair_needed`, `repair_made`, `not_reset`, `other`,
-   stored as those identifiers and labelled in the UI. "Other" is the only one where a note
-   is required.
+3. **Nine kinds, fixed:** `safety`, `repair_needed`, `repair_made`, `not_reset`,
+   `game_pieces`, `left_behind`, `gate_access`, `pfms`, `other`, stored as those identifiers
+   and labelled in the UI, "other" always last. The user picked the last four on 2026-10-26
+   ("do them all"): game pieces walk off and "repair" is the wrong word; lost-and-found with
+   a photo so the owner can be found on Slack; gate or access problems tie into the gate
+   manager; and a pFMS kind that steers people to pFMS's own support widget (which sends
+   logs and a screenshot) but accepts the report here just in case. Notes are required for
+   `pfms` and `other`, where a picture can't tell the story.
 4. **Two snapshot sources, both best-effort and independent.** Device photos are chosen or
    taken with `<input type="file" accept="image/*" capture="environment">`, downscaled in
    the browser (longest side 1600 px, JPEG) so a phone's 12 MP originals never hit the
@@ -182,6 +187,8 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
 - [ ] Ops: `FIELD_CAMERAS` line in the scheduler's compose file (needs the user's
       authorization; see open question 1).
 - [ ] First look at the dialog and `/issues` on a real deployment.
+- [x] 2026-10-26: four more kinds (`game_pieces`, `left_behind`, `gate_access`, `pfms`), the
+      user's pick; sample notes moved into the kind table (`d4f848f`). 383 tests green.
 
 ## Open questions for the user
 
@@ -190,9 +197,14 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
    `C:/Users/camer/git/restitch-still-export`, plan `plans/field-still-export.md` there) and
    the scheduler fetches it directly. Once that restitch build is pinned on sentinel, the only
    ops change is one line in the scheduler's compose file:
-   `FIELD_CAMERAS="Field=http://sentinel.tsl:9000/api/still/all-field"`. No HA camera, no
-   token. Needs the user's per-change authorization; not staged. The HA route (a generic
-   camera on `rtsp://sentinel.tsl:8554/all-field`) still works if ever wanted.
+   `FIELD_CAMERAS: Field=http://sentinel.tsl:9000/api/still/all-field`. No HA camera, no
+   token. The user asked on 2026-10-26 whether this goes in "our private image/deploy/compose
+   file": yes, `servers/steamboat/stacks/practice-field-scheduler/compose.yml` in
+   `cinderblock/ops`, never the app repo. The line is written, uncommitted, in the ops
+   worktree `C:/Users/camer/git/ops-restitch-pin` and waits on the per-change yes. It needs a
+   scheduler image with the feature pushed and pinned first (the running pin is `8a32c5f`).
+   The HA route (a generic camera on `rtsp://sentinel.tsl:8554/all-field`) still works if
+   ever wanted.
 2. **Should safety reports DM the admins on Slack?** The Slack DM plumbing exists
    (`sendDirectMessage`); a safety report that nobody sees until someone opens `/issues` is
    weaker than one that pings. Not built; easy follow-up if wanted.

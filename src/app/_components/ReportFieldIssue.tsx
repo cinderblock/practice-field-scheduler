@@ -304,13 +304,7 @@ function ReportFieldIssueDialog({
 								rows={3}
 								maxLength={2000}
 								disabled={busy}
-								placeholder={
-									kind === "not_reset"
-										? "e.g. Balls left all over, right goal still folded"
-										: kind === "repair_made"
-											? "e.g. Re-tied the left net"
-											: "e.g. Bracket on the far goal is cracked"
-								}
+								placeholder={info ? `e.g. ${info.example}` : "e.g. Bracket on the far goal is cracked"}
 							/>
 						</div>
 

@@ -13,6 +13,8 @@ export type FieldIssueKindInfo = {
 	description: string;
 	/** Whether a report of this kind has to say something in its notes. */
 	notesRequired: boolean;
+	/** A sample note, shown as the placeholder of the notes box. */
+	example: string;
 };
 
 /** The kinds of report, in the order the dialog offers them. */
@@ -22,30 +24,64 @@ export const FIELD_ISSUE_KINDS: readonly FieldIssueKindInfo[] = [
 		label: "Safety issue",
 		description: "Something could hurt someone. Say what and where.",
 		notesRequired: false,
+		example: "Bracket on the far goal is cracked and sharp",
 	},
 	{
 		kind: "repair_needed",
 		label: "Repair needed",
 		description: "Something is broken, loose or missing.",
 		notesRequired: false,
+		example: "Bracket on the far goal is cracked",
 	},
 	{
 		kind: "repair_made",
 		label: "Repair made",
 		description: "You fixed something. Say what, so the next team knows.",
 		notesRequired: false,
+		example: "Re-tied the left net",
 	},
 	{
 		kind: "not_reset",
 		label: "Field not reset",
 		description: "The field wasn't put back the way it should be.",
 		notesRequired: false,
+		example: "Balls left all over, right goal still folded",
+	},
+	{
+		kind: "game_pieces",
+		label: "Game pieces low or missing",
+		description: "Balls have walked off, or there aren't enough left to practice with.",
+		notesRequired: false,
+		example: "Only four balls left on the field",
+	},
+	{
+		kind: "left_behind",
+		label: "Something left behind",
+		description: "Lost and found. A photo helps find the owner on Slack.",
+		notesRequired: false,
+		example: "Blue hoodie on the driver station",
+	},
+	{
+		kind: "gate_access",
+		label: "Gate or access problem",
+		description: "The gate link didn't work, or the field was open when it shouldn't have been.",
+		notesRequired: false,
+		example: "Gate link said expired at 6:05 PM",
+	},
+	{
+		kind: "pfms",
+		label: "pFMS problem",
+		description:
+			"The field software misbehaved. Best reported in pFMS itself (the support icon in its status bar sends logs and a screenshot), but say what happened here too.",
+		notesRequired: true,
+		example: "Match timer froze at 1:30 after start",
 	},
 	{
 		kind: "other",
 		label: "Other",
 		description: "Anything else worth a note and a picture.",
 		notesRequired: true,
+		example: "Lights in the far corner flicker",
 	},
 ];
 

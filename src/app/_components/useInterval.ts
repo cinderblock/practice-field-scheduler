@@ -5,6 +5,7 @@ export function useInterval<T>(generator: () => T, interval = 1000, deps: unknow
 	if (typeof interval !== "number") throw new Error("Interval must be a number");
 	if (interval < 1) throw new Error("Interval must be greater than 0");
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: deps come from the caller, like useCallback's own
 	generator = useCallback(generator, deps);
 
 	const [value, setValue] = useState(generator());

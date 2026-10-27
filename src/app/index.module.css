@@ -573,6 +573,7 @@
 }
 
 .removeReservationBtn:hover {
+	/* biome-ignore lint/complexity/noImportantStyles: has to beat the (0,3,0) .reservationPill.active rule's opacity */
 	opacity: 1 !important;
 }
 
@@ -597,6 +598,7 @@
 .timeSlotStackContainer:hover .addReservationBtn {
 	opacity: 1;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: sets display, not the opacity the :hover rule above sets */
 .timeSlotOver .addReservationBtn {
 	display: none;
 }
@@ -618,6 +620,7 @@
 .reportIssueBtn:focus-visible {
 	opacity: 1;
 }
+/* biome-ignore lint/style/noDescendingSpecificity: sets left, not the opacity the :hover rule above sets */
 .timeSlotOver .reportIssueBtn,
 .reportIssueBtnAlone {
 	left: 50%;

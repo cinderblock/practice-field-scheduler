@@ -216,7 +216,7 @@ function parseCameraSource(value: string): FieldCameraSource | null {
  * fails at startup rather than silently dropping a camera.
  */
 export function parseFieldCameras(value: string | undefined): FieldCamera[] {
-	if (!value || !value.trim()) return [];
+	if (!value?.trim()) return [];
 
 	const cameras: FieldCamera[] = [];
 	for (const raw of value.split(",")) {

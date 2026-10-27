@@ -82,7 +82,7 @@ export const env = createEnv({
 			.refine(numbers => numbers.every(n => n >= -12 && n <= 12), "Time slot borders must be between -12 and 12")
 			.refine(numbers => numbers.every((n, i) => numbers.indexOf(n) === i), "Time slot borders must be unique")
 			.refine(
-				// @ts-ignore
+				// @ts-expect-error
 				numbers => numbers.every((n, i, a) => !i || n > a[i - 1]),
 				"Time slot borders must be in ascending order",
 			),

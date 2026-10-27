@@ -228,7 +228,7 @@ function ReservationPill({
 	disabled = false,
 }: ReservationPillProps) {
 	const teamStr = teamNumber.toString();
-	const number = Number.parseInt(teamStr);
+	const number = Number.parseInt(teamStr, 10);
 	const [isActive, setIsActive] = useState(false);
 	const pillRef = useRef<HTMLDivElement>(null);
 
@@ -403,7 +403,7 @@ export function ReservationCalendar({
 	// Register the load history function with the context only once
 	useEffect(() => {
 		setLoadHistory(() => loadHistory);
-	}, [setLoadHistory]);
+	}, [setLoadHistory, loadHistory]);
 
 	return (
 		<>

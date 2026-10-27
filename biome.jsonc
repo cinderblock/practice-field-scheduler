@@ -1,15 +1,17 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.0.6/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
-	"files": { "ignoreUnknown": false, "includes": ["**"] },
+	"files": { "ignoreUnknown": false, "includes": ["**", "!**/*.md", "!**/*.svg"] },
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
-		"lineWidth": 120
+		"lineWidth": 120,
+		// Keep whatever git checked out (CRLF on Windows, LF elsewhere); see .gitattributes.
+		"lineEnding": "auto"
 	},
 
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
@@ -20,12 +22,9 @@
 		// },
 		"rules": {
 			"nursery": {
-				"useSortedClasses": {
+				"useTailwindSortedClasses": {
 					"level": "warn",
-					"fix": "safe",
-					"options": {
-						"functions": ["clsx", "cva", "cn"]
-					}
+					"fix": "safe"
 				}
 			},
 			"style": {
@@ -41,6 +40,7 @@
 			},
 			"correctness": {
 				"useExhaustiveDependencies": {
+					"level": "on",
 					"options": {
 						"hooks": [
 							{
@@ -52,12 +52,13 @@
 					}
 				}
 			},
-			"recommended": true
+			"preset": "recommended"
 		}
 	},
 	"javascript": {
 		"formatter": {
 			"arrowParentheses": "asNeeded"
 		}
-	}
+	},
+	"tailwind": { "mergeFunctions": ["clsx", "cn"], "variantFunctions": ["cva"] }
 }

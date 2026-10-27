@@ -198,6 +198,11 @@ device and from the shop's cameras. we'll also need a viewer for the incident lo
       call on production), so the capture itself is unproven until the first real report.
 - [x] 2026-10-26: four more kinds (`game_pieces`, `left_behind`, `gate_access`, `pfms`), the
       user's pick; sample notes moved into the kind table (`d4f848f`). 383 tests green.
+- [x] 2026-10-26 3:57 PM PDT (22:57Z): the user filed the first real report on production
+      (kind `other`, "Test of report system", the 1:00 PM block). The capture works from inside
+      the container: `2026/issues/614a2dc1-…/97cf9632-…-camera.jpg` is the full 3686×3290
+      `all-field` composite (2.36 MB), taken 160 ms before the report was saved, and the
+      `fieldIssueAdd` line is in `logs.txt`. Checked 2026-10-27.
 
 ## Open questions for the user
 

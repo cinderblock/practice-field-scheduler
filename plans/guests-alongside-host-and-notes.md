@@ -73,7 +73,14 @@ Made without asking; easy to redirect:
 - [x] README
 - [x] Browser check
 - [x] Typecheck, `npm run check`, unit tests, production build, e2e
-- [ ] Push and deploy (needs the user's yes)
+- [x] Deployed 2026-10-30 2:41 PM PDT (21:41Z), with the user's yes: `0007567`
+      pushed, ops `8be0fa3` (pin.json only, committed from a throwaway
+      worktree), deploy run `41132743790` "pin verified: 0007567…". `/login` 200
+      directly and through Caddy; `/api/access/check` 401 without a key; the
+      `all` calendar feed renders from the real data with no duplicate UIDs.
+      Docker logs not read: the SSH user can't reach the Docker socket.
+      Renovate also bumps this pin (ops `d81244a`), so check the current pin
+      before writing a new one.
 
 ## Things not to do
 

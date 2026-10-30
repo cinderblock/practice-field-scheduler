@@ -125,6 +125,8 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
   team is filled in for you, several give you a picker. Someone whose display
   name lists no team is told how to fix it, with a **Check again** button, and
   the server refuses their bookings with the same explanation.
+- **Each + click books one line.** A second team or a second robot is a second
+  click.
 - **A guest (buddy) reservation** is for a visiting team that isn't in the
   scheduler. Tick **Guest team** and enter its number. It is its own
   reservation under the guest's number, linked to your team as its **host**,
@@ -132,6 +134,15 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
   guest's own link, if it has one, doesn't), the host's members get the
   reservation DM, and it's in the host's team calendar feed. Members of either
   team can cancel it.
+- **Extra robot** marks a line as another robot. A team has one ordinary line
+  per slot, as itself or as someone's guest, plus any number of these. If the
+  team is already in the slot, the dialog ticks the box for you.
+- **Team numbers** are positive whole numbers: digits only, no leading zero, up
+  to 100,000.
+- **Any line can carry a short note** (up to 100 characters), shown on the
+  calendar and included in the reservation DM and the calendar feeds, which
+  need no sign-in. Add one in the dialog, or later with the **✎** on the line;
+  anyone who can cancel the line can change its note.
 - Admins can book for any team, and host a guest as any team.
 
 ### Blackouts (admin)

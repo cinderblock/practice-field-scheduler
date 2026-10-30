@@ -525,6 +525,16 @@
 	opacity: 0.8;
 }
 
+/* A reservation's note, on a line of its own under the team */
+.pillNote {
+	display: block;
+	font-size: 0.75em;
+	font-weight: 400;
+	line-height: 1.2;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
 .reservationPill.pendingDeletion {
 	opacity: 0.6;
 }
@@ -565,6 +575,12 @@
 		pointer-events: auto;
 		display: block;
 	}
+}
+
+/* Edit-note button: shown and hidden with the × beside it */
+.removeReservationBtn.noteReservationBtn {
+	right: 1.8rem;
+	font-size: 0.95rem;
 }
 
 .removeReservationBtn:disabled {

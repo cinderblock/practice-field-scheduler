@@ -89,28 +89,29 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 		});
 
 		// Map to track an open group per team. A guest's block is kept apart from the same team's
-		// own block, and from one with a different host.
+		// own block, and from one with a different host. An extra robot's line can share a slot with
+		// its team's, so it stands alone.
 		interface Group {
 			team: Reservation["team"];
 			host?: Reservation["host"];
+			extraRobot?: boolean;
 			start: Date;
 			end: Date;
 			description?: string;
 		}
 		const openGroups = new Map<string, Group>();
-		const groupKey = (r: Pick<Reservation, "team" | "host">) =>
-			r.host === undefined ? String(r.team) : `${r.team}-guest-of-${r.host}`;
+		const groupKey = (r: Pick<Reservation, "id" | "team" | "host" | "extraRobot">) =>
+			r.extraRobot ? `${r.team}-extra-${r.id}` : r.host === undefined ? String(r.team) : `${r.team}-guest-of-${r.host}`;
 
 		const flushGroup = (teamKey: string, group: Group) => {
 			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${group.team}`;
+			const labels = [group.host === undefined ? "" : `guest of ${group.host}`, group.extraRobot ? "extra robot" : ""];
+			const label = labels.filter(Boolean).join(", ");
 			push({
 				id: `${group.start.toISOString()}-${teamKey}`,
 				start: group.start,
 				end: group.end,
-				summary:
-					group.host === undefined
-						? `Team ${group.team} Reservation`
-						: `Team ${group.team} Reservation (guest of ${group.host})`,
+				summary: label ? `Team ${group.team} Reservation (${label})` : `Team ${group.team} Reservation`,
 				description: group.description ?? "",
 				x: {
 					"X-image": avatar,
@@ -128,7 +129,9 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 			if (current && dateTimes.start.getTime() === current.end.getTime()) {
 				// Extend the existing contiguous block for this team
 				current.end = dateTimes.end;
-				if (!current.description && r.notes) current.description = r.notes;
+				if (r.notes && !current.description?.split("\n").includes(r.notes)) {
+					current.description = current.description ? `${current.description}\n${r.notes}` : r.notes;
+				}
 				openGroups.set(teamKey, current);
 			} else {
 				// Flush previous block for this team (if any) and start a new one
@@ -136,6 +139,7 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 				openGroups.set(teamKey, {
 					team: r.team,
 					host: r.host,
+					extraRobot: r.extraRobot,
 					start: dateTimes.start,
 					end: dateTimes.end,
 					description: r.notes ?? undefined,

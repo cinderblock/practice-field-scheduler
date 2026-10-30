@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { FIELD_ISSUE_KIND_IDS, FIELD_ISSUE_NOTES_MAX, fieldIssueKindInfo } from "~/server/util/fieldIssue";
+import { isValidTeamNumber } from "~/server/util/reservation";
 import { isValidDate, isValidTime } from "~/server/util/timeUtils";
 
 /*
@@ -18,7 +19,7 @@ const addSchema = z
 			.string()
 			.trim()
 			.max(20, "Team is too long")
-			.refine(val => !val || /^\d+$/.test(val), "Team must be a team number")
+			.refine(val => !val || isValidTeamNumber(val), "Team must be a team number")
 			.optional(),
 		notes: z.string().trim().max(FIELD_ISSUE_NOTES_MAX, "Notes are too long").optional(),
 		captureCameras: z.boolean().optional(),

@@ -246,6 +246,112 @@ describe("guest reservations", () => {
 	});
 });
 
+describe("a team with guests and extra robots", () => {
+	const teamsIn = async (date: string, slot: string) =>
+		(await member().listReservations(date)).filter(r => r.slot === slot).map(r => String(r.team));
+
+	const extraRobot = (date: string, slot: string, team = MemberTeam, host?: string) =>
+		member().addReservation({ date, slot, team, host, notes: "", extraRobot: true, priority: false });
+
+	it("lets a team that has the slot add guests, one line each", async () => {
+		await book(member(), day(4), "07:00pm");
+		await book(member(), day(4), "07:00pm", "5940", MemberTeam);
+		await book(member(), day(4), "07:00pm", "8033", MemberTeam);
+
+		expect(await teamsIn(day(4), "07:00pm")).toEqual([MemberTeam, "5940", "8033"]);
+	});
+
+	it("refuses a second line for a team, and says how to add a robot", async () => {
+		await book(member(), day(5), "04:00pm");
+		await expect(book(member(), day(5), "04:00pm")).rejects.toThrow(/already has this slot.*Extra robot/);
+		expect(await teamsIn(day(5), "04:00pm")).toEqual([MemberTeam]);
+	});
+
+	it("gives each extra robot a line of its own", async () => {
+		await book(member(), day(5), "07:00pm");
+		const second = await extraRobot(day(5), "07:00pm");
+		await extraRobot(day(5), "07:00pm");
+
+		expect(second.extraRobot).toBe(true);
+		expect(await teamsIn(day(5), "07:00pm")).toEqual([MemberTeam, MemberTeam, MemberTeam]);
+	});
+
+	it("takes an extra robot for a guest, and on a first line too", async () => {
+		const first = await extraRobot(day(6), "07:00pm");
+		expect(first.extraRobot).toBe(true);
+
+		await book(member(), day(6), "07:00pm", "5940", MemberTeam);
+		await extraRobot(day(6), "07:00pm", "5940", MemberTeam);
+		expect(await teamsIn(day(6), "07:00pm")).toEqual([MemberTeam, "5940", "5940"]);
+	});
+
+	it("leaves the flag off an ordinary line", async () => {
+		expect(await book(member(), day(6), "10:00am")).not.toHaveProperty("extraRobot");
+	});
+
+	it("refuses a team that is already in the slot as someone's guest", async () => {
+		await book(member(), day(4), "10:00am", "5940", MemberTeam);
+		await expect(book(admin(), day(4), "10:00am", "5940")).rejects.toThrow(/already has this slot/);
+	});
+
+	it("matches a stored team however its number was written", async () => {
+		await member().addReservation({ date: day(6), slot: "04:00pm", team: 1234, priority: false });
+		await expect(book(member(), day(6), "04:00pm")).rejects.toThrow(/already has this slot/);
+	});
+
+	it("frees the slot again once the reservation is cancelled", async () => {
+		const reservation = await book(member(), day(7), "07:00pm");
+		await member().removeReservation({ id: reservation.id });
+		expect((await book(member(), day(7), "07:00pm")).id).not.toBe(reservation.id);
+	});
+});
+
+describe("notes", () => {
+	it("keeps a note from the booking, and leaves out an empty one", async () => {
+		const noted = await member().addReservation({
+			date: day(3),
+			slot: "10:00am",
+			team: MemberTeam,
+			notes: "Arriving late",
+			priority: false,
+		});
+		expect(noted.notes).toBe("Arriving late");
+		expect(await book(member(), day(3), "10:00am", "5940", MemberTeam)).not.toHaveProperty("notes");
+	});
+
+	it("lets the team change or clear a note later", async () => {
+		const reservation = await book(member(), day(2), "10:00am");
+
+		expect((await member().setReservationNotes({ id: reservation.id, notes: "Bringing a guest" })).notes).toBe(
+			"Bringing a guest",
+		);
+		expect((await member().listReservations(day(2))).find(r => r.id === reservation.id)?.notes).toBe(
+			"Bringing a guest",
+		);
+
+		expect((await member().setReservationNotes({ id: reservation.id, notes: "" })).notes).toBeUndefined();
+	});
+
+	it("lets a guest's host change its note", async () => {
+		const reservation = await book(member(), day(2), "04:00pm", "5940", MemberTeam);
+		expect((await member().setReservationNotes({ id: reservation.id, notes: "Rookies" })).notes).toBe("Rookies");
+	});
+
+	it("refuses anyone else, as cancelling does", async () => {
+		const reservation = await book(admin(), day(2), "07:00pm", "5940");
+		await quietly(() =>
+			expect(member().setReservationNotes({ id: reservation.id, notes: "Mine now" })).rejects.toBeInstanceOf(
+				PermissionError,
+			),
+		);
+		expect((await admin().setReservationNotes({ id: reservation.id, notes: "Admin note" })).notes).toBe("Admin note");
+	});
+
+	it("refuses a reservation that doesn't exist", async () => {
+		await expect(member().setReservationNotes({ id: "nope", notes: "x" })).rejects.toThrow(/not found/);
+	});
+});
+
 describe("error records", () => {
 	type ErrorLine = { timestamp: string; source: string; kind: string; message: string; userId?: string; page?: string };
 

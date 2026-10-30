@@ -225,6 +225,26 @@ describe("notifyTeamOfReservation", () => {
 		expect(bodyOf().text).toContain("for your guests");
 	});
 
+	it("says when a line is for an extra robot", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+		await notifyTeamOfReservation(
+			{ ...reservation, extraRobot: true },
+			[{ user, slackUserId: "U111", withLink: true }],
+			"tok",
+		);
+		expect(bodyOf().text).toContain("Extra robot");
+	});
+
+	it("keeps a note from acting as Slack markup", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+		await notifyTeamOfReservation(
+			{ ...reservation, notes: "<!channel> R&D" },
+			[{ user, slackUserId: "U111", withLink: true }],
+			"tok",
+		);
+		expect(bodyOf().text).toContain("&lt;!channel&gt; R&amp;D");
+	});
+
 	it("still sends the reservation details when the team has no link yet", async () => {
 		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
 		const outcomes = await notifyTeamOfReservation(

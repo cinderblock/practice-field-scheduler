@@ -27,6 +27,7 @@ import type {
 	PersonalAccessStatus,
 	RemoveReservationArgs,
 	Reservation,
+	SetReservationNotesArgs,
 	SiteEvent,
 	Team,
 	TeamAccess,
@@ -904,6 +905,7 @@ type LogReservationEntry = LogCommon & {
 	slot: TimeSlot;
 	team: TeamFull;
 	host?: TeamFull; // A guest reservation's host
+	extraRobot?: boolean;
 	notes?: string;
 };
 
@@ -1072,10 +1074,15 @@ export class Context {
 		this.user = this.getUser();
 	}
 
-	async addReservation({ host, ...args }: AddReservationArgs) {
+	async addReservation({ host, notes, extraRobot, ...args }: AddReservationArgs) {
 		console.log(`🟢 [${MODULE_INSTANCE_ID}] addReservation START - PID: ${process.pid}`);
 		// A guest reservation is booked by its host's members; any other is booked by the team's own.
-		const reservation: AddReservationArgs = host === undefined || host === "" ? args : { ...args, host };
+		const reservation: AddReservationArgs = {
+			...args,
+			...(host === undefined || host === "" ? {} : { host }),
+			...(notes ? { notes } : {}),
+			...(extraRobot ? { extraRobot } : {}),
+		};
 		if (reservation.host === undefined) {
 			await this.restrictToTeams([reservation.team], "You can only book for your own team");
 		} else {
@@ -1088,16 +1095,23 @@ export class Context {
 
 		await this.restrictBlackout(reservation.date, reservation.slot);
 
-		const existingReservation = reservations.find(
-			r => r.date === reservation.date && r.slot === reservation.slot && r.team === reservation.team && !r.abandoned,
-		);
-		if (existingReservation) {
-			throw new Error("Reservation already exists for this date and slot");
-		}
-
 		console.log(`🟡 [${MODULE_INSTANCE_ID}] About to acquire lock - PID: ${process.pid}`);
 		const release = await changeLock.acquire();
 		console.log(`🟡 [${MODULE_INSTANCE_ID}] Lock acquired - PID: ${process.pid}`);
+
+		// A team has one line in a slot, whichever way it got there, plus any for extra robots
+		const existingReservation = reservations.find(
+			r =>
+				r.date === reservation.date &&
+				r.slot === reservation.slot &&
+				sameTeam(r.team, reservation.team) &&
+				!r.abandoned,
+		);
+		if (existingReservation && !reservation.extraRobot) {
+			release();
+			throw new InvalidRequestError(`Team ${reservation.team} already has this slot. Tick Extra robot to add another.`);
+		}
+
 		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
@@ -1121,6 +1135,7 @@ export class Context {
 				slot: reservation.slot,
 				team: reservation.team,
 				host: reservation.host,
+				extraRobot: reservation.extraRobot,
 				notes: reservation.notes,
 			}),
 		);
@@ -1142,6 +1157,49 @@ export class Context {
 		fireReservationDmsForTeam(res, creatorId);
 
 		return res;
+	}
+
+	/** Set or clear a reservation's note. Whoever may cancel it may change it. */
+	async setReservationNotes({ id, notes }: SetReservationNotesArgs) {
+		const reservation = getReservation(id);
+
+		if (!reservation) {
+			throw new Error("Reservation not found");
+		}
+
+		await this.restrictToTeams(
+			reservation.host === undefined ? [reservation.team] : [reservation.team, reservation.host],
+			"Only the team, or the team hosting it, can change a reservation's note",
+		);
+		await this.restrictTimeframe(reservation.date);
+
+		const release = await changeLock.acquire();
+		const ctx = await this.getContext();
+		const jobs: Promise<unknown>[] = [];
+
+		reservation.notes = notes || undefined;
+		reservation.userId = ctx.userId;
+
+		jobs.push(
+			log({
+				...ctx,
+				type: "updated",
+				date: reservation.date,
+				slot: reservation.slot,
+				team: reservation.team,
+				host: reservation.host,
+				notes,
+			}),
+		);
+
+		jobs.push(tellClientsAboutReservationChange(reservation));
+
+		jobs.push(writeJsonFile(RESERVATIONS_FILE, reservations));
+
+		const done = Promise.all(jobs);
+		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		return { ...reservation };
 	}
 
 	async removeReservation({ id, reason }: RemoveReservationArgs) {

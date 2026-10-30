@@ -93,6 +93,11 @@ export async function sendLinksDm(
 	}
 }
 
+/** A mentor's words in a DM: `<`, `>` and `&` are Slack's control characters. */
+function slackText(text: string): string {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Exported for tests. */
 export function reservationNoticeMessage(
 	reservation: Reservation,
@@ -106,7 +111,8 @@ export function reservationNoticeMessage(
 		`• Date: ${reservation.date}`,
 		`• Slot: ${reservation.slot}`,
 	];
-	if (reservation.notes) lines.push(`• Notes: ${reservation.notes}`);
+	if (reservation.extraRobot) lines.push("• Extra robot");
+	if (reservation.notes) lines.push(`• Notes: ${slackText(reservation.notes)}`);
 	const url = gateAccessUrl(token);
 	if (url && withLink) {
 		lines.push("");

@@ -1,8 +1,16 @@
-export type AddReservationArgs = Pick<Reservation, "date" | "slot" | "team" | "notes" | "priority" | "host">;
+export type AddReservationArgs = Pick<
+	Reservation,
+	"date" | "slot" | "team" | "notes" | "priority" | "host" | "extraRobot"
+>;
 
 export type RemoveReservationArgs = {
 	id: string;
 	reason?: string;
+};
+
+export type SetReservationNotesArgs = {
+	id: string;
+	notes: string;
 };
 
 export type Reservation = {
@@ -18,6 +26,9 @@ export type Reservation = {
 	// the visiting `team`. The host is responsible for the guest, and it is the
 	// host's access that covers the block.
 	host?: TeamFull;
+	// A line for another robot from a team that may already be in the slot. Only
+	// these can repeat a team in a slot.
+	extraRobot?: boolean;
 	notes?: string;
 };
 /////// Public-ish Interfaces //////

@@ -55,4 +55,39 @@ describe("team calendar feed", () => {
 			reservations.pop();
 		}
 	});
+
+	it("gives an extra robot's line an event of its own", async () => {
+		reservations.push(
+			{ ...base, id: "second-robot", slot: "10:00am", team: "1234", extraRobot: true },
+			{ ...base, id: "third-robot", slot: "10:00am", team: "1234", extraRobot: true },
+		);
+		try {
+			const ics = await generateICS({ kind: "team", team: "1234" });
+			expect(summaries(ics)).toEqual([
+				"Team 1234 Reservation",
+				"Team 1234 Reservation (extra robot)",
+				"Team 1234 Reservation (extra robot)",
+				"Team 9999 Reservation (guest of 1234)",
+			]);
+			const uids = [...ics.matchAll(/^UID:(.*)$/gm)].map(m => m[1]);
+			expect(new Set(uids).size).toBe(uids.length);
+		} finally {
+			reservations.splice(-2);
+		}
+	});
+
+	it("keeps each note of a block made of several reservations", async () => {
+		reservations.push(
+			{ ...base, id: "first", slot: "04:00pm", team: "5678", notes: "Arriving late" },
+			{ ...base, id: "second", slot: "07:00pm", team: "5678", notes: "Leaving early" },
+			{ ...base, id: "third", slot: "10:00pm", team: "5678", notes: "Arriving late" },
+		);
+		try {
+			const ics = await generateICS({ kind: "team", team: "5678" });
+			expect(ics).toContain("DESCRIPTION:Arriving late\\nLeaving early");
+			expect(ics.match(/Arriving late/g)).toHaveLength(1);
+		} finally {
+			reservations.splice(-3);
+		}
+	});
 });

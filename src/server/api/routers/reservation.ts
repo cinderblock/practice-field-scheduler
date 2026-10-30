@@ -1,20 +1,6 @@
 import { z } from "zod";
+import { notesSchema, reservationSchema } from "~/server/api/schemas/reservation";
 import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
-import { isValidDate, isValidTime, isValidTimeSlot } from "~/server/util/timeUtils";
-
-const teamSchema = z.string().refine(val => !val.includes("\n") && /^\d+/.test(val), "Invalid team reservation");
-
-const reservationSchema = z
-	.object({
-		date: z.string().refine(val => isValidDate(val), "Invalid date"),
-		slot: z.string().refine(val => isValidTime(val), "Invalid time"),
-		team: teamSchema,
-		/** Set for a guest reservation: the booker's team, which hosts `team`. */
-		host: teamSchema.optional(),
-		notes: z.string(),
-		priority: z.boolean(),
-	})
-	.refine(({ date, slot }) => isValidTimeSlot(`${date} ${slot}`), "Invalid time slot");
 
 export const reservationRouter = createTRPCRouter({
 	add: protectedProcedure.input(reservationSchema).mutation(async ({ input, ctx }) => {
@@ -22,6 +8,13 @@ export const reservationRouter = createTRPCRouter({
 		const reservation = await ctx.context.addReservation(input);
 		return { success: true, reservation };
 	}),
+
+	setNotes: protectedProcedure
+		.input(z.object({ id: z.string(), notes: notesSchema }))
+		.mutation(async ({ input, ctx }) => {
+			const reservation = await ctx.context.setReservationNotes(input);
+			return { success: true, reservation };
+		}),
 
 	remove: protectedProcedure
 		.input(

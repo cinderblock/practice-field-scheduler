@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
+import { isValidTeamNumber, RESERVATION_NOTES_MAX } from "~/server/util/reservation";
 import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
@@ -209,7 +210,10 @@ interface ReservationPillProps {
 	teamNumber: string | number;
 	/** A guest reservation's host */
 	guestOf?: TeamFull;
+	notes?: string;
+	extraRobot?: boolean;
 	onRemove?: () => void;
+	onEditNote?: () => void;
 	isTemp?: boolean;
 	isPendingDeletion?: boolean;
 	isPendingAddition?: boolean;
@@ -220,7 +224,10 @@ interface ReservationPillProps {
 function ReservationPill({
 	teamNumber,
 	guestOf,
+	notes,
+	extraRobot = false,
 	onRemove,
+	onEditNote,
 	isTemp = false,
 	isPendingDeletion = false,
 	isPendingAddition = false,
@@ -274,7 +281,21 @@ function ReservationPill({
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}
 				{guestOf !== undefined && guestOf !== "" && <span className={styles.guestOf}>guest of {guestOf}</span>}
+				{extraRobot && <span className={styles.pillNote}>Extra robot</span>}
+				{notes && <span className={styles.pillNote}>{notes}</span>}
 			</span>
+			{onEditNote && !hasEnded && (
+				<button
+					style={{ userSelect: "none" }}
+					type="button"
+					onClick={onEditNote}
+					className={`${styles.removeReservationBtn} ${styles.noteReservationBtn}`}
+					disabled={disabled}
+					aria-label={notes ? `Edit the note for team ${teamStr}` : `Add a note for team ${teamStr}`}
+				>
+					✎
+				</button>
+			)}
 			{onRemove && !hasEnded && (
 				<button
 					style={{ userSelect: "none" }}
@@ -702,15 +723,17 @@ function TimeSlot({
 	// Set when booking for a visiting team, hosted by `teamNumber`
 	const [isGuest, setIsGuest] = useState(false);
 	const [guestTeam, setGuestTeam] = useState("");
+	const [notes, setNotes] = useState("");
+	const [wantsExtraRobot, setWantsExtraRobot] = useState(false);
 	const [priority, setPriority] = useState(false);
+	// The reservation whose note is being changed, and the text so far
+	const [editingNote, setEditingNote] = useState<{ id: string; team: TeamFull; notes: string } | null>(null);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
 	// Admins type any team. Everyone else picks from the teams their Slack display name lists.
 	const bookable = api.reservation.bookableTeams.useQuery().data;
 	const ownTeams = bookable && !bookable.admin ? bookable.teams.map(String) : null;
 	const bookerTeam = ownTeams ? (ownTeams.includes(teamNumber) ? teamNumber : (ownTeams[0] ?? "")) : teamNumber;
 	const pending = isGuest ? { team: guestTeam, host: bookerTeam } : { team: bookerTeam };
-	const canSubmit =
-		/^\d+$/.test(bookerTeam) && (!isGuest || (/^\d+$/.test(guestTeam) && Number(guestTeam) !== Number(bookerTeam)));
 	// Why the last add or remove failed. Without this the server's refusal was
 	// invisible: the dialog just sat there, because it only closes on success.
 	const [error, setError] = useState<string | null>(null);
@@ -720,27 +743,40 @@ function TimeSlot({
 	// server records the ones it refused itself.
 	const reportError = api.errors.report.useMutation();
 
-	const handleCancelAdd = useCallback(() => {
-		setIsAdding(false);
+	const resetForm = useCallback(() => {
 		setTeamNumber(lastTeamNumber());
 		setIsGuest(false);
 		setGuestTeam("");
+		setNotes("");
+		setWantsExtraRobot(false);
+	}, []);
+
+	const handleCancelAdd = useCallback(() => {
+		setIsAdding(false);
+		resetForm();
 		setPriority(false);
+		setError(null);
+	}, [resetForm]);
+
+	const handleCancelNote = useCallback(() => {
+		setEditingNote(null);
 		setError(null);
 	}, []);
 
+	const editing = editingNote !== null;
+
 	useEffect(() => {
 		function handleEsc(event: KeyboardEvent) {
-			if (event.key === "Escape" && isAdding) {
-				handleCancelAdd();
-			}
+			if (event.key !== "Escape") return;
+			if (isAdding) handleCancelAdd();
+			if (editing) handleCancelNote();
 		}
 
 		document.addEventListener("keydown", handleEsc);
 		return () => {
 			document.removeEventListener("keydown", handleEsc);
 		};
-	}, [isAdding, handleCancelAdd]);
+	}, [isAdding, editing, handleCancelAdd, handleCancelNote]);
 
 	const slot = hourToTimeSlot(startHour);
 
@@ -765,6 +801,18 @@ function TimeSlot({
 
 	// Filter reservations for this specific time slot
 	const slotReservations = reservations.filter(r => r.slot === slot);
+
+	// A team already in this slot can only be coming back with another robot
+	const teamInSlot = pending.team !== "" && slotReservations.some(r => Number(r.team) === Number(pending.team));
+	const extraRobot = wantsExtraRobot || teamInSlot;
+	const invalidTeam = [bookerTeam, pending.team].find(team => team !== "" && !isValidTeamNumber(team));
+	const problem =
+		invalidTeam !== undefined
+			? `"${invalidTeam}" isn't a valid team number`
+			: isGuest && guestTeam !== "" && Number(guestTeam) === Number(bookerTeam)
+				? `Team ${guestTeam} can't be its own guest`
+				: null;
+	const canSubmit = bookerTeam !== "" && pending.team !== "" && problem === null;
 
 	const addReservation = api.reservation.add.useMutation({
 		onMutate: async newReservation => {
@@ -801,9 +849,7 @@ function TimeSlot({
 				return old.map(r => (r.id === "temp-id" ? reservation : r));
 			});
 			setIsAdding(false);
-			setTeamNumber(lastTeamNumber());
-			setIsGuest(false);
-			setGuestTeam("");
+			resetForm();
 		},
 		onError: (err, _newReservation, context) => {
 			// Rollback on error. The dialog is still open, so its pending pill comes back with it.
@@ -866,6 +912,22 @@ function TimeSlot({
 		},
 	});
 
+	const saveNote = api.reservation.setNotes.useMutation({
+		onMutate: () => setError(null),
+		onSuccess: ({ reservation }) => {
+			utils.reservation.list.setData({ date }, old => {
+				if (!Array.isArray(old)) return [];
+				return old.map(r => (r.id === reservation.id ? reservation : r));
+			});
+			setEditingNote(null);
+		},
+		onError: err => {
+			const { message, reachedServer } = describeRequestError(err);
+			setError(message);
+			if (!reachedServer) reportError.mutate({ kind: "network", message: err.message, page: window.location.pathname });
+		},
+	});
+
 	// Create Date objects for time comparisons using lab timezone
 	const startTime = createDateFromDateStringHour(date, startHour, timeZone);
 	const endTime = createDateFromDateStringHour(date, endHour, timeZone);
@@ -888,10 +950,10 @@ function TimeSlot({
 	if (blackout && !closedAllDay) style.push(styles.timeSlotBlackedOut);
 	if (closedAllDay) style.push(styles.timeSlotMerged);
 
-	const handleAddReservation = useCallback(() => {
+	const handleAddReservation = () => {
 		if (!canSubmit) return;
-		addReservation.mutate({ date, slot, ...pending, notes: "", priority });
-	}, [date, slot, pending, canSubmit, priority, addReservation.mutate]);
+		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority });
+	};
 
 	const handleOpenAddModal = useCallback(() => {
 		setIsAdding(true);
@@ -916,10 +978,13 @@ function TimeSlot({
 						key={r.id}
 						teamNumber={r.team}
 						guestOf={r.host}
+						notes={r.notes}
+						extraRobot={r.extraRobot}
 						isPendingDeletion={pendingDeletions.has(r.id)}
 						isPendingAddition={r.id === "temp-id"}
 						hasEnded={hasEnded}
 						disabled={pendingDeletions.has(r.id)}
+						onEditNote={() => setEditingNote({ id: r.id, team: r.team, notes: r.notes ?? "" })}
 						onRemove={() => {
 							console.log("Removing reservation:", {
 								id: r.id,
@@ -933,11 +998,18 @@ function TimeSlot({
 				{/* Pending addition, while there's a form to fill in. Once sent, the optimistic entry above
 				    stands in for it. */}
 				{isAdding && !addReservation.isPending && bookable && ownTeams?.length !== 0 && (
-					<ReservationPill teamNumber={pending.team} guestOf={pending.host} isTemp={true} isPendingAddition={true} />
+					<ReservationPill
+						teamNumber={pending.team}
+						guestOf={pending.host}
+						notes={notes}
+						extraRobot={extraRobot}
+						isTemp={true}
+						isPendingAddition={true}
+					/>
 				)}
 			</div>
 			{/* A failed removal has no dialog to report into. Tap to dismiss. */}
-			{error && !isAdding && (
+			{error && !isAdding && !editing && (
 				<button type="button" className={styles.slotError} onClick={() => setError(null)}>
 					{error}
 				</button>
@@ -1018,8 +1090,8 @@ function TimeSlot({
 											id={`team-${date}-${slot}`}
 											value={teamNumber}
 											onChange={e => {
-												setTeamNumber(e.target.value);
-												rememberTeamNumber(e.target.value);
+												setTeamNumber(e.target.value.trim());
+												rememberTeamNumber(e.target.value.trim());
 											}}
 											placeholder="Enter team number"
 										/>
@@ -1074,6 +1146,40 @@ function TimeSlot({
 										</p>
 									</div>
 								)}
+								<div className={styles.formGroup}>
+									<label className={styles.checkboxLabel}>
+										<input
+											type="checkbox"
+											checked={extraRobot}
+											disabled={teamInSlot}
+											onChange={e => setWantsExtraRobot(e.target.checked)}
+											className={styles.hiddenCheckbox}
+										/>
+										<span className={styles.checkboxEmoji}>{extraRobot ? "✔️" : ""}</span>
+										<span className={styles.checkboxText}>Extra robot</span>
+									</label>
+									{teamInSlot && (
+										<p className={styles.modalNote}>
+											Team {pending.team} already has this slot, so this adds a line for another robot.
+										</p>
+									)}
+								</div>
+								<div className={styles.formGroup}>
+									<label htmlFor={`note-${date}-${slot}`}>Note (optional)</label>
+									<input
+										type="text"
+										id={`note-${date}-${slot}`}
+										value={notes}
+										maxLength={RESERVATION_NOTES_MAX}
+										onChange={e => setNotes(e.target.value)}
+										placeholder="A few words, shown on the calendar"
+									/>
+								</div>
+								{problem && (
+									<p className={styles.modalError} role="alert">
+										{problem}
+									</p>
+								)}
 								<div className={styles.modalActions}>
 									<button type="submit" disabled={!canSubmit || addReservation.isPending}>
 										{addReservation.isPending ? "Adding..." : "Add"}
@@ -1084,6 +1190,45 @@ function TimeSlot({
 								</div>
 							</form>
 						)}
+					</div>
+				</div>
+			)}
+			{/* Add or change the note on a reservation already booked */}
+			{editingNote && (
+				<div className={styles.addReservationModal}>
+					<div className={styles.modalContent}>
+						<h3>Note for team {editingNote.team}</h3>
+						{error && (
+							<div className={styles.modalError} role="alert">
+								{error}
+							</div>
+						)}
+						<form
+							onSubmit={e => {
+								e.preventDefault();
+								saveNote.mutate({ id: editingNote.id, notes: editingNote.notes });
+							}}
+						>
+							<div className={styles.formGroup}>
+								<label htmlFor={`edit-note-${editingNote.id}`}>Note</label>
+								<input
+									type="text"
+									id={`edit-note-${editingNote.id}`}
+									value={editingNote.notes}
+									maxLength={RESERVATION_NOTES_MAX}
+									onChange={e => setEditingNote({ ...editingNote, notes: e.target.value })}
+									placeholder="A few words, shown on the calendar"
+								/>
+							</div>
+							<div className={styles.modalActions}>
+								<button type="submit" disabled={saveNote.isPending}>
+									{saveNote.isPending ? "Saving..." : "Save"}
+								</button>
+								<button type="button" onClick={handleCancelNote}>
+									Cancel
+								</button>
+							</div>
+						</form>
 					</div>
 				</div>
 			)}

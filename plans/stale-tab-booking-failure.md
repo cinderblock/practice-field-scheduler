@@ -40,13 +40,21 @@ can't recur for the same reason.
 - **Security, found on the way:** production runs Next.js 15.3.3 and React 19.1.0.
   That is in range for CVE-2025-55182 (React2Shell), unauthenticated RCE, fixed
   in 15.3.6, and the follow-up DoS and source exposure CVEs, fixed in 15.3.8.
-  15.3.9 is the newest 15.3 on npm. The log has `Failed to find Server Action
+  15.3.9 is the newest 15.3 on npm, and turned out not to be enough: see the
+  correction below. The log has `Failed to find Server Action
 "x"`, `Unexpected end of form`, and `Cannot read properties of undefined
 (reading 'aa')`, which look like probes, not proof of a successful attack.
   Checked `docker diff`, `docker top` and the temp directories on 2026-11-02: only
   image cache changed, one `next-server` process, runs as uid 10001, temp empty.
   That rules out an obvious foothold in this container's lifetime, nothing more.
   Earlier containers are gone, and `/data` was not audited.
+
+- **Correction, 2026-11-02:** 15.3.9 closed React2Shell but not the image optimizer
+  RCEs `GHSA-2xp9-vwfh-vxw4` and `GHSA-2464-fhr4-w9xw`, which have no fix on 15.3.
+  `/_next/image` answers 200 in production. The ops audit thread found this; GitHub's
+  advisory API confirmed it. I searched for fixes to one CVE family when I should
+  have asked the advisory API what affects the version. `gh api -X GET advisories -f
+ecosystem=npm -f "affects=next@<version>"` lists everything. Fixed by 15.5.28.
 
 ## Decisions (made without asking; easy to redirect)
 

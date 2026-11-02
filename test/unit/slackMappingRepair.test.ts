@@ -15,7 +15,8 @@
  * Kept apart from the end-to-end suite because it needs the data files in
  * place before the backend module loads. Slack is simulated at `fetch`.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Session } from "next-auth";
@@ -85,9 +86,11 @@ mkdirSync(join(dataDir, new Date().getFullYear().toString()));
 
 const { Context, syncSlackNames } = await import("~/server/backend");
 
-afterAll(() => {
+afterAll(async () => {
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
+	// The backend's last writes can still be landing. Unlike rmSync, this lets them finish, and each
+	// retry lists the directory again, rather than failing forever on a file it hadn't seen.
+	await rm(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 const mappings = () =>

@@ -64,7 +64,7 @@ const { checkAccess } = await import("~/server/backend");
 afterAll(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
+	rmSync(dataDir, { recursive: true, force: true });
 });
 
 describe("personal link store at startup", () => {

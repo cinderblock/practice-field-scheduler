@@ -89,7 +89,7 @@ beforeAll(async () => {
 
 afterAll(() => {
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
+	rmSync(dataDir, { recursive: true, force: true });
 });
 
 afterEach(() => {

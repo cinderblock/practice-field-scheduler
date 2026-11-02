@@ -14,6 +14,7 @@ import { describeRequestError } from "./clientErrors";
 import { DayWeather } from "./DayWeather";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
+import { useHoldUpdate } from "./UpdateWatcher";
 import { useInterval } from "./useInterval";
 
 type InitialReservations = {
@@ -729,6 +730,7 @@ function TimeSlot({
 	// The reservation whose note is being changed, and the text so far
 	const [editingNote, setEditingNote] = useState<{ id: string; team: TeamFull; notes: string } | null>(null);
 	const [pendingDeletions, setPendingDeletions] = useState<Set<string>>(new Set());
+	useHoldUpdate(isAdding || editingNote !== null);
 	// Admins type any team. Everyone else picks from the teams their Slack display name lists.
 	const bookable = api.reservation.bookableTeams.useQuery().data;
 	const ownTeams = bookable && !bookable.admin ? bookable.teams.map(String) : null;

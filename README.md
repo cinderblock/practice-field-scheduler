@@ -381,6 +381,15 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 
 ## Deployment
 
+An open tab finds out about a new version by itself. It compares the build that
+served it with `/api/version` on load, on focus, and every 5 minutes, then reloads.
+It waits while a dialog is open, a request is running, or a text field has focus,
+and it reloads at most once for any version, so a mismatch can't become a loop. A
+component holding something a reload would lose calls `useHoldUpdate`.
+
+A tab can still submit before it notices, so new tRPC input fields have to stay
+optional or defaulted. A tab that's refused anyway is told to reload.
+
 This repo **does not deploy itself.** Pushing `master` builds a container image
 and stops there:
 

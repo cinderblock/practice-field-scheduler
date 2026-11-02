@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { api } from "~/trpc/react";
 import type { Holiday } from "~/types";
 import styles from "./HolidaysTable.module.css";
@@ -11,6 +12,7 @@ interface HolidaysTableProps {
 
 export function HolidaysTable({ holidays: initialHolidays }: HolidaysTableProps) {
 	const [isAdding, setIsAdding] = useState(false);
+	useHoldUpdate(isAdding);
 	const [newHoliday, setNewHoliday] = useState({
 		name: "",
 		date: "",

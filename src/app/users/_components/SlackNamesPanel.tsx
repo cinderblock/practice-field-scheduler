@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { describeSlackNameIssue } from "~/server/util/slackName";
 import { api } from "~/trpc/react";
 import ui from "./adminUi.module.css";
@@ -36,6 +37,7 @@ export function SlackNamesPanel() {
 	const [running, setRunning] = useState<"preview" | "send" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [confirmingSend, setConfirmingSend] = useState(false);
+	useHoldUpdate(confirmingSend);
 
 	const busy = checkNow.isPending || nudge.isPending;
 

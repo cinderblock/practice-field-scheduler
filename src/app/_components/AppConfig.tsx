@@ -26,6 +26,8 @@ export type AppConfig = {
 	 * then says nothing about cameras.
 	 */
 	fieldCameras: string[];
+	/** The build that served this page, which an open tab compares with the running one. */
+	version: string | null;
 };
 
 const AppConfigContext = createContext<AppConfig | null>(null);

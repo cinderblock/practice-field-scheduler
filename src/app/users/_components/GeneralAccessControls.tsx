@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { api } from "~/trpc/react";
 import type { PersonalAccessStatus } from "~/types";
 import ui from "./adminUi.module.css";
@@ -72,6 +73,7 @@ export function GeneralAccessControls({
 	const [confirming, setConfirming] = useState<Confirming>(null);
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	useHoldUpdate(revealed !== null || confirming !== null);
 
 	const busy = reveal.isPending || rotate.isPending || setApproved.isPending;
 	const approved = status === "active" || status === "not_issued" || status === "invalid_name";

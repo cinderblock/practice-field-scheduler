@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAppConfig } from "~/app/_components/AppConfig";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { FIELD_ISSUE_KINDS, fieldIssueKindInfo, sortSnapshots } from "~/server/util/fieldIssue";
 import { formatHour, getTimeSlots } from "~/server/util/timeSlots";
 import { dateToLocalString } from "~/server/util/timeUtils";
@@ -35,6 +36,7 @@ export function IssuesList({
 	const [error, setError] = useState<string | null>(null);
 	const [resolving, setResolving] = useState<{ id: string; note: string } | null>(null);
 	const [lightbox, setLightbox] = useState<{ issue: FieldIssue; snapshot: FieldIssueSnapshot } | null>(null);
+	useHoldUpdate(resolving !== null);
 
 	const { timeSlotBorders } = useAppConfig();
 	const slots = useMemo(() => getTimeSlots(timeSlotBorders), [timeSlotBorders]);

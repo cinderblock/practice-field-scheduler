@@ -4,10 +4,12 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 
 import { env } from "~/env";
+import { buildVersion } from "~/server/buildVersion";
 import { camerasConfigured, configuredCameras } from "~/server/cameras";
 import { TRPCReactProvider } from "~/trpc/react";
 import { AppConfigProvider } from "./_components/AppConfig";
 import { ErrorReporter } from "./_components/ErrorReporter";
+import { UpdateWatcher } from "./_components/UpdateWatcher";
 
 // Every page is rendered per request. Otherwise Next prerenders the ones it
 // thinks are static (/login, /_not-found) at build time, when the deployment's
@@ -39,6 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 		// Only the labels, and only when frames can actually be fetched: a half-configured
 		// setup shouldn't promise cameras the report will never get.
 		fieldCameras: camerasConfigured() ? configuredCameras().map(c => c.label) : [],
+		version: buildVersion(),
 	};
 
 	return (
@@ -48,6 +51,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 					<TRPCReactProvider>
 						{children}
 						<ErrorReporter />
+						<UpdateWatcher />
 					</TRPCReactProvider>
 				</AppConfigProvider>
 			</body>

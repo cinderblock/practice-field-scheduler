@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useAppConfig } from "~/app/_components/AppConfig";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { useInterval } from "~/app/_components/useInterval";
 import { blackoutDayCount, blackoutEndDate, formatBlackoutDates } from "~/server/util/blackout";
 import { getTimeSlots } from "~/server/util/timeSlots";
@@ -36,6 +37,7 @@ const emptyBlackout: NewBlackout = { date: "", endDate: "", slot: AllDay, reason
 
 export function BlackoutsTable({ blackouts: initialBlackouts }: { blackouts: Blackout[] }) {
 	const [isAdding, setIsAdding] = useState(false);
+	useHoldUpdate(isAdding);
 	const [isRange, setIsRange] = useState(false);
 	const [draft, setDraft] = useState<NewBlackout>(emptyBlackout);
 	const [conflicts, setConflicts] = useState<Reservation[] | null>(null);

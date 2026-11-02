@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAppConfig } from "~/app/_components/AppConfig";
 import { describeRequestError } from "~/app/_components/clientErrors";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import type { CameraOutcome } from "~/server/backend";
 import { FIELD_ISSUE_KINDS, fieldIssueKindInfo, MAX_PHOTOS_PER_ISSUE, PHOTO_MAX_SIDE } from "~/server/util/fieldIssue";
 import { api } from "~/trpc/react";
@@ -98,6 +99,7 @@ export function ReportFieldIssueButton({
 	className?: string;
 }) {
 	const [open, setOpen] = useState(false);
+	useHoldUpdate(open);
 
 	return (
 		<>

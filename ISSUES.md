@@ -1,14 +1,5 @@
 # Issues
 
-## Open tabs keep running the old client after a deploy
-
-Nothing tells a tab that a new version is live, and tabs stay open for days.
-`extraRobot` becoming required on `reservation.add` refused every booking from
-such a tab (`plans/stale-tab-booking-failure.md`), and the person saw a raw
-ZodError. That one is fixed, but any later change to a client/server contract can
-do the same. Worth a version check that asks the tab to reload, and a readable
-message for validation errors.
-
 ## Possible compromise while Next.js was unpatched
 
 Production ran Next.js 15.3.3, in range for unauthenticated RCE CVE-2025-55182,

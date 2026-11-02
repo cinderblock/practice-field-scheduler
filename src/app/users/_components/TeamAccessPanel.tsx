@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHoldUpdate } from "~/app/_components/UpdateWatcher";
 import { api } from "~/trpc/react";
 import ui from "./adminUi.module.css";
 import styles from "./TeamAccessPanel.module.css";
@@ -54,6 +55,7 @@ export function TeamAccessPanel() {
 	const [error, setError] = useState<string | null>(null);
 	const [lastRotation, setLastRotation] = useState<Rotation | null>(null);
 	const [copied, setCopied] = useState(false);
+	useHoldUpdate(revealed !== null || confirmingRotate !== null || lastRotation !== null);
 
 	async function doReveal(team: string) {
 		setError(null);

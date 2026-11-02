@@ -50,7 +50,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-	rmSync(dataDir, { recursive: true, force: true });
+	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 describe("legacy blackout migration", () => {

@@ -104,7 +104,7 @@ beforeAll(async () => {
 
 afterAll(() => {
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true });
+	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 describe("blackout management permissions", () => {

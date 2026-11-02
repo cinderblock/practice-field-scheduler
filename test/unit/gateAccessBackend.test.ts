@@ -67,7 +67,7 @@ const { Context, checkAccess, PermissionError, syncSlackNames } = await import("
 afterAll(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true });
+	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 type Dm = { channel: string; text: string };

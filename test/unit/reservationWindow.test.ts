@@ -132,7 +132,7 @@ afterEach(() => {
 afterAll(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true });
+	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 describe("the bookable window", () => {

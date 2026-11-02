@@ -87,7 +87,7 @@ const { Context, syncSlackNames } = await import("~/server/backend");
 
 afterAll(() => {
 	vi.unstubAllGlobals();
-	rmSync(dataDir, { recursive: true, force: true });
+	rmSync(dataDir, { recursive: true, force: true, maxRetries: 5 });
 });
 
 const mappings = () =>

@@ -36,7 +36,13 @@ by themselves, without ever costing anyone what they're typing.
       the reload across a restart on a new build, the typed note survived, the tab
       reloaded once when the dialog closed, didn't loop, and booked afterwards.
 - [x] README, typecheck, unit tests, `npm run check`, e2e
-- [ ] Release
+- [x] Released 2026-11-02 11:12 AM PST (19:12Z), with the user's yes: `e99092e`
+      pushed, Test (unit and e2e) and Build image green, ops `0366f41` (pin.json
+      only, from a throwaway worktree), Server Deploys run `41507587713` succeeded.
+      The running image is digest `1b1a3393…`, revision `e99092e`. `/api/version`
+      through Cloudflare matches the container's `BUILD_ID`, with `no-store`. A
+      headless browser on production: 1 load with the real version, exactly 2 when
+      told of a newer one, so no loop.
 
 ## Findings / gotchas
 
@@ -44,6 +50,14 @@ by themselves, without ever costing anyone what they're typing.
   watcher's timers stay on the real clock and a "didn't reload" check proves nothing.
 - The standalone server needs `NEXTAUTH_URL` to start with `https://`, or every
   page 500s while `/api/version` still answers.
+
+- CI's `rmSync` cleanup failure in `slackMappingRepair.test.ts` was not fixed by
+  `maxRetries` (`7a48f50`, reverted in `e99092e`). rmSync's retry doesn't list the
+  directory again, and it blocks the writes it's waiting for. The async `rm` does
+  both. That failure also skips e2e in Test, and fails Build image outright.
+- This release can't be seen working on a real tab yet: the first real
+  version-to-version refresh is the next deploy. Tabs from before this one need
+  one manual reload to get the watcher.
 
 ## Things not to do
 

@@ -65,16 +65,28 @@ can't recur for the same reason.
       session, Slack off: no `extraRobot` books; `false` books; a repeat from
       an old client is still refused; `true` adds a second line.
 - [x] `ISSUES.md` entries
-- [ ] Push `master`, wait for the image, pin it in ops, verify: needs the
-      user's yes for the push and for the pin
-- [ ] Decide whether to rotate secrets and audit `/data`: the user's call
+- [x] Pushed `0700e34`, with the user's yes. Test and Build image passed.
+- [x] Deployed 2026-11-02 9:44 AM PST (17:44Z), with the user's yes: ops
+      `13b79e4` (pin.json only, from a throwaway worktree), Server Deploys run
+      `41493698850` succeeded. The running image is digest `171ad60c…`, revision
+      `0700e34`, and the banner says Next.js 15.3.9. `/`, `/login`, auth providers
+      and the `all` feed answer 200, and `reservation.add` without a session 401.
+- [x] Cause confirmed by the outcome: Greg failed 3 more times, the last at 9:11:59
+      AM PST (17:11:59Z), then booked at 9:12:21 AM (17:12:21Z) from the same
+      browser, 32 minutes before this fix went live, so only a reload changed. That
+      is also the first real booking through the new dialog.
+- [x] Other sites: handed to the ops thread "Audit other sites for React2Shell /
+      Next.js", `plans/next-react-exposure-audit.md` there.
+- [ ] Auto-refresh on a new version, design in the open questions: needs a yes
+- [ ] Secret rotation and a `/data` audit: deferred
 
 ## Open questions for the user
 
-1. Push and deploy both fixes? Recommended, today, because of the RCE.
-2. Rotate the secrets listed in `ISSUES.md`? Recommended: the app sat exposed
-   for about 11 months, and a clean-looking container can't rule out a past read
-   of its environment.
+1. Build auto-refresh? Tabs check the server's build version on focus and every
+   few minutes, reload when no dialog is open, and otherwise wait until it closes.
+   A rejected submit from an old tab says the page is out of date.
+2. Rotate the secrets listed in `ISSUES.md`? The user's answer on 2026-11-02: not
+   yet. Don't rotate until they say so.
 
 ## Things not to do
 

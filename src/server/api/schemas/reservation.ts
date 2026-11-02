@@ -18,7 +18,8 @@ export const reservationSchema = z
 		/** Set for a guest reservation: the booker's team, which hosts `team`. */
 		host: teamSchema.optional(),
 		notes: notesSchema,
-		extraRobot: z.boolean(),
+		/** Defaulted, not required: a tab opened before a deploy keeps running the old client, which doesn't send it. */
+		extraRobot: z.boolean().default(false),
 		priority: z.boolean(),
 	})
 	.refine(({ date, slot }) => isValidTimeSlot(`${date} ${slot}`), "Invalid time slot");

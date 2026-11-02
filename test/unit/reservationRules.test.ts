@@ -41,6 +41,12 @@ describe("the reservation schema", () => {
 		expect(accepts({ extraRobot: true })).toBe(true);
 	});
 
+	it("accepts a booking from a tab opened before extra robots existed", () => {
+		const { extraRobot: _, ...fromAnOlderClient } = booking;
+
+		expect(reservationSchema.parse(fromAnOlderClient).extraRobot).toBe(false);
+	});
+
 	it.each(["0", "-1", "12a", "1234 and friends", "1234\n"])("refuses team %j", team => {
 		expect(accepts({ team })).toBe(false);
 	});

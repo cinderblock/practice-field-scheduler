@@ -12,6 +12,9 @@ const config = {
 	// section): `standalone` emits .next/standalone with only the traced
 	// dependencies, which is what the image runs with `node server.js`.
 	output: "standalone",
+	// Otherwise Next guesses from lockfiles it finds further up, which can nest the
+	// output, and the Dockerfile needs server.js at the top of .next/standalone.
+	outputFileTracingRoot: import.meta.dirname,
 	productionBrowserSourceMaps: process.env.ENABLE_SOURCEMAPS === "true",
 	allowedDevOrigins: [NextAuthURL?.replace("https://", "") ?? "localhost"],
 	images: {

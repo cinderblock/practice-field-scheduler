@@ -298,6 +298,15 @@ every use, so a stable bookmark is not a standing grant.
   out at the next sign-in.
 - **Links reset each year.** They're stored under `data/<year>/`, so a new
   season starts with fresh links, issued as people sign in.
+- **Links say who they're for.** A token starts with a readable label, then 32
+  random characters: `team-1234-…` for a team, and first name, last initial
+  and team numbers for a person (`jane-d-1234-…`). The label grants nothing:
+  lookup matches the whole token, and nothing parses it. It records who the link
+  was for when it was issued, so a name change leaves old links as they are.
+- **People manage their own links.** **Gate Links** on the home page lists a
+  person's links, shows one when asked, and replaces it if it gets out. Any
+  member can replace their team's link: it asks first, it's logged, and the
+  team's DM names who did it.
 - Grace periods and site hours are constants in `src/server/access.ts`.
 
 #### Slack names

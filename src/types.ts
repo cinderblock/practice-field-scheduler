@@ -105,12 +105,12 @@ export type UserEntry = {
  */
 export type TeamAccess = {
 	team: TeamFull;
-	/** Opaque URL-safe token; goes in `${GATE_BASE_URL}/g/<token>`. */
+	/** URL-safe, readable label then random; goes in `${GATE_BASE_URL}/g/<token>`. */
 	token: string;
 	created: Date;
 	/** When the token was last rotated (absent if never). */
 	rotated?: Date;
-	/** Admin who performed the last rotation (absent for the initial issue). */
+	/** Who performed the last rotation: an admin or a team member (absent for the initial issue). */
 	rotatedBy?: UserId;
 };
 
@@ -121,12 +121,12 @@ export type TeamAccess = {
  */
 export type PersonalAccess = {
 	userId: UserId;
-	/** Opaque URL-safe token; goes in `${GATE_BASE_URL}/g/<token>`. */
+	/** URL-safe, readable label then random; goes in `${GATE_BASE_URL}/g/<token>`. */
 	token: string;
 	created: Date;
 	/** When the token was last rotated (absent if never). */
 	rotated?: Date;
-	/** Admin who performed the last rotation (absent for the initial issue). */
+	/** Who performed the last rotation: an admin or the owner (absent for the initial issue). */
 	rotatedBy?: UserId;
 };
 

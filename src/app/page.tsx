@@ -176,6 +176,9 @@ async function LoggedIn({ session }: { session: Session }) {
 							</Link>
 						</>
 					)}
+					<Link href="/links" className={styles.logoutButtonSmall}>
+						Gate&nbsp;Links
+					</Link>
 					<Link style={{ userSelect: "none" }} href="/api/auth/signout" className={styles.logoutButtonSmall}>
 						Sign&nbsp;out
 					</Link>

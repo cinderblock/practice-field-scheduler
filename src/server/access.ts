@@ -261,7 +261,7 @@ function evaluateTeam(
 	reservations: readonly Reservation[],
 	now: Date,
 ): AccessCheckResult {
-	if (!isSupportedTool(tool)) return deny("tool_not_authorized", "team", tool);
+	if (!isSupportedTool(tool)) return deny("tool_not_authorized", "team", tool, { team: teamFor(team) });
 
 	const candidates = windowsFor(team, reservations);
 	const active = candidates.find(c => now >= c.window.start && now < c.window.end);
@@ -280,7 +280,9 @@ function evaluateTeam(
 
 	const near = nearest(now, candidates);
 	return deny("outside_window", "team", tool, {
-		team: near ? teamFor(accessTeamFor(near.reservation)) : null,
+		// The link's own team when there's no reservation to name, so the gate can
+		// still say whose link this is.
+		team: teamFor(near ? accessTeamFor(near.reservation) : team),
 		window: near?.window ?? null,
 	});
 }

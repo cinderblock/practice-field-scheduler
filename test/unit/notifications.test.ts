@@ -4,6 +4,7 @@ import type { Reservation, UserEntry } from "~/types";
 const { envState } = vi.hoisted(() => ({
 	envState: {
 		GATE_BASE_URL: "https://gate.example.test" as string | undefined,
+		NEXTAUTH_URL: "https://scheduler.example.test",
 		SLACK_BOT_TOKEN: "xoxb-test-token" as string | undefined,
 	},
 }));
@@ -119,6 +120,11 @@ describe("linksMessage", () => {
 	it("frames a rotation as a replacement and warns the old link is dead", () => {
 		const text = linksMessage([{ kind: "personal", token: "tok-new" }], "rotated");
 		expect(text).toContain("replaced");
+		expect(text).toContain("<https://scheduler.example.test/links>");
+		expect(text).not.toContain("replaced* by");
+		expect(linksMessage([{ kind: "personal", token: "tok-new" }], "rotated", "Jane <Doe>")).toContain(
+			"*replaced* by Jane &lt;Doe&gt;",
+		);
 		expect(text).toContain("no longer works");
 		expect(text).toContain("Bookmark it");
 	});
@@ -127,7 +133,7 @@ describe("linksMessage", () => {
 		envState.GATE_BASE_URL = undefined;
 		const text = linksMessage([{ kind: "personal", token: "tok" }], "issued");
 		expect(text).toContain("(gate URL not configured");
-		expect(text).not.toContain("https://");
+		expect(text).not.toContain("gate.example.test");
 	});
 });
 

@@ -68,6 +68,7 @@ import {
 	type SlackMember,
 	SlackNotConfiguredError,
 } from "./slack";
+import { personalLinkLabel, teamLinkLabel } from "./util/accessLabel";
 import { activeBlackouts, blackoutCoversSlot, findBlackoutForSlot, normalizeBlackoutRange } from "./util/blackout";
 import { exit } from "./util/exit";
 import {
@@ -160,9 +161,12 @@ const slackNamesRefreshedAt = globalThis.__slackNamesRefreshedAt;
 /** What a token in {@link accessByToken} resolves to. */
 type IndexedToken = { kind: "team"; entry: TeamAccess } | { kind: "personal"; entry: PersonalAccess };
 
-function newAccessToken(): string {
-	// 24 random bytes ⇒ 32 url-safe characters, ~192 bits of entropy.
-	return crypto.randomBytes(24).toString("base64url");
+/**
+ * A readable label, then 24 random bytes ⇒ 32 url-safe characters, ~192 bits of
+ * entropy. The label grants nothing: see `accessLabel.ts`.
+ */
+function newAccessToken(label: string): string {
+	return `${label}-${crypto.randomBytes(24).toString("base64url")}`;
 }
 
 function findTeamAccess(team: TeamFull): TeamAccess | undefined {
@@ -179,6 +183,8 @@ type AccessRecord = { token: string; created: Date; rotated?: Date; rotatedBy?: 
 type AccessStore<T extends AccessRecord> = {
 	records: T[];
 	find: () => T | undefined;
+	/** The readable start of this link's tokens. */
+	label: () => string;
 	make: (token: string) => T;
 	indexed: (entry: T) => IndexedToken;
 	persist: () => Promise<void>;
@@ -188,6 +194,7 @@ function teamStore(team: TeamFull): AccessStore<TeamAccess> {
 	return {
 		records: teamAccess,
 		find: () => findTeamAccess(team),
+		label: () => teamLinkLabel(team),
 		make: token => ({ team, token, created: new Date() }),
 		indexed: entry => ({ kind: "team", entry }),
 		persist: () => writeJsonFile(TEAM_ACCESS_FILE, teamAccess),
@@ -198,6 +205,10 @@ function personalStore(userId: UserId): AccessStore<PersonalAccess> {
 	return {
 		records: personalAccess,
 		find: () => findPersonalAccess(userId),
+		label: () => {
+			const user = users.find(u => u.id === userId);
+			return user ? personalLinkLabel(user) : personalLinkLabel({ name: "", teams: [] });
+		},
 		make: token => ({ userId, token, created: new Date() }),
 		indexed: entry => ({ kind: "personal", entry }),
 		persist: () => writeJsonFile(PERSONAL_ACCESS_FILE, personalAccess),
@@ -220,7 +231,7 @@ async function ensureAccess<T extends AccessRecord>(store: AccessStore<T>): Prom
 		const raced = store.find();
 		if (raced) return raced;
 
-		const entry = store.make(newAccessToken());
+		const entry = store.make(newAccessToken(store.label()));
 		store.records.push(entry);
 		accessByToken.set(entry.token, store.indexed(entry));
 		await store.persist();
@@ -242,7 +253,7 @@ async function rotateAccess<T extends AccessRecord>(store: AccessStore<T>, rotat
 	try {
 		const existing = store.find();
 		if (!existing) {
-			const entry = store.make(newAccessToken());
+			const entry = store.make(newAccessToken(store.label()));
 			store.records.push(entry);
 			accessByToken.set(entry.token, store.indexed(entry));
 			await store.persist();
@@ -250,7 +261,7 @@ async function rotateAccess<T extends AccessRecord>(store: AccessStore<T>, rotat
 		}
 
 		accessByToken.delete(existing.token);
-		existing.token = newAccessToken();
+		existing.token = newAccessToken(store.label());
 		existing.rotated = new Date();
 		existing.rotatedBy = rotatedBy;
 		accessByToken.set(existing.token, store.indexed(existing));
@@ -2059,17 +2070,24 @@ export class Context {
 	}> {
 		await this.assertAdmin("Only admins can rotate team access links");
 		await initialized();
+		return this.rotateTeamLink(team);
+	}
 
-		const admin = await this.user;
-		const entry = await rotateAccess(teamStore(team), admin.id);
+	/**
+	 * Replace a team's link and tell the team. `by` names a member who did it
+	 * themselves, so nobody is left wondering why their bookmark died.
+	 */
+	private async rotateTeamLink(team: TeamFull, by?: string) {
+		const actor = await this.user;
+		const entry = await rotateAccess(teamStore(team), actor.id);
 
 		const ctx = await this.getContext();
 		await log({ ...ctx, type: "teamLinkRotate", team: entry.team });
 
-		// DM the whole team, including the admin if they're on it — everyone's
-		// old bookmark just died.
+		// DM the whole team, including whoever did this if they're on it —
+		// everyone's old bookmark just died.
 		const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, null);
-		const outcomes = await notifyTeamOfLink(entry.team, entry.token, recipients);
+		const outcomes = await notifyTeamOfLink(entry.team, entry.token, recipients, by);
 
 		for (const o of outcomes.filter(o => o.sent)) {
 			const user = users.find(u => u.id === o.userId);
@@ -2180,10 +2198,13 @@ export class Context {
 	async rotatePersonalAccessLink(userId: UserId): Promise<{ userId: UserId } & LinkDelivery> {
 		await this.assertAdmin("Only admins can rotate personal access links");
 		await initialized();
+		return this.rotatePersonalLink(userId);
+	}
 
+	private async rotatePersonalLink(userId: UserId): Promise<{ userId: UserId } & LinkDelivery> {
 		const target = this.eligibleTarget(userId);
-		const admin = await this.user;
-		const entry = await rotateAccess(personalStore(target.id), admin.id);
+		const actor = await this.user;
+		const entry = await rotateAccess(personalStore(target.id), actor.id);
 
 		const ctx = await this.getContext();
 		await log({
@@ -2194,6 +2215,95 @@ export class Context {
 		});
 
 		return { userId: target.id, ...(await deliverPersonalLink(target, entry.token, "rotated")) };
+	}
+
+	/**
+	 * The signed-in person's own gate links, for "My gate links". Like the admin
+	 * listings it leaves the tokens out; each person reveals the one they want.
+	 * Issues anything they're due, the same as signing in does. `held` means
+	 * they get none until their Slack names are fixed or their account is back.
+	 */
+	async getMyGateLinks(): Promise<{
+		held: boolean;
+		personal: { created: Date; rotated: Date | null } | null;
+		teams: Array<{ team: TeamFull; created: Date; rotated: Date | null; memberCount: number }>;
+	}> {
+		const user = await this.user;
+		if (user.disabled || !hasValidSlackNames(user)) return { held: true, personal: null, teams: [] };
+
+		const personal = isPersonalAccessEligible(user) ? await ensureAccess(personalStore(user.id)) : null;
+		const teams = [];
+		for (const team of user.teams === "admin" ? [] : user.teams) {
+			const entry = await ensureAccess(teamStore(team));
+			teams.push({
+				team: entry.team,
+				created: entry.created,
+				rotated: entry.rotated ?? null,
+				memberCount: users.filter(u => !u.disabled && u.teams !== "admin" && u.teams.some(t => sameTeam(t, team)))
+					.length,
+			});
+		}
+
+		return {
+			held: false,
+			personal: personal && { created: personal.created, rotated: personal.rotated ?? null },
+			teams,
+		};
+	}
+
+	/** The team, as long as the signed-in person currently holds its link. */
+	private async ownTeam(team: TeamFull): Promise<TeamFull> {
+		const user = await this.user;
+		if (user.disabled || !hasValidSlackNames(user)) {
+			throw new PermissionError("Your gate links are on hold");
+		}
+		const own = user.teams === "admin" ? undefined : user.teams.find(t => sameTeam(t, team));
+		if (own === undefined) throw new PermissionError("You can only manage your own team's link");
+		return own;
+	}
+
+	/** Show someone their team's link. Logged, like an admin's reveal. */
+	async revealMyTeamLink(team: TeamFull): Promise<{ team: TeamFull; token: string }> {
+		const entry = await ensureAccess(teamStore(await this.ownTeam(team)));
+
+		const ctx = await this.getContext();
+		await log({ ...ctx, type: "teamLinkReveal", team: entry.team });
+
+		return { team: entry.team, token: entry.token };
+	}
+
+	/**
+	 * Replace your own team's link, without waiting for an admin when one gets
+	 * out. Any member can, because a leaked link matters more than a surprise
+	 * bookmark change; the log and the team's DM both say who did it.
+	 */
+	async rotateMyTeamLink(team: TeamFull) {
+		const own = await this.ownTeam(team);
+		const user = await this.user;
+		return this.rotateTeamLink(own, user.displayName ?? user.name);
+	}
+
+	/** Show someone their own personal link. Logged, like an admin's reveal. */
+	async revealMyPersonalLink(): Promise<{ token: string }> {
+		const user = await this.user;
+		const target = this.eligibleTarget(user.id);
+		const entry = await ensureAccess(personalStore(target.id));
+
+		const ctx = await this.getContext();
+		await log({
+			...ctx,
+			type: "personalLinkReveal",
+			targetUserId: target.id,
+			targetName: target.displayName ?? target.name,
+		});
+
+		return { token: entry.token };
+	}
+
+	/** Replace your own personal link. The old one stops working immediately. */
+	async rotateMyPersonalLink(): Promise<{ userId: UserId } & LinkDelivery> {
+		const user = await this.user;
+		return this.rotatePersonalLink(user.id);
 	}
 
 	/**

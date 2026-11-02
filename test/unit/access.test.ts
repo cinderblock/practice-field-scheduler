@@ -197,7 +197,7 @@ describe("team links", () => {
 			valid: false,
 			reason: "outside_window",
 			grant: "team",
-			team: null,
+			team: { id: "1234", name: "Team 1234" },
 			window_starts_at: null,
 			window_ends_at: null,
 		});
@@ -218,7 +218,11 @@ describe("team links", () => {
 	});
 
 	it("ignore other teams' reservations", () => {
-		expect(team(5678, [teamReservation], inside)).toMatchObject({ valid: false, team: null });
+		expect(team(5678, [teamReservation], inside)).toMatchObject({
+			valid: false,
+			team: { id: "5678", name: "Team 5678" },
+			window_starts_at: null,
+		});
 	});
 
 	it("match a numeric-string team against a numeric reservation", () => {
@@ -248,7 +252,11 @@ describe("guest reservations", () => {
 	});
 
 	it("don't open the gate on the guest team's own link", () => {
-		expect(team(9999, [guest], inside)).toMatchObject({ valid: false, reason: "outside_window", team: null });
+		expect(team(9999, [guest], inside)).toMatchObject({
+			valid: false,
+			reason: "outside_window",
+			team: { id: "9999", name: "Team 9999" },
+		});
 	});
 
 	it("give the host its nearest window when outside it", () => {

@@ -78,7 +78,7 @@ const dms = (): Dm[] =>
 		.map(([, init]) => JSON.parse(init?.body as string) as Dm);
 const dmsTo = (slackId: string) => dms().filter(d => d.channel === slackId);
 const lastDmTo = (slackId: string) => dmsTo(slackId).at(-1) as Dm;
-const tokensIn = (text: string) => [...text.matchAll(/\/g\/([A-Za-z0-9_-]{32})/g)].map(m => m[1] as string);
+const tokensIn = (text: string) => [...text.matchAll(/\/g\/([A-Za-z0-9_-]{32,})/g)].map(m => m[1] as string);
 
 /** Let fire-and-forget DM work finish, so "nothing was sent" is a real observation. */
 const settle = () => new Promise(resolve => setTimeout(resolve, 100));
@@ -268,6 +268,55 @@ describe("gate access, end to end", () => {
 		expect(fresh).toBeDefined();
 		expect(await checkAccess(fresh as string, "gate")).toMatchObject({ valid: true, grant: "personal" });
 		janePersonal = fresh as string;
+	});
+
+	it("labels links with who they're for, in front of the same random part", () => {
+		expect(team1234).toMatch(/^team-1234-[A-Za-z0-9_-]{32}$/);
+		expect(janePersonal).toMatch(/^jane-d-1234-5678-[A-Za-z0-9_-]{32}$/);
+	});
+
+	it("doesn't accept a label without the random part", async () => {
+		expect(await checkAccess("team-1234", "gate")).toMatchObject({ valid: false, reason: "unknown_token" });
+		expect(await checkAccess("jane-d-1234-5678", "gate")).toMatchObject({ valid: false, reason: "unknown_token" });
+	});
+
+	it("lists someone's own links without their tokens, and shows one when asked", async () => {
+		const mine = await jane.getMyGateLinks();
+		expect(mine.held).toBe(false);
+		expect(mine.personal).not.toBeNull();
+		expect(mine.teams.map(t => t.team).sort()).toEqual([1234, 5678]);
+		expect(JSON.stringify(mine)).not.toContain(team1234);
+		expect(JSON.stringify(mine)).not.toContain(janePersonal);
+
+		expect(await jane.revealMyTeamLink(1234)).toMatchObject({ team: 1234, token: team1234 });
+		expect(await jane.revealMyPersonalLink()).toEqual({ token: janePersonal });
+	});
+
+	it("lets a member replace their team's link, and tells the team who did", async () => {
+		const result = await jane.rotateMyTeamLink(1234);
+		expect(result).toMatchObject({ notified: 2, failed: 0 });
+
+		expect(await checkAccess(team1234, "gate")).toMatchObject({ valid: false, reason: "unknown_token" });
+		expect(lastDmTo(BOB.slack).text).toContain("*replaced* by Jane Doe (1234, 5678)");
+
+		const [fresh] = tokensIn(lastDmTo(BOB.slack).text);
+		expect(fresh).toMatch(/^team-1234-/);
+		team1234 = fresh as string;
+	});
+
+	it("lets someone replace their own personal link", async () => {
+		expect(await jane.rotateMyPersonalLink()).toMatchObject({ notified: 1, failed: 0, skipped: null });
+
+		expect(await checkAccess(janePersonal, "gate")).toMatchObject({ valid: false, reason: "unknown_token" });
+		const [fresh] = tokensIn(lastDmTo(JANE.slack).text);
+		expect(await checkAccess(fresh as string, "gate")).toMatchObject({ valid: true, grant: "personal" });
+		janePersonal = fresh as string;
+	});
+
+	it("won't let a member touch a team they aren't on", async () => {
+		await expect(jane.revealMyTeamLink(9999)).rejects.toBeInstanceOf(PermissionError);
+		await expect(jane.rotateMyTeamLink(9999)).rejects.toBeInstanceOf(PermissionError);
+		await expect(admin.rotateMyTeamLink(1234)).rejects.toBeInstanceOf(PermissionError);
 	});
 
 	it("revoking general gate access deletes the personal link but leaves team links alone", async () => {

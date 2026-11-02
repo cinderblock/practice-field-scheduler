@@ -44,12 +44,13 @@ function linkLine(link: GateLink): string[] {
 /**
  * Build the DM text for one or more links. Exported for tests.
  */
-export function linksMessage(links: readonly GateLink[], kind: LinkDmKind): string {
+export function linksMessage(links: readonly GateLink[], kind: LinkDmKind, by?: string): string {
 	const plural = links.length > 1;
+	const replacedBy = by ? ` by ${slackText(by)}` : "";
 	const opening =
 		kind === "rotated"
 			? [
-					`Your practice-field gate link${plural ? "s have" : " has"} been *replaced*. 🔄`,
+					`Your practice-field gate link${plural ? "s have" : " has"} been *replaced*${replacedBy}. 🔄`,
 					`The old link${plural ? "s no longer work" : " no longer works"} — please update your bookmark${plural ? "s" : ""}.`,
 				]
 			: kind === "approved"
@@ -66,7 +67,7 @@ export function linksMessage(links: readonly GateLink[], kind: LinkDmKind): stri
 			? "Bookmark them on your phone — they work all season. Outside their hours they'll tell you when they next open."
 			: "Bookmark it on your phone — it works all season. Outside its hours it'll tell you when it next opens.",
 		`No link opens the gate between ${formatHour(SITE_CLOSE_HOUR)} and ${formatHour(SITE_OPEN_HOUR)}.`,
-		"If a link gets out, ask an admin to replace it.",
+		`If a link gets out, replace it yourself at <${env.NEXTAUTH_URL.replace(/\/+$/, "")}/links>.`,
 	].join("\n");
 }
 
@@ -230,8 +231,9 @@ export async function notifyTeamOfLink(
 	team: TeamFull,
 	token: string,
 	recipients: readonly TeamMemberRecipient[],
+	by?: string,
 ): Promise<TeamDmOutcome[]> {
-	const text = linksMessage([{ kind: "team", team, token }], "rotated");
+	const text = linksMessage([{ kind: "team", team, token }], "rotated", by);
 	return fanOut(
 		recipients.filter(r => r.withLink),
 		() => text,

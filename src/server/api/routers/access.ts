@@ -13,8 +13,9 @@ const teamInput = z.union([z.number().int().positive(), z.string().min(1).max(64
 const userInput = z.string().min(1).max(64);
 
 /**
- * Admin-only gate-link management. Listings never include tokens — revealing
- * a link is an explicit, audited action.
+ * Gate-link management: admins for everyone, `mine` for a person's own links.
+ * Listings never include tokens — revealing a link is an explicit, audited
+ * action.
  */
 export const accessRouter = createTRPCRouter({
 	/** Configuration facts the admin UI uses to explain what will and won't work. */
@@ -27,6 +28,37 @@ export const accessRouter = createTRPCRouter({
 			/** Whether Slack names can be read; gate links wait on them. */
 			slackNames: slackNameSyncState(),
 		};
+	}),
+
+	/** A person's own links. Any team member can replace their team's link. */
+	mine: createTRPCRouter({
+		list: protectedProcedure.query(async ({ ctx }) => {
+			const links = await ctx.context.getMyGateLinks();
+			return {
+				...links,
+				teams: links.teams.map(t => ({ ...t, team: String(t.team) })),
+				gateUrlConfigured: gateAccessUrl("probe") !== null,
+				slackConfigured: isSlackConfigured(),
+				siteHours: describeSiteHours(),
+			};
+		}),
+
+		revealTeam: protectedProcedure.input(z.object({ team: teamInput })).mutation(async ({ input, ctx }) => {
+			const { team, token } = await ctx.context.revealMyTeamLink(input.team);
+			return { team: String(team), url: gateAccessUrl(token), token };
+		}),
+
+		rotateTeam: protectedProcedure.input(z.object({ team: teamInput })).mutation(async ({ input, ctx }) => {
+			const result = await ctx.context.rotateMyTeamLink(input.team);
+			return { ...result, team: String(result.team) };
+		}),
+
+		revealPersonal: protectedProcedure.mutation(async ({ ctx }) => {
+			const { token } = await ctx.context.revealMyPersonalLink();
+			return { url: gateAccessUrl(token), token };
+		}),
+
+		rotatePersonal: protectedProcedure.mutation(({ ctx }) => ctx.context.rotateMyPersonalLink()),
 	}),
 
 	teams: createTRPCRouter({

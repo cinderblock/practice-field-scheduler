@@ -59,12 +59,26 @@ can't recur for the same reason.
 
 - [x] Diagnose
 - [x] Schema default, with a test
-- [ ] Next.js 15.3.9, with full checks
-- [ ] `ISSUES.md` entries
-- [ ] Push and pin: needs the user's yes
+- [x] Next.js 15.3.9, with full checks. Typecheck, unit tests, `npm run check`,
+      production build and e2e pass.
+- [x] Real bookings against that build on scratch data, signed in with a minted
+      session, Slack off: no `extraRobot` books; `false` books; a repeat from
+      an old client is still refused; `true` adds a second line.
+- [x] `ISSUES.md` entries
+- [ ] Push `master`, wait for the image, pin it in ops, verify: needs the
+      user's yes for the push and for the pin
+- [ ] Decide whether to rotate secrets and audit `/data`: the user's call
+
+## Open questions for the user
+
+1. Push and deploy both fixes? Recommended, today, because of the RCE.
+2. Rotate the secrets listed in `ISSUES.md`? Recommended: the app sat exposed
+   for about 11 months, and a clean-looking container can't rule out a past read
+   of its environment.
 
 ## Things not to do
 
+- The e2e suite only loads the homepage. It proves nothing about booking.
 - Don't deploy or edit the ops pin without a yes for that change.
 - Don't add new required input fields to an existing tRPC mutation: open tabs
   keep running the old client after a deploy.

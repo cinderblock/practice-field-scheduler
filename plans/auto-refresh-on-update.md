@@ -55,9 +55,10 @@ by themselves, without ever costing anyone what they're typing.
   `maxRetries` (`7a48f50`, reverted in `e99092e`). rmSync's retry doesn't list the
   directory again, and it blocks the writes it's waiting for. The async `rm` does
   both. That failure also skips e2e in Test, and fails Build image outright.
-- This release can't be seen working on a real tab yet: the first real
-  version-to-version refresh is the next deploy. Tabs from before this one need
-  one manual reload to get the watcher.
+- Proven on production 2026-11-02: a headless tab opened at 11:52 AM PST on build
+  `KMvDCLld…` moved itself to `jydsTJNT…` at 12:02:16 PM, after the 11:57 AM
+  deploy, with the real timer and nothing faked, in exactly one reload. Tabs opened
+  before 11:12 AM don't have the watcher and need one manual reload.
 
 ## Things not to do
 

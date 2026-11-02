@@ -85,16 +85,14 @@ ecosystem=npm -f "affects=next@<version>"` lists everything. Fixed by 15.5.28.
       is also the first real booking through the new dialog.
 - [x] Other sites: handed to the ops thread "Audit other sites for React2Shell /
       Next.js", `plans/next-react-exposure-audit.md` there.
-- [ ] Auto-refresh on a new version, design in the open questions: needs a yes
-- [ ] Secret rotation and a `/data` audit: deferred
-
-## Open questions for the user
-
-1. Build auto-refresh? Tabs check the server's build version on focus and every
-   few minutes, reload when no dialog is open, and otherwise wait until it closes.
-   A rejected submit from an old tab says the page is out of date.
-2. Rotate the secrets listed in `ISSUES.md`? The user's answer on 2026-11-02: not
-   yet. Don't rotate until they say so.
+- [x] Auto-refresh: released, see `plans/auto-refresh-on-update.md`.
+- [x] Next.js 15.5.28 deployed 2026-11-02 11:57 AM PST (19:57Z), with the user's
+      yes: `756c938` pushed, Test (unit and e2e) and Build image passed, ops
+      `3550038` (pin.json only), Server Deploys run `41514616211` succeeded. The
+      running image is digest `f48f5fe5…`, and the banner says 15.5.28.
+- [x] Secret rotation and the `/data` audit: handed to their own threads,
+      "Walk through practice-field-scheduler key rotation" and "Audit
+      practice-field-scheduler data after RCE exposure".
 
 ## Things not to do
 

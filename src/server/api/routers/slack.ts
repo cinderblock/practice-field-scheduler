@@ -77,6 +77,6 @@ export const slackRouter = createTRPCRouter({
 	 * failures are reported in the result instead of aborting the batch.
 	 */
 	nudgeNameProblems: protectedProcedure
-		.input(z.object({ dryRun: z.boolean().default(false) }).default({}))
+		.input(z.object({ dryRun: z.boolean().default(false) }).default({ dryRun: false }))
 		.mutation(({ input, ctx }) => ctx.context.nudgeSlackNameProblems(input.dryRun)),
 });

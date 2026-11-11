@@ -16,7 +16,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 		return NextResponse.json({ error: "Avatar not found" }, { status: 404 });
 	}
 
-	return new NextResponse(avatarBuffer, {
+	// A Buffer may sit on a SharedArrayBuffer as far as the types know, which
+	// BodyInit refuses (TS 5.9+ lib). Copy into a plain Uint8Array.
+	return new NextResponse(new Uint8Array(avatarBuffer), {
 		status: 200,
 		headers: {
 			"Content-Type": "image/png",

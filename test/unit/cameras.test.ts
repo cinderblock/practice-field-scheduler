@@ -22,7 +22,7 @@ const cameras = await import("~/server/cameras");
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
 
-function imageResponse(bytes: Uint8Array = JPEG): Response {
+function imageResponse(bytes: Uint8Array<ArrayBuffer> = JPEG): Response {
 	return new Response(bytes, { status: 200, headers: { "content-type": "image/jpeg" } });
 }
 

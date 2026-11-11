@@ -65,7 +65,7 @@ function upload(id: string, body: BodyInit | null, headers: Record<string, strin
 	return new Request(`http://localhost/api/issues/${id}/photos`, { method: "POST", body, headers }) as never;
 }
 
-function photoForm(bytes: Uint8Array = JPEG): FormData {
+function photoForm(bytes: Uint8Array<ArrayBuffer> = JPEG): FormData {
 	const form = new FormData();
 	form.append("photo", new Blob([bytes], { type: "image/jpeg" }), "field.jpg");
 	return form;

@@ -20,16 +20,23 @@
 		"noEmit": true,
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
-		"jsx": "preserve",
+		"jsx": "react-jsx",
 		"plugins": [{ "name": "next" }],
 		"incremental": true,
 
 		/* Path Aliases */
-		"baseUrl": ".",
 		"paths": {
 			"~/*": ["./src/*"]
 		}
 	},
-	"include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", "**/*.js", ".next/types/**/*.ts"],
+	"include": [
+		"next-env.d.ts",
+		"**/*.ts",
+		"**/*.tsx",
+		"**/*.cjs",
+		"**/*.js",
+		".next/types/**/*.ts",
+		".next/dev/types/**/*.ts"
+	],
 	"exclude": ["node_modules", "data", "coverage", "allure-report"]
 }

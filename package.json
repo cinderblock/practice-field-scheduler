@@ -41,7 +41,7 @@
 		"@types/node": "^24.0.1",
 		"@types/react": "^19.1.8",
 		"@types/react-dom": "^19.1.6",
-		"@vitest/coverage-v8": "^4.1.12",
+		"@vitest/coverage-v8": "^5.0.0",
 		"@vitest/runner": "^4.1.12",
 		"allure-playwright": "^3.2.2",
 		"allure-vitest": "^3.2.2",
@@ -50,7 +50,7 @@
 		"prettier": "^3.6.2",
 		"supertest": "^7.1.1",
 		"typescript": "^7.0.2",
-		"vitest": "^4.1.12"
+		"vitest": "^5.0.0"
 	},
 	"ct3aMetadata": {
 		"initVersion": "7.39.3"

@@ -3,7 +3,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
-import { placeEventBreaks } from "~/server/util/frcEvents";
+import {
+	describeEventLead,
+	type EventLead,
+	eventLeadFor,
+	formatDateRange,
+	placeEventBreaks,
+} from "~/server/util/frcEvents";
 import {
 	isValidTeamNumber,
 	orderSlot,
@@ -236,6 +242,8 @@ interface ReservationPillProps {
 	priority?: boolean;
 	/** Past the slot's places: on the waitlist */
 	waitlisted?: boolean;
+	/** The FRC event this team is preparing for on the pill's date */
+	eventLead?: EventLead;
 	onRemove?: () => void;
 	onEditNote?: () => void;
 	isTemp?: boolean;
@@ -252,6 +260,7 @@ function ReservationPill({
 	extraRobot = false,
 	priority = false,
 	waitlisted = false,
+	eventLead,
 	onRemove,
 	onEditNote,
 	isTemp = false,
@@ -312,6 +321,9 @@ function ReservationPill({
 					<span className={styles.priorityMark} role="img" aria-label="priority">
 						★
 					</span>
+				)}
+				{eventLead && (
+					<span className={`${styles.pillNote} ${styles.pillEventLead}`}>🏁 {describeEventLead(eventLead)}</span>
 				)}
 				{extraRobot && <span className={styles.pillNote}>Extra robot</span>}
 				{notes && <span className={styles.pillNote}>{notes}</span>}
@@ -593,6 +605,7 @@ function Days({
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
 					weather={weather}
+					events={events}
 					isAdmin={isAdmin}
 					isHistory={true}
 				/>,
@@ -630,6 +643,7 @@ function Days({
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
 					weather={weather}
+					events={events}
 					isAdmin={isAdmin}
 				/>,
 			])}
@@ -643,6 +657,7 @@ function DayWrapper({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 	isHistory = false,
 }: {
@@ -651,6 +666,7 @@ function DayWrapper({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	events: FrcEvent[];
 	isAdmin: boolean;
 	isHistory?: boolean;
 }) {
@@ -662,6 +678,7 @@ function DayWrapper({
 				initialHolidays={initialHolidays}
 				blackouts={blackouts}
 				weather={weather}
+				events={events}
 				isAdmin={isAdmin}
 			/>
 		</div>
@@ -674,6 +691,7 @@ function Day({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 }: {
 	date: string;
@@ -681,6 +699,7 @@ function Day({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	events: FrcEvent[];
 	isAdmin: boolean;
 }) {
 	const { timeSlotBorders } = useAppConfig();
@@ -746,6 +765,7 @@ function Day({
 							initialReservations={initialReservations}
 							initialHolidays={initialHolidays}
 							blackouts={blackouts}
+							events={events}
 							isAdmin={isAdmin}
 							closedAllDay={closedAllDay}
 							// The closed-day block covers the whole row, so the slots can no longer be placed
@@ -769,6 +789,7 @@ function TimeSlot({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	events,
 	isAdmin,
 	closedAllDay,
 	column,
@@ -779,6 +800,8 @@ function TimeSlot({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	/** Our teams' FRC events, to flag teams preparing for one */
+	events: FrcEvent[];
 	isAdmin: boolean;
 	/** The whole day is closed, so this slot gives up its panel and notice to the day's one block */
 	closedAllDay: boolean;
@@ -884,6 +907,7 @@ function TimeSlot({
 				? `Team ${guestTeam} can't be its own guest`
 				: null;
 	const canSubmit = bookerTeam !== "" && pending.team !== "" && problem === null;
+	const pendingLead = pending.team === "" ? undefined : eventLeadFor(events, pending.team, date);
 
 	// Where the line being added would land, and whom it would push onto the waitlist
 	const previewId = "pending-preview";
@@ -1088,6 +1112,7 @@ function TimeSlot({
 								extraRobot={extraRobot}
 								priority={priority}
 								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								eventLead={pendingLead}
 								isTemp={true}
 								isPendingAddition={true}
 							/>
@@ -1099,6 +1124,7 @@ function TimeSlot({
 								extraRobot={r.extraRobot}
 								priority={r.priority}
 								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								eventLead={eventLeadFor(events, r.team, date)}
 								isPendingDeletion={pendingDeletions.has(r.id)}
 								isPendingAddition={r.id === "temp-id"}
 								hasEnded={hasEnded}
@@ -1227,6 +1253,12 @@ function TimeSlot({
 												</option>
 											))}
 										</select>
+									)}
+									{pendingLead && (
+										<p className={styles.modalNote}>
+											🏁 {describeEventLead(pendingLead)} (
+											{formatDateRange(pendingLead.event.start, pendingLead.event.end)})
+										</p>
 									)}
 								</div>
 								<div className={styles.formGroup}>

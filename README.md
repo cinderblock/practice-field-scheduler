@@ -270,6 +270,10 @@ on enabled user accounts. Off-season events count too.
 - **`/events`** (the Events button) lays out a whole season. It has a row for every competition week
   (weeks with none of our teams included, so it reads like a calendar), the Championship, and other
   events by month. A picker switches seasons. Finished events are dimmed.
+- **On each reservation**, a team preparing for an event gets a 🏁 line ("3 days before …",
+  "During …"), from 7 days before the event's first day through its last. The Add dialog shows the
+  same line for the team being booked. It's informational for now; giving these teams precedence
+  waits on reservation priority (#9) and limits (#10).
 
 The data comes from FIRST's [FRC Events API](https://frc-events.firstinspires.org/services/API) with
 the same `FIRST_API_USERNAME` / `FIRST_API_AUTH_TOKEN` as team avatars, so nothing else needs

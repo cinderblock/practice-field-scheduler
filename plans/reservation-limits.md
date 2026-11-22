@@ -14,8 +14,7 @@ will add a bonus through `priorityAllowance`.
 - Branch `t3/plan-reservation-limits`, one commit on `origin/master` after #9
   landed there as `bc663fb` (PR #58, a squash). It was first built on #9's local
   `4b19669` and moved with `git rebase --onto origin/master 4b19669`, which
-  went through cleanly. Local backup ref: `backup/limits-pre-rebase`. Delete it
-  once this branch is pushed.
+  went through cleanly.
 - Booking rules live in `src/server/backend.ts` (`Context.addReservation` and the
   `restrict*` guards). The ordering is in `src/server/util/reservation.ts`, which
   is shared with the calendar.
@@ -95,7 +94,7 @@ User, 2026-11-21/22:
       check, 550 unit tests and the build all pass there.
 - [x] Told the #9 and #8 threads about the refined rule and the hooks;
       commented the final rule on #10 (issuecomment-7076608192)
-- [ ] Push and open a PR, after #9 is pushed (waiting on the user)
+- [x] Pushed; PR #59 (https://github.com/cinderblock/practice-field-scheduler/pull/59)
 
 ## Findings / gotchas
 

@@ -157,6 +157,45 @@ export type WeatherForecast = {
 	samples: WeatherSample[];
 };
 
+/**
+ * An FRC event at least one of our teams is registered for, from FIRST's FRC Events API.
+ *
+ * "Our teams" are the team numbers on the site's user accounts.
+ */
+export type FrcEvent = {
+	season: number;
+	/** FIRST's event code, e.g. "CASJ". Unique within a season. */
+	code: string;
+	name: string;
+	/** FIRST's tournament type, e.g. "Regional", "DistrictEvent", "OffSeason" */
+	type: string;
+	/** Competition week, numbered as FIRST and The Blue Alliance show it (1 = Week 1, 0 = Week 0). Null outside the season's weeks (off-season, Championship). */
+	week: number | null;
+	/** First day, in the event's own time zone, as FIRST publishes it */
+	start: EventDate;
+	/** Last day, inclusive, in the event's own time zone */
+	end: EventDate;
+	venue: string;
+	city: string;
+	stateProv: string;
+	country: string;
+	website?: string;
+	/** Our teams registered for it, ascending */
+	teams: Team[];
+};
+
+/** The dates a competition week spans, from every event that week (ours or not) */
+export type FrcSeasonWeek = { season: number; week: number; start: EventDate; end: EventDate };
+
+export type FrcEventsSnapshot = {
+	updated: Date; // When the snapshot was fetched
+	/** Seasons FIRST has published events for, ascending */
+	seasons: number[];
+	weeks: FrcSeasonWeek[];
+	/** Our teams' events, in order of start date */
+	events: FrcEvent[];
+};
+
 export type Holiday = {
 	id: string;
 	name: string;

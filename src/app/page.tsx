@@ -12,6 +12,7 @@ import { ReservationCalendar } from "~/app/_components/ReservationCalendar";
 import { env } from "~/env";
 import { auth } from "~/server/auth";
 import { Context } from "~/server/backend";
+import { getFrcEvents } from "~/server/frcEvents";
 import { dateToDateString } from "~/server/util/timeUtils";
 import { getWeatherForecast } from "~/server/weather";
 import { HydrateClient } from "~/trpc/server";
@@ -132,11 +133,12 @@ async function LoggedIn({ session }: { session: Session }) {
 		})),
 	);
 
-	// Get holidays, blackouts, and weather for the calendar
-	const [holidays, blackouts, weather] = await Promise.all([
+	// Get holidays, blackouts, weather, and our teams' events for the calendar
+	const [holidays, blackouts, weather, frcEvents] = await Promise.all([
 		ctx.getHolidays(),
 		ctx.getBlackouts(),
 		getWeatherForecast(),
+		getFrcEvents(),
 	]);
 
 	return (
@@ -176,6 +178,9 @@ async function LoggedIn({ session }: { session: Session }) {
 							</Link>
 						</>
 					)}
+					<Link href="/events" className={styles.logoutButtonSmall}>
+						Events
+					</Link>
 					<Link href="/links" className={styles.logoutButtonSmall}>
 						Gate&nbsp;Links
 					</Link>
@@ -190,6 +195,7 @@ async function LoggedIn({ session }: { session: Session }) {
 				initialHolidays={holidays}
 				initialBlackouts={blackouts}
 				initialWeather={weather}
+				initialEvents={frcEvents}
 				isAdmin={isAdmin}
 			/>
 			<CalendarFeedButtons teams={Array.isArray(userTeams) ? userTeams : []} />

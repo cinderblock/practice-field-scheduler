@@ -1,0 +1,161 @@
+.intro {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem 1.5rem;
+	margin-bottom: 1.25rem;
+}
+
+.intro p {
+	margin: 0;
+}
+
+.seasons {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	border-radius: 0.6rem;
+	background: var(--background-secondary);
+}
+
+.season {
+	padding: 0.3rem 0.8rem;
+	border-radius: 0.45rem;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-secondary);
+}
+
+.season:hover {
+	background: var(--background-hover);
+}
+
+.season[aria-current="page"] {
+	background: var(--background-primary);
+	color: var(--accent-color);
+	box-shadow: 0 1px 4px rgba(30, 30, 60, 0.15);
+}
+
+.rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+/* A week (or month, or the Championship): when on the left, our events beside it */
+.row {
+	display: grid;
+	grid-template-columns: 11rem 1fr;
+	gap: 0.75rem 1.25rem;
+	align-items: start;
+	padding: 0.85rem 1rem;
+	border-radius: 0.75rem;
+	background: var(--background-primary);
+	box-shadow: 0 2px 8px rgba(30, 30, 60, 0.08);
+	box-sizing: border-box;
+}
+
+/* Weeks none of our teams attend stay, so the season reads like a calendar, but recede */
+.quiet {
+	padding-block: 0.5rem;
+	background: var(--background-secondary);
+	box-shadow: none;
+}
+
+.current {
+	outline: 2px solid var(--accent-color);
+	outline-offset: -2px;
+}
+
+.past {
+	opacity: 0.55;
+}
+
+/* An event in a row that is already dimmed as a whole */
+.past .past {
+	opacity: 1;
+}
+
+.when {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+}
+
+.label {
+	font-weight: 700;
+}
+
+.dates {
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+	font-variant-numeric: tabular-nums;
+}
+
+.quiet .when {
+	flex-direction: row;
+	align-items: baseline;
+	gap: 0.5rem;
+	white-space: nowrap;
+}
+
+.quiet .label {
+	font-weight: 600;
+	font-size: 0.9rem;
+}
+
+.list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+	gap: 1rem;
+}
+
+.none {
+	align-self: center;
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+}
+
+.empty {
+	padding: 1rem;
+	border-radius: 0.75rem;
+	background: var(--background-secondary);
+	color: var(--text-secondary);
+}
+
+.footer {
+	margin-top: 1.25rem;
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+}
+
+.footer a {
+	text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+	.row {
+		grid-template-columns: 1fr;
+		gap: 0.5rem;
+		padding: 0.75rem;
+	}
+
+	.when {
+		flex-direction: row;
+		align-items: baseline;
+		gap: 0.5rem;
+	}
+
+	/* An empty week stays one line: when, then "None of our teams" */
+	.quiet {
+		grid-template-columns: auto 1fr;
+		padding-block: 0.5rem;
+	}
+}

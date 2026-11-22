@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
+import { placeEventBreaks } from "~/server/util/frcEvents";
 import { isValidTeamNumber, RESERVATION_NOTES_MAX } from "~/server/util/reservation";
 import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Blackout, Holiday, Reservation, TeamFull, WeatherForecast } from "~/types";
+import type { Blackout, FrcEvent, FrcEventsSnapshot, Holiday, Reservation, TeamFull, WeatherForecast } from "~/types";
 import styles from "../index.module.css";
 import { useAppConfig } from "./AppConfig";
 import { describeRequestError } from "./clientErrors";
 import { DayWeather } from "./DayWeather";
+import { EventBreak } from "./EventBreak";
 import { useHistory } from "./HistoryContext";
 import { TeamAvatar } from "./TeamAvatar";
 import { useHoldUpdate } from "./UpdateWatcher";
@@ -317,6 +319,7 @@ export function ReservationCalendar({
 	initialHolidays,
 	initialBlackouts,
 	initialWeather,
+	initialEvents,
 	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
@@ -324,6 +327,8 @@ export function ReservationCalendar({
 	initialBlackouts: Blackout[];
 	/** Null when weather is disabled or no forecast is available */
 	initialWeather: WeatherForecast | null;
+	/** Our teams' FRC events. Null until the server has fetched them. */
+	initialEvents: FrcEventsSnapshot | null;
 	/** Admins may book over a blackout, so they still get the add button on a closed slot */
 	isAdmin?: boolean;
 }) {
@@ -371,6 +376,13 @@ export function ReservationCalendar({
 	const { data: weather = initialWeather } = api.weather.forecast.useQuery(undefined, {
 		initialData: initialWeather,
 		refetchInterval: 15 * 60 * 1000,
+	});
+
+	// Registrations change slowly, but right after a server restart the first fetch can outlast
+	// the page load, so check back sooner until there is something to show
+	const { data: frcEvents = initialEvents } = api.frcEvents.list.useQuery(undefined, {
+		initialData: initialEvents,
+		refetchInterval: query => (query.state.data ? 60 * 60 * 1000 : 60 * 1000),
 	});
 
 	// Use refs to store current values to avoid dependency issues
@@ -438,6 +450,7 @@ export function ReservationCalendar({
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
 					weather={weather}
+					events={frcEvents?.events ?? []}
 					isAdmin={isAdmin}
 				/>
 			</div>
@@ -499,6 +512,7 @@ function Days({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 }: {
 	start: string;
@@ -508,6 +522,8 @@ function Days({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	/** Our teams' FRC events; a break listing them goes before the first day of each weekend */
+	events: FrcEvent[];
 	isAdmin: boolean;
 }) {
 	// Ensure good type
@@ -516,11 +532,20 @@ function Days({
 	const { timeSlotBorders } = useAppConfig();
 	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
 	const datesHistory = Array.from({ length: daysHistory }, (_, i) => addDaysToDateString(start, i - daysHistory));
+	const breaks = useMemo(() => {
+		const shown = Array.from({ length: daysHistory + days }, (_, i) => addDaysToDateString(start, i - daysHistory));
+		return placeEventBreaks(shown, events);
+	}, [start, days, daysHistory, events]);
+	const eventBreak = (date: string) => {
+		const group = breaks.get(date);
+		return group ? <EventBreak key={`events_${date}`} events={group} /> : null;
+	};
 
 	return (
 		<>
 			{/* History columns */}
-			{datesHistory.map(date => (
+			{datesHistory.flatMap(date => [
+				eventBreak(date),
 				<DayWrapper
 					key={date}
 					date={date}
@@ -530,8 +555,8 @@ function Days({
 					weather={weather}
 					isAdmin={isAdmin}
 					isHistory={true}
-				/>
-			))}
+				/>,
+			])}
 
 			{/* Time slot headers */}
 			<div
@@ -556,7 +581,8 @@ function Days({
 				})}
 			</div>
 			{/* Day columns */}
-			{dates.map(date => (
+			{dates.flatMap(date => [
+				eventBreak(date),
 				<DayWrapper
 					key={date}
 					date={date}
@@ -565,8 +591,8 @@ function Days({
 					blackouts={blackouts}
 					weather={weather}
 					isAdmin={isAdmin}
-				/>
-			))}
+				/>,
+			])}
 		</>
 	);
 }

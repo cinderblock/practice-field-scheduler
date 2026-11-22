@@ -1399,3 +1399,100 @@
 		font-size: 0.75rem;
 	}
 }
+
+/* ===== FRC events ===== */
+
+/* A break between days, before a weekend our teams compete. Dashed and unfilled so it reads as
+   something between the days rather than another day. */
+.eventBreak {
+	border: 2px dashed var(--accent-color);
+	border-radius: 0.75rem;
+	padding: 0.75rem 1rem;
+	margin-bottom: 1rem;
+	box-sizing: border-box;
+	width: 100%;
+	background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+	/* The calendar around it is centered; event details read better ragged-right */
+	text-align: left;
+}
+
+.eventBreakHeader {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.25rem 1rem;
+	margin-bottom: 0.5rem;
+}
+
+.eventBreakTitle {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 700;
+	color: var(--accent-color);
+}
+
+.eventBreakDates {
+	font-size: 0.85rem;
+	color: var(--text-secondary);
+}
+
+.eventBreakList {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+	gap: 0.75rem;
+}
+
+.eventSummary {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	min-width: 0;
+}
+
+.eventSummaryName {
+	font-weight: 600;
+}
+
+.eventSummaryName a:hover,
+.eventLinks a:hover {
+	text-decoration: underline;
+}
+
+.eventSummaryDetails {
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+}
+
+.eventTeams {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem 0.75rem;
+}
+
+.eventTeam {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.eventLinks {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	font-size: 0.8rem;
+}
+
+.eventLinks a {
+	color: var(--text-secondary);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}

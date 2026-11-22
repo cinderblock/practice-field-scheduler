@@ -2682,6 +2682,25 @@ async function initialized() {
 	lock();
 }
 
+/**
+ * Our teams: every FRC team number on an enabled user account, ascending. Teams that aren't
+ * plain numbers (and so can't be FRC teams) are left out.
+ */
+export async function knownTeamNumbers(): Promise<Team[]> {
+	await initialized();
+
+	const teams = new Set<Team>();
+	for (const user of users) {
+		if (user.disabled || user.teams === "admin") continue;
+		for (const team of user.teams) {
+			const number = Number(team);
+			if (Number.isInteger(number) && number > 0) teams.add(number);
+		}
+	}
+
+	return [...teams].sort((a, b) => a - b);
+}
+
 // Make sure we're never running across a year's boundary
 setInterval(async () => {
 	if (new Date().getFullYear().toString() === YEAR) return;

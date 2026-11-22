@@ -259,6 +259,26 @@ CC BY 4.0, so the calendar credits it whenever weather is shown. The server logs
 when it first fetches a forecast; if a place name picks the wrong town, use coordinates instead. If Open-Meteo is
 unreachable, the last forecast keeps being shown for up to a day.
 
+### FRC events
+
+The scheduler shows the FRC events our teams are registered for. "Our teams" are the team numbers
+on enabled user accounts. Off-season events count too.
+
+- **On the calendar**, a dashed break goes before the first day of each weekend our teams compete.
+  It lists the events, which of our teams are at each, and links to The Blue Alliance and Statbotics.
+  Overlapping events share one break.
+- **`/events`** (the Events button) lays out a whole season. It has a row for every competition week
+  (weeks with none of our teams included, so it reads like a calendar), the Championship, and other
+  events by month. A picker switches seasons. Finished events are dimmed.
+
+The data comes from FIRST's [FRC Events API](https://frc-events.firstinspires.org/services/API) with
+the same `FIRST_API_USERNAME` / `FIRST_API_AUTH_TOKEN` as team avatars, so nothing else needs
+configuring. The server fetches this season and the next every 6 hours, one request per second
+shared with avatars: one listing of every event per season, for the week dates, plus one per team
+per season. The results are cached in memory. If FIRST is unreachable or refuses the credentials,
+the last data keeps being shown for up to 3 days. The Blue Alliance and Statbotics are only linked,
+never called.
+
 ### Calendar Feeds (public)
 
 We expose iCalendar (ICS) feeds that you can subscribe to in Google Calendar, Apple Calendar, Outlook, etc.

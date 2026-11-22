@@ -31,6 +31,24 @@ export type Reservation = {
 	extraRobot?: boolean;
 	notes?: string;
 };
+
+/**
+ * One occurrence of an event on the site's own calendar (SITE_CALENDAR_ICS_URL). Display only: it
+ * never affects booking; blackouts are what close the field.
+ */
+export type SiteCalendarEvent = {
+	/** Unique per occurrence: the event's UID, plus the original start for a repeating event */
+	id: string;
+	title: string;
+	/** Whole days with no times, rather than a span of hours */
+	allDay: boolean;
+	/** Milliseconds since the epoch. An all-day event runs from midnight to midnight in the site's zone. */
+	start: number;
+	/** Exclusive */
+	end: number;
+	/** The dates (YYYY-MM-DD, in the site's zone) the event touches, in order */
+	dates: EventDate[];
+};
 /////// Public-ish Interfaces //////
 
 export type EventDate = string; // YYYY-MM-DD format
@@ -155,6 +173,45 @@ export type WeatherForecast = {
 	updated: Date; // When the forecast was fetched
 	/** Hourly samples in chronological order, limited to the hours around reservation time */
 	samples: WeatherSample[];
+};
+
+/**
+ * An FRC event at least one of our teams is registered for, from FIRST's FRC Events API.
+ *
+ * "Our teams" are the team numbers on the site's user accounts.
+ */
+export type FrcEvent = {
+	season: number;
+	/** FIRST's event code, e.g. "CASJ". Unique within a season. */
+	code: string;
+	name: string;
+	/** FIRST's tournament type, e.g. "Regional", "DistrictEvent", "OffSeason" */
+	type: string;
+	/** Competition week, numbered as FIRST and The Blue Alliance show it (1 = Week 1, 0 = Week 0). Null outside the season's weeks (off-season, Championship). */
+	week: number | null;
+	/** First day, in the event's own time zone, as FIRST publishes it */
+	start: EventDate;
+	/** Last day, inclusive, in the event's own time zone */
+	end: EventDate;
+	venue: string;
+	city: string;
+	stateProv: string;
+	country: string;
+	website?: string;
+	/** Our teams registered for it, ascending */
+	teams: Team[];
+};
+
+/** The dates a competition week spans, from every event that week (ours or not) */
+export type FrcSeasonWeek = { season: number; week: number; start: EventDate; end: EventDate };
+
+export type FrcEventsSnapshot = {
+	updated: Date; // When the snapshot was fetched
+	/** Seasons FIRST has published events for, ascending */
+	seasons: number[];
+	weeks: FrcSeasonWeek[];
+	/** Our teams' events, in order of start date */
+	events: FrcEvent[];
 };
 
 export type Holiday = {

@@ -51,17 +51,21 @@ being designed in their own threads.
   auto-priority at read time (this plan's choice) means auto-priority lines don't use up the team's
   allowance, which already gives event teams more. Then D's bonus would only add extra _manual_
   priority marks. Decide when building C/D whether both are wanted.
-- **Restart gap (must fix before C/D):** #7's snapshot is memory-only, so after a restart
-  `getFrcEvents()` is null for about 2×(teams+1) seconds. A badge vanishing briefly is harmless; a
-  booking decision changing is not. Before C/D, persist the snapshot to
-  `DATA_DIR/<year>/frcEvents.json` and load it at startup.
+- **Restart gap (fixed on `t3/persist-frc-events`):** #7's snapshot was memory-only, so after a
+  restart `getFrcEvents()` was null for about 2×(teams+1) seconds. A badge vanishing briefly is
+  harmless; a booking decision changing is not. Each fetched snapshot is now saved to
+  `DATA_DIR/<year>/frcEvents.json` (temp file + rename) and loaded on first use, before the first
+  refresh, which also uses it as `previous`. A file that fails the zod check is ignored and
+  refetched. Left as is: on 1 January the new year's directory is empty, so the gap comes back once
+  a year until the first fetch.
 
 ## Progress
 
 - [x] Design and user choices
 - [x] `eventLeadFor` / `describeEventLead` + unit tests (`test/unit/frcEvents.test.ts`)
 - [x] Badge on pills and in the Add dialog, checked headlessly at 1280px and 390px
-- [ ] Persist the FRC events snapshot across restarts (before C/D)
+- [x] Badge merged via PR #60
+- [x] Persist the FRC events snapshot across restarts (`t3/persist-frc-events`)
 - [x] Rebased onto #9: the star and waitlist sit alongside the 🏁 line
 - [ ] C: auto-priority (#9 has landed; do it after persistence)
 - [ ] D: bigger allowance, once #10 lands

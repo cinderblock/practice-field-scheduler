@@ -279,8 +279,9 @@ The data comes from FIRST's [FRC Events API](https://frc-events.firstinspires.or
 the same `FIRST_API_USERNAME` / `FIRST_API_AUTH_TOKEN` as team avatars, so nothing else needs
 configuring. The server fetches this season and the next every 6 hours, one request per second
 shared with avatars: one listing of every event per season, for the week dates, plus one per team
-per season. The results are cached in memory. If FIRST is unreachable or refuses the credentials,
-the last data keeps being shown for up to 3 days. The Blue Alliance and Statbotics are only linked,
+per season. The results are cached in memory and saved to `DATA_DIR/<year>/frcEvents.json`, which is
+loaded at startup so a restart shows events straight away. If FIRST is unreachable or refuses the
+credentials, the last data keeps being shown for up to 3 days after it was fetched. The Blue Alliance and Statbotics are only linked,
 never called.
 
 ### Calendar Feeds (public)

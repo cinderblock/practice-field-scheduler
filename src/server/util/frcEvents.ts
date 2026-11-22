@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import type { EventDate, FrcEvent, FrcEventsSnapshot, FrcSeasonWeek, Team } from "~/types";
+import type { EventDate, FrcEvent, FrcEventsSnapshot, FrcSeasonWeek, Team, TeamFull } from "~/types";
 
 ////// FIRST's event records //////
 
@@ -331,4 +331,42 @@ export function eventsByTeam(events: readonly FrcEvent[], from: EventDate, until
 	}
 
 	return byTeam;
+}
+
+/**
+ * How many days before an event a team counts as preparing for it. From then through the event's
+ * last day, the team's practice is flagged (and, once #9 and #10 exist, prioritized).
+ */
+export const EventLeadDays = 7;
+
+/** An event a team is preparing for, as seen from one practice date */
+export type EventLead = {
+	event: FrcEvent;
+	/** Days from the practice date to the event's first day: 0 on that day, negative during it */
+	daysBefore: number;
+};
+
+/**
+ * The event `team` is preparing for on `date`: one it is registered for that starts within
+ * `EventLeadDays` after `date`, or is under way on it. The earliest, if there are several.
+ * Teams that aren't plain numbers are never registered anywhere.
+ */
+export function eventLeadFor(events: readonly FrcEvent[], team: TeamFull, date: EventDate): EventLead | undefined {
+	const number = Number(team);
+	if (!Number.isInteger(number) || number <= 0) return undefined;
+
+	const lastStart = addDays(date, EventLeadDays);
+	const event = events
+		.filter(e => e.teams.includes(number) && e.end >= date && e.start <= lastStart)
+		.sort(compareEvents)[0];
+
+	return event && { event, daysBefore: daysBetween(date, event.start) };
+}
+
+/** "3 days before SVR Regional", "Day before …", "First day of …", "During …" */
+export function describeEventLead({ event, daysBefore }: EventLead): string {
+	if (daysBefore > 1) return `${daysBefore} days before ${event.name}`;
+	if (daysBefore === 1) return `Day before ${event.name}`;
+	if (daysBefore === 0) return `First day of ${event.name}`;
+	return `During ${event.name}`;
 }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { type EventLister, fetchEventsSnapshot, seasonsToFetch } from "~/server/frcEvents";
 import {
 	defaultSeason,
+	describeEventLead,
+	eventLeadFor,
 	eventLinks,
 	eventsByTeam,
 	formatDateRange,
@@ -264,6 +266,41 @@ describe("eventsByTeam", () => {
 				[649, [a]],
 			]),
 		);
+	});
+});
+
+describe("eventLeadFor", () => {
+	const svr = event("SVR", "2027-03-11", "2027-03-13", [8, 649]);
+	const later = event("LATER", "2027-03-14", "2027-03-16", [8]);
+
+	it("covers the week before an event through its last day", () => {
+		expect(eventLeadFor([svr], 8, "2027-03-03")).toBeUndefined();
+		expect(eventLeadFor([svr], 8, "2027-03-04")).toEqual({ event: svr, daysBefore: 7 });
+		expect(eventLeadFor([svr], 8, "2027-03-11")).toEqual({ event: svr, daysBefore: 0 });
+		expect(eventLeadFor([svr], 8, "2027-03-13")).toEqual({ event: svr, daysBefore: -2 });
+		expect(eventLeadFor([svr], 8, "2027-03-14")).toBeUndefined();
+	});
+
+	it("only flags teams registered for the event", () => {
+		expect(eventLeadFor([svr], 254, "2027-03-08")).toBeUndefined();
+		expect(eventLeadFor([svr], "649", "2027-03-08")).toEqual({ event: svr, daysBefore: 3 });
+		expect(eventLeadFor([svr], "house", "2027-03-08")).toBeUndefined();
+	});
+
+	it("picks the earliest of several events", () => {
+		expect(eventLeadFor([later, svr], 8, "2027-03-09")?.event).toBe(svr);
+		// The first is over, so the next one counts
+		expect(eventLeadFor([later, svr], 8, "2027-03-14")).toEqual({ event: later, daysBefore: 0 });
+	});
+});
+
+describe("describeEventLead", () => {
+	const svr = event("SVR", "2027-03-11", "2027-03-13", [8]);
+	it("counts down to the event, then says it is on", () => {
+		expect(describeEventLead({ event: svr, daysBefore: 3 })).toBe("3 days before SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: 1 })).toBe("Day before SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: 0 })).toBe("First day of SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: -1 })).toBe("During SVR Regional");
 	});
 });
 

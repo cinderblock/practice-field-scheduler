@@ -566,6 +566,11 @@
 	border-top: 1px dashed currentColor;
 }
 
+/* The FRC event the team is preparing for */
+.pillEventLead {
+	font-weight: 600;
+}
+
 .reservationPill.pendingDeletion {
 	opacity: 0.6;
 }

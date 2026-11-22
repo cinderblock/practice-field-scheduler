@@ -8,13 +8,23 @@ import { isValidTeamNumber, RESERVATION_NOTES_MAX } from "~/server/util/reservat
 import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Blackout, FrcEvent, FrcEventsSnapshot, Holiday, Reservation, TeamFull, WeatherForecast } from "~/types";
+import type {
+	Blackout,
+	FrcEvent,
+	FrcEventsSnapshot,
+	Holiday,
+	Reservation,
+	SiteCalendarEvent,
+	TeamFull,
+	WeatherForecast,
+} from "~/types";
 import styles from "../index.module.css";
 import { useAppConfig } from "./AppConfig";
 import { describeRequestError } from "./clientErrors";
 import { DayWeather } from "./DayWeather";
 import { EventBreak } from "./EventBreak";
 import { useHistory } from "./HistoryContext";
+import { DaySiteEvents, SiteEventsProvider } from "./SiteEvents";
 import { TeamAvatar } from "./TeamAvatar";
 import { useHoldUpdate } from "./UpdateWatcher";
 import { useInterval } from "./useInterval";
@@ -320,6 +330,7 @@ export function ReservationCalendar({
 	initialBlackouts,
 	initialWeather,
 	initialEvents,
+	initialSiteEvents,
 	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
@@ -329,6 +340,8 @@ export function ReservationCalendar({
 	initialWeather: WeatherForecast | null;
 	/** Our teams' FRC events. Null until the server has fetched them. */
 	initialEvents: FrcEventsSnapshot | null;
+	/** Events from the site's own calendar; empty when none are configured */
+	initialSiteEvents: SiteCalendarEvent[];
 	/** Admins may book over a blackout, so they still get the add button on a closed slot */
 	isAdmin?: boolean;
 }) {
@@ -383,6 +396,12 @@ export function ReservationCalendar({
 	const { data: frcEvents = initialEvents } = api.frcEvents.list.useQuery(undefined, {
 		initialData: initialEvents,
 		refetchInterval: query => (query.state.data ? 60 * 60 * 1000 : 60 * 1000),
+	});
+
+	// The site's own calendar, which the server re-reads every 15 minutes
+	const { data: siteEvents = initialSiteEvents } = api.siteCalendar.events.useQuery(undefined, {
+		initialData: initialSiteEvents,
+		refetchInterval: 15 * 60 * 1000,
 	});
 
 	// Use refs to store current values to avoid dependency issues
@@ -441,19 +460,21 @@ export function ReservationCalendar({
 
 	return (
 		<>
-			<div className={styles.calendarGrid}>
-				<Days
-					start={startDate}
-					days={reservationDays + 1}
-					daysHistory={historyDays}
-					initialReservations={allReservations}
-					initialHolidays={initialHolidays}
-					blackouts={blackouts}
-					weather={weather}
-					events={frcEvents?.events ?? []}
-					isAdmin={isAdmin}
-				/>
-			</div>
+			<SiteEventsProvider events={siteEvents}>
+				<div className={styles.calendarGrid}>
+					<Days
+						start={startDate}
+						days={reservationDays + 1}
+						daysHistory={historyDays}
+						initialReservations={allReservations}
+						initialHolidays={initialHolidays}
+						blackouts={blackouts}
+						weather={weather}
+						events={frcEvents?.events ?? []}
+						isAdmin={isAdmin}
+					/>
+				</div>
+			</SiteEventsProvider>
 			<p>
 				We only allow reservations for the next {daysText}.
 				<br />
@@ -663,6 +684,7 @@ function Day({
 				{closedAllDay && <span className={styles.dayClosedChip}>Field closed</span>}
 				<DayDate date={date} holidays={initialHolidays} />
 			</div>
+			<DaySiteEvents date={date} />
 			<div
 				className={styles.timeSlotRow}
 				style={

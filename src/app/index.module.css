@@ -1096,6 +1096,42 @@
 	max-width: 8rem;
 }
 
+/* ===== Site events (from the site's own calendar; display only) ===== */
+
+.siteEvents {
+	list-style: none;
+	margin: 0 0 0.5rem;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	font-size: 0.85rem;
+	color: var(--text-secondary);
+}
+
+/* Titles wrap rather than truncate: a tooltip with the rest would be unreachable on touch screens */
+.siteEvent {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.35rem;
+	min-width: 0;
+}
+
+.siteEventIcon {
+	font-size: 0.9em;
+	opacity: 0.8;
+}
+
+.siteEventTitle {
+	color: var(--text-primary);
+	overflow-wrap: anywhere;
+}
+
+.siteEventTime {
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
 /* ===== Blackouts ===== */
 
 .dayClosed {

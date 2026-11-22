@@ -31,6 +31,24 @@ export type Reservation = {
 	extraRobot?: boolean;
 	notes?: string;
 };
+
+/**
+ * One occurrence of an event on the site's own calendar (SITE_CALENDAR_ICS_URL). Display only: it
+ * never affects booking; blackouts are what close the field.
+ */
+export type SiteCalendarEvent = {
+	/** Unique per occurrence: the event's UID, plus the original start for a repeating event */
+	id: string;
+	title: string;
+	/** Whole days with no times, rather than a span of hours */
+	allDay: boolean;
+	/** Milliseconds since the epoch. An all-day event runs from midnight to midnight in the site's zone. */
+	start: number;
+	/** Exclusive */
+	end: number;
+	/** The dates (YYYY-MM-DD, in the site's zone) the event touches, in order */
+	dates: EventDate[];
+};
 /////// Public-ish Interfaces //////
 
 export type EventDate = string; // YYYY-MM-DD format

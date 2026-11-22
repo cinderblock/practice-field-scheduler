@@ -535,6 +535,37 @@
 	overflow-wrap: anywhere;
 }
 
+/* Booked with priority: goes ahead of ordinary lines in the slot */
+.priorityMark {
+	margin-left: 0.35em;
+	color: #f7c873;
+}
+
+/* Past the slot's places. Still booked, just waiting for a cancellation. */
+.reservationPill.waitlisted {
+	background: linear-gradient(90deg, #4a4a6e 60%, #6a6a8e 100%);
+	color: #d8d8ec;
+}
+
+/* Between the lines that have the field and the waitlist */
+.waitlistDivider {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: #a7bfff;
+	opacity: 0.8;
+}
+
+.waitlistDivider::before,
+.waitlistDivider::after {
+	content: "";
+	flex: 1;
+	border-top: 1px dashed currentColor;
+}
+
 .reservationPill.pendingDeletion {
 	opacity: 0.6;
 }

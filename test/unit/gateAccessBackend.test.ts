@@ -646,3 +646,55 @@ describe("gate access, end to end", () => {
 		expect(users.some(u => "accessToken" in u)).toBe(false);
 	});
 });
+
+describe("priority and the waitlist, end to end", () => {
+	const KAI: Person = { slack: "U_KAI", real: "Kai Lee", display: "Kai Lee (4321)", email: "kai@example.com" };
+	const standingDms = () => dmsTo(KAI.slack).filter(d => /waitlisted|has a place/.test(d.text));
+
+	/** Fill a slot to its places, team 4321 booking last, so a priority line bumps 4321. */
+	async function fillSlot(date: string) {
+		for (const team of [1001, 1002, 1003]) {
+			await admin.addReservation({ date, slot: "10:00am", team, notes: "", priority: false });
+		}
+		return admin.addReservation({ date, slot: "10:00am", team: 4321, notes: "", priority: false });
+	}
+
+	it("tells a team when a priority booking pushes it onto the waitlist, and again when it gets a place back", async () => {
+		setNames(KAI);
+		await signIn(KAI);
+		await fillSlot("2026-05-29");
+		await settle();
+		expect(standingDms()).toEqual([]);
+
+		const priority = await admin.addReservation({
+			date: "2026-05-29",
+			slot: "10:00am",
+			team: 5555,
+			notes: "",
+			priority: true,
+		});
+		expect(priority.priority).toBe(true);
+		await settle();
+		expect(standingDms()).toHaveLength(1);
+		expect(standingDms()[0]?.text).toContain("Team 4321 is now *waitlisted*");
+		expect(standingDms()[0]?.text).toContain("Team 5555 booked the slot with priority");
+
+		// Every line was kept: a full slot refuses nobody
+		const lines = (await admin.listReservations("2026-05-29")).filter(r => r.slot === "10:00am");
+		expect(lines).toHaveLength(5);
+
+		await admin.removeReservation({ id: priority.id });
+		await settle();
+		expect(standingDms()).toHaveLength(2);
+		expect(standingDms()[1]?.text).toContain("Team 4321 has a place on the practice field again");
+	});
+
+	it("doesn't tell anyone once the slot has started", async () => {
+		const before = standingDms().length;
+		// 11am on the 25th: the 10am slot is under way. Admins may book it anyway.
+		await fillSlot("2026-05-25");
+		await admin.addReservation({ date: "2026-05-25", slot: "10:00am", team: 5555, notes: "", priority: true });
+		await settle();
+		expect(standingDms()).toHaveLength(before);
+	});
+});

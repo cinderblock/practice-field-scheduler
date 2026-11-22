@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
 import { placeEventBreaks } from "~/server/util/frcEvents";
-import { isValidTeamNumber, RESERVATION_NOTES_MAX } from "~/server/util/reservation";
+import {
+	isValidTeamNumber,
+	orderSlot,
+	RESERVATION_NOTES_MAX,
+	SLOT_CAPACITY,
+	slotStandings,
+	standingChanges,
+} from "~/server/util/reservation";
 import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
@@ -225,6 +232,10 @@ interface ReservationPillProps {
 	guestOf?: TeamFull;
 	notes?: string;
 	extraRobot?: boolean;
+	/** Booked with priority: goes ahead of ordinary lines in the slot */
+	priority?: boolean;
+	/** Past the slot's places: on the waitlist */
+	waitlisted?: boolean;
 	onRemove?: () => void;
 	onEditNote?: () => void;
 	isTemp?: boolean;
@@ -239,6 +250,8 @@ function ReservationPill({
 	guestOf,
 	notes,
 	extraRobot = false,
+	priority = false,
+	waitlisted = false,
 	onRemove,
 	onEditNote,
 	isTemp = false,
@@ -278,6 +291,7 @@ function ReservationPill({
 	if (isPendingDeletion) pillClasses.push(styles.pendingDeletion);
 	if (isPendingAddition) pillClasses.push(styles.pendingAddition);
 	if (isActive) pillClasses.push(styles.active);
+	if (waitlisted) pillClasses.push(styles.waitlisted);
 
 	const displayText = teamStr || (isTemp ? "New Reservation" : teamStr);
 
@@ -294,6 +308,11 @@ function ReservationPill({
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}
 				{guestOf !== undefined && guestOf !== "" && <span className={styles.guestOf}>guest of {guestOf}</span>}
+				{priority && (
+					<span className={styles.priorityMark} role="img" aria-label="priority">
+						★
+					</span>
+				)}
 				{extraRobot && <span className={styles.pillNote}>Extra robot</span>}
 				{notes && <span className={styles.pillNote}>{notes}</span>}
 			</span>
@@ -849,8 +868,10 @@ function TimeSlot({
 		throw new Error("reservations is not an array");
 	}
 
-	// Filter reservations for this specific time slot
-	const slotReservations = reservations.filter(r => r.slot === slot);
+	// This slot's lines in field order: priority first, then booking order. Past
+	// SLOT_CAPACITY they're waitlisted. The server orders them the same way.
+	const slotReservations = orderSlot(reservations.filter(r => r.slot === slot));
+	const standings = slotStandings(slotReservations);
 
 	// A team already in this slot can only be coming back with another robot
 	const teamInSlot = pending.team !== "" && slotReservations.some(r => Number(r.team) === Number(pending.team));
@@ -863,6 +884,32 @@ function TimeSlot({
 				? `Team ${guestTeam} can't be its own guest`
 				: null;
 	const canSubmit = bookerTeam !== "" && pending.team !== "" && problem === null;
+
+	// Where the line being added would land, and whom it would push onto the waitlist
+	const previewId = "pending-preview";
+	const previewLine: Reservation = {
+		id: previewId,
+		date,
+		slot,
+		...pending,
+		notes,
+		extraRobot,
+		priority,
+		created: new Date(),
+		userId: "",
+	};
+	const withPending = orderSlot([...slotReservations, previewLine]);
+	const standingsWithPending = slotStandings(withPending);
+	const previewStanding = standingsWithPending.get(previewId);
+	const wouldBump = standingChanges(standings, standingsWithPending)
+		.bumped.map(id => slotReservations.find(r => r.id === id)?.team)
+		.filter(team => team !== undefined);
+	const placesTaken = Math.min(slotReservations.length, SLOT_CAPACITY);
+	const placeNote = previewStanding?.waitlisted
+		? `All ${SLOT_CAPACITY} places are taken${priority ? " by priority bookings" : ""}, so you'd be waitlisted (#${previewStanding.place}).${priority ? "" : " Priority would put you ahead of ordinary bookings."}`
+		: wouldBump.length > 0
+			? `Priority puts you ahead of team ${wouldBump.join(", ")}, who'd move to the waitlist and be told.`
+			: `${placesTaken} of ${SLOT_CAPACITY} places taken.`;
 
 	const addReservation = api.reservation.add.useMutation({
 		onMutate: async newReservation => {
@@ -1000,6 +1047,12 @@ function TimeSlot({
 	if (blackout && !closedAllDay) style.push(styles.timeSlotBlackedOut);
 	if (closedAllDay) style.push(styles.timeSlotMerged);
 
+	// The form's line is shown in place only while there's a form to fill in
+	const showPreview = isAdding && !addReservation.isPending && bookable !== undefined && ownTeams?.length !== 0;
+	const shownLines = showPreview ? withPending : slotReservations;
+	const shownStandings = showPreview ? standingsWithPending : standings;
+	const firstWaitlisted = shownLines.find(r => shownStandings.get(r.id)?.waitlisted)?.id;
+
 	const handleAddReservation = () => {
 		if (!canSubmit) return;
 		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority });
@@ -1022,41 +1075,47 @@ function TimeSlot({
 				</div>
 			)}
 			<div className={styles.reservationStack}>
-				{/* Existing reservations */}
-				{slotReservations.map(r => (
-					<ReservationPill
-						key={r.id}
-						teamNumber={r.team}
-						guestOf={r.host}
-						notes={r.notes}
-						extraRobot={r.extraRobot}
-						isPendingDeletion={pendingDeletions.has(r.id)}
-						isPendingAddition={r.id === "temp-id"}
-						hasEnded={hasEnded}
-						disabled={pendingDeletions.has(r.id)}
-						onEditNote={() => setEditingNote({ id: r.id, team: r.team, notes: r.notes ?? "" })}
-						onRemove={() => {
-							console.log("Removing reservation:", {
-								id: r.id,
-							});
-							removeReservation.mutate({
-								id: r.id,
-							});
-						}}
-					/>
+				{/* Lines in field order. While the form is open, the line being added shows where it would
+				    land; once sent, the optimistic entry stands in for it. */}
+				{shownLines.map(r => (
+					<Fragment key={r.id}>
+						{r.id === firstWaitlisted && <div className={styles.waitlistDivider}>Waitlist</div>}
+						{r.id === previewId ? (
+							<ReservationPill
+								teamNumber={pending.team}
+								guestOf={pending.host}
+								notes={notes}
+								extraRobot={extraRobot}
+								priority={priority}
+								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								isTemp={true}
+								isPendingAddition={true}
+							/>
+						) : (
+							<ReservationPill
+								teamNumber={r.team}
+								guestOf={r.host}
+								notes={r.notes}
+								extraRobot={r.extraRobot}
+								priority={r.priority}
+								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								isPendingDeletion={pendingDeletions.has(r.id)}
+								isPendingAddition={r.id === "temp-id"}
+								hasEnded={hasEnded}
+								disabled={pendingDeletions.has(r.id)}
+								onEditNote={() => setEditingNote({ id: r.id, team: r.team, notes: r.notes ?? "" })}
+								onRemove={() => {
+									console.log("Removing reservation:", {
+										id: r.id,
+									});
+									removeReservation.mutate({
+										id: r.id,
+									});
+								}}
+							/>
+						)}
+					</Fragment>
 				))}
-				{/* Pending addition, while there's a form to fill in. Once sent, the optimistic entry above
-				    stands in for it. */}
-				{isAdding && !addReservation.isPending && bookable && ownTeams?.length !== 0 && (
-					<ReservationPill
-						teamNumber={pending.team}
-						guestOf={pending.host}
-						notes={notes}
-						extraRobot={extraRobot}
-						isTemp={true}
-						isPendingAddition={true}
-					/>
-				)}
 			</div>
 			{/* A failed removal has no dialog to report into. Tap to dismiss. */}
 			{error && !isAdding && !editing && (
@@ -1130,6 +1189,10 @@ function TimeSlot({
 										<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
 										<span className={styles.checkboxText}>Prioritize</span>
 									</label>
+									<p className={styles.modalNote}>
+										{placeNote} Priority bookings go ahead of ordinary ones; the first {SLOT_CAPACITY} get the field and
+										the rest wait.
+									</p>
 								</div>
 								<div className={styles.formGroup}>
 									<label htmlFor={`team-${date}-${slot}`}>{isGuest ? "Host team" : "Team"}</label>

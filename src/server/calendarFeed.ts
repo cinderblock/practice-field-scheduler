@@ -4,7 +4,7 @@ import { env } from "~/env";
 import { sameTeam } from "~/server/access";
 import { getPublicFeedData } from "~/server/backend";
 import { blackoutEndDate, eachBlackoutDate } from "~/server/util/blackout";
-import { type SlotStanding, slotStandings } from "~/server/util/reservation";
+import { standingsBySlot } from "~/server/util/weeklyLimits";
 import type { Reservation } from "~/types";
 
 export type FeedKind = "all" | "site" | "team";
@@ -47,16 +47,6 @@ function parseSlotToDate(date: string, slot: string): { start: Date; end: Date }
 	return { start, end };
 }
 
-/** Every live line's standing in its slot, keyed by reservation id. */
-function waitlistStandings(reservations: readonly Reservation[]): Map<string, SlotStanding> {
-	const bySlot = new Map<string, Reservation[]>();
-	for (const r of reservations) {
-		const key = `${r.date} ${r.slot}`;
-		bySlot.set(key, [...(bySlot.get(key) ?? []), r]);
-	}
-	return new Map([...bySlot.values()].flatMap(lines => [...slotStandings(lines)]));
-}
-
 export async function generateICS({ kind, team }: GenerateOptions): Promise<string> {
 	if (kind === "team" && !team) throw new Error("team number required for team feed");
 
@@ -85,7 +75,8 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 	// Add reservations
 	if (kind === "all" || (kind === "team" && team)) {
 		// Standing in a slot depends on every line in it, so work it out before any filtering.
-		const standing = waitlistStandings(reservations);
+		// The lines come with the weekly cap already applied (getPublicFeedData).
+		const standing = standingsBySlot(reservations);
 		const waitlisted = (r: Reservation) => standing.get(r.id)?.waitlisted ?? false;
 
 		// A team's feed includes the guests it hosts: it's responsible for them.

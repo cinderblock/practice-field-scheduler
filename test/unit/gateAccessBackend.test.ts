@@ -698,3 +698,85 @@ describe("priority and the waitlist, end to end", () => {
 		expect(standingDms()).toHaveLength(before);
 	});
 });
+
+describe("weekly limits, end to end", () => {
+	// Monday 2026-05-25, 11am: the week runs to Sunday the 31st.
+	const LIV: Person = { slack: "U_LIV", real: "Liv Ray", display: "Liv Ray (2468)", email: "liv@example.com" };
+	const MO: Person = { slack: "U_MO", real: "Mo Park", display: "Mo Park (8642)", email: "mo@example.com" };
+	const book = (ctx: InstanceType<typeof Context>, date: string, slot: string, team: number, priority = false) =>
+		ctx.addReservation({ date, slot, team, notes: "", priority });
+
+	it("refuses a second priority booking in a week, and nothing else", async () => {
+		setNames(LIV);
+		const liv = await signIn(LIV);
+
+		const first = await book(liv, "2026-05-26", "10:00am", 2468, true);
+		await expect(book(liv, "2026-05-27", "10:00am", 2468, true)).rejects.toThrow(
+			"Team 2468 already has its priority booking for the week of 2026-05-25 (2026-05-26 at 10:00am). Book without priority, or cancel that one first.",
+		);
+		await expect(book(liv, "2026-05-27", "10:00am", 2468, true)).rejects.toBeInstanceOf(PermissionError);
+
+		// An ordinary booking, and priority in the next week, are fine
+		await book(liv, "2026-05-27", "10:00am", 2468);
+		await book(liv, "2026-06-01", "10:00am", 2468, true);
+
+		const usage = await liv.getWeeklyUsage({ team: "2468", date: "2026-05-28" });
+		expect(usage).toMatchObject({ weekStart: "2026-05-25", priorityAllowance: 1, lines: 2, cap: 7 });
+		expect(usage.priorityUsed.map(u => u.id)).toEqual([first.id]);
+
+		// Cancelling it gives the priority back
+		await liv.removeReservation({ id: first.id });
+		await book(liv, "2026-05-28", "10:00am", 2468, true);
+
+		// Admins are exempt
+		const extra = await book(admin, "2026-05-29", "04:00pm", 2468, true);
+		expect(extra.priority).toBe(true);
+	});
+
+	it("sorts a team's bookings past 7 in a week last, and tells the team when that moves it", async () => {
+		setNames(MO);
+		await signIn(MO);
+		const standingDms = () => dmsTo(MO.slack).filter(d => /waitlisted|has a place/.test(d.text));
+
+		// Week of Monday June 8th. Admins can book past the advance window.
+		for (const date of ["2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13"]) {
+			await book(admin, date, "10:00am", 8642);
+		}
+		for (const team of [1001, 1002, 1003]) await book(admin, "2026-06-14", "10:00am", team);
+		const seventh = await book(admin, "2026-06-14", "10:00am", 8642);
+		await book(admin, "2026-06-14", "10:00am", 1004);
+		const slotOn14th = async () => (await admin.listReservations("2026-06-14")).filter(r => r.slot === "10:00am");
+		expect((await slotOn14th()).find(r => r.id === seventh.id)?.overWeeklyCap).toBeUndefined();
+		await settle();
+		expect(standingDms()).toEqual([]);
+
+		// A priority booking counts first, so the 14th's line goes past the 7, sorts
+		// after 1004 and lands on the waitlist
+		const priority = await book(admin, "2026-06-09", "04:00pm", 8642, true);
+		expect(priority.overWeeklyCap).toBeUndefined();
+		await settle();
+		expect(standingDms()).toHaveLength(1);
+		expect(standingDms()[0]?.text).toContain("Team 8642 is now *waitlisted* for the practice field: 2026-06-14");
+		expect(standingDms()[0]?.text).toContain("past your team's 7 bookings for the week");
+		expect((await slotOn14th()).find(r => r.id === seventh.id)?.overWeeklyCap).toBe(true);
+
+		// Another booking is accepted, flagged, and its notice says why it sorts last
+		const ninth = await book(admin, "2026-06-10", "04:00pm", 8642);
+		expect(ninth.overWeeklyCap).toBe(true);
+		await settle();
+		expect(lastDmTo(MO.slack).text).toContain("Past your team's 7 bookings for the week");
+
+		// The flag is worked out, never stored
+		const stored = readFileSync(join(dataDir, "2026", "reservations.json"), "utf-8");
+		expect(stored).not.toContain("overWeeklyCap");
+
+		// Cancelling the priority line brings the 14th's back within the 7. The ninth is
+		// still past it, so the 14th's is the one that moves up.
+		await admin.removeReservation({ id: priority.id });
+		await settle();
+		const promoted = standingDms().filter(d => /has a place/.test(d.text));
+		expect(promoted).toHaveLength(1);
+		expect(promoted[0]?.text).toContain("2026-06-14");
+		expect(promoted[0]?.text).toContain("back within your team's 7 bookings for the week");
+	});
+});

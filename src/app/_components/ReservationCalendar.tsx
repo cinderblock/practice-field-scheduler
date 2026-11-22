@@ -236,6 +236,8 @@ interface ReservationPillProps {
 	priority?: boolean;
 	/** Past the slot's places: on the waitlist */
 	waitlisted?: boolean;
+	/** Past its team's weekly booking cap: sorts after the slot's other lines */
+	overWeeklyCap?: boolean;
 	onRemove?: () => void;
 	onEditNote?: () => void;
 	isTemp?: boolean;
@@ -252,6 +254,7 @@ function ReservationPill({
 	extraRobot = false,
 	priority = false,
 	waitlisted = false,
+	overWeeklyCap = false,
 	onRemove,
 	onEditNote,
 	isTemp = false,
@@ -314,6 +317,7 @@ function ReservationPill({
 					</span>
 				)}
 				{extraRobot && <span className={styles.pillNote}>Extra robot</span>}
+				{overWeeklyCap && <span className={styles.pillNote}>Over weekly limit</span>}
 				{notes && <span className={styles.pillNote}>{notes}</span>}
 			</span>
 			{onEditNote && !hasEnded && (
@@ -885,6 +889,33 @@ function TimeSlot({
 				: null;
 	const canSubmit = bookerTeam !== "" && pending.team !== "" && problem === null;
 
+	// The weekly limits (#10) are charged to the booker's team: the host, for a guest
+	const { data: weekly } = api.reservation.weeklyUsage.useQuery(
+		{ team: bookerTeam, date },
+		{ enabled: isAdding && bookerTeam !== "" && isValidTeamNumber(bookerTeam) },
+	);
+	const priorityUsedUp = weekly !== undefined && weekly.priorityUsed.length >= weekly.priorityAllowance;
+	// Admins are exempt from the priority limit, as they are from the window and blackouts
+	const priorityBlocked = priorityUsedUp && !isAdmin;
+	const prioritized = priority && !priorityBlocked;
+	const priorityLeft = weekly === undefined ? 0 : Math.max(0, weekly.priorityAllowance - weekly.priorityUsed.length);
+	const priorityNote =
+		weekly === undefined
+			? null
+			: priorityUsedUp
+				? `Team ${bookerTeam} has used its priority for the week of ${weekly.weekStart}: ${weekly.priorityUsed.map(u => `${u.date} at ${u.slot}`).join(", ")}.${isAdmin ? " Admins can add another." : ""}`
+				: `Team ${bookerTeam} has ${priorityLeft} priority booking${priorityLeft === 1 ? "" : "s"} left this week. One that ends up waitlisted is given back once its day has passed.`;
+	// Extra robots don't count toward the weekly cap; everything else the team books does
+	const previewOverCap = weekly !== undefined && !prioritized && !extraRobot && weekly.lines >= weekly.cap;
+	const weeklyNote =
+		weekly === undefined || extraRobot
+			? null
+			: previewOverCap
+				? `This would be team ${bookerTeam}'s booking #${weekly.lines + 1} this week, past its ${weekly.cap}. It goes after the slot's other bookings, so it gets the field only if there's room.`
+				: prioritized && weekly.lines >= weekly.cap
+					? `Team ${bookerTeam} already has ${weekly.lines} bookings this week. Priority counts first, so its newest other booking would go past the ${weekly.cap}.`
+					: `Booking ${weekly.lines + 1} of ${weekly.cap} for team ${bookerTeam} this week.`;
+
 	// Where the line being added would land, and whom it would push onto the waitlist
 	const previewId = "pending-preview";
 	const previewLine: Reservation = {
@@ -894,7 +925,8 @@ function TimeSlot({
 		...pending,
 		notes,
 		extraRobot,
-		priority,
+		priority: prioritized,
+		...(previewOverCap ? { overWeeklyCap: true as const } : {}),
 		created: new Date(),
 		userId: "",
 	};
@@ -906,7 +938,7 @@ function TimeSlot({
 		.filter(team => team !== undefined);
 	const placesTaken = Math.min(slotReservations.length, SLOT_CAPACITY);
 	const placeNote = previewStanding?.waitlisted
-		? `All ${SLOT_CAPACITY} places are taken${priority ? " by priority bookings" : ""}, so you'd be waitlisted (#${previewStanding.place}).${priority ? "" : " Priority would put you ahead of ordinary bookings."}`
+		? `All ${SLOT_CAPACITY} places are taken${prioritized ? " by priority bookings" : ""}, so you'd be waitlisted (#${previewStanding.place}).${prioritized || priorityBlocked ? "" : " Priority would put you ahead of ordinary bookings."}`
 		: wouldBump.length > 0
 			? `Priority puts you ahead of team ${wouldBump.join(", ")}, who'd move to the waitlist and be told.`
 			: `${placesTaken} of ${SLOT_CAPACITY} places taken.`;
@@ -947,6 +979,10 @@ function TimeSlot({
 			});
 			setIsAdding(false);
 			resetForm();
+			// The weekly cap reaches across slots: a priority line can push the team's
+			// newest line elsewhere past it, so refresh every day's lines
+			void utils.reservation.list.invalidate();
+			void utils.reservation.weeklyUsage.invalidate();
 		},
 		onError: (err, _newReservation, context) => {
 			// Rollback on error. The dialog is still open, so its pending pill comes back with it.
@@ -990,6 +1026,9 @@ function TimeSlot({
 				next.delete(id);
 				return next;
 			});
+			// A cancellation can bring the team's line in another slot back within its weekly cap
+			void utils.reservation.list.invalidate();
+			void utils.reservation.weeklyUsage.invalidate();
 		},
 		onError: (err, variables, context) => {
 			// Rollback on error
@@ -1055,7 +1094,7 @@ function TimeSlot({
 
 	const handleAddReservation = () => {
 		if (!canSubmit) return;
-		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority });
+		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority: prioritized });
 	};
 
 	const handleOpenAddModal = useCallback(() => {
@@ -1086,8 +1125,9 @@ function TimeSlot({
 								guestOf={pending.host}
 								notes={notes}
 								extraRobot={extraRobot}
-								priority={priority}
+								priority={prioritized}
 								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								overWeeklyCap={previewOverCap}
 								isTemp={true}
 								isPendingAddition={true}
 							/>
@@ -1099,6 +1139,7 @@ function TimeSlot({
 								extraRobot={r.extraRobot}
 								priority={r.priority}
 								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								overWeeklyCap={r.overWeeklyCap}
 								isPendingDeletion={pendingDeletions.has(r.id)}
 								isPendingAddition={r.id === "temp-id"}
 								hasEnded={hasEnded}
@@ -1182,17 +1223,20 @@ function TimeSlot({
 									<label className={styles.checkboxLabel}>
 										<input
 											type="checkbox"
-											checked={priority}
+											checked={prioritized}
+											disabled={priorityBlocked}
 											onChange={e => setPriority(e.target.checked)}
 											className={styles.hiddenCheckbox}
 										/>
-										<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
+										<span className={styles.checkboxEmoji}>{prioritized ? "✔️" : ""}</span>
 										<span className={styles.checkboxText}>Prioritize</span>
 									</label>
 									<p className={styles.modalNote}>
 										{placeNote} Priority bookings go ahead of ordinary ones; the first {SLOT_CAPACITY} get the field and
 										the rest wait.
 									</p>
+									{priorityNote && <p className={styles.modalNote}>{priorityNote}</p>}
+									{weeklyNote && <p className={styles.modalNote}>{weeklyNote}</p>}
 								</div>
 								<div className={styles.formGroup}>
 									<label htmlFor={`team-${date}-${slot}`}>{isGuest ? "Host team" : "Team"}</label>

@@ -30,6 +30,10 @@ export type Reservation = {
 	// these can repeat a team in a slot.
 	extraRobot?: boolean;
 	notes?: string;
+	// Derived, never stored: set only on copies sent to browsers and feeds. The line
+	// is past its team's weekly booking cap, so it sorts after the slot's other
+	// lines. See `src/server/util/weeklyLimits.ts`.
+	overWeeklyCap?: true;
 };
 
 /**

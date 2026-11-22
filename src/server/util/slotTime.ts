@@ -109,3 +109,16 @@ export function addFieldDays(date: string, days: number): string | null {
 		day: shifted.getUTCDate(),
 	});
 }
+
+/**
+ * The Monday on or before `date`: the first day of its booking week, which runs
+ * Monday through Sunday. A date names a calendar day at the field, so the
+ * weekday comes from the date itself, not from any time zone. Null if `date`
+ * is malformed.
+ */
+export function fieldWeekStart(date: string): string | null {
+	const parts = parseEventDate(date);
+	if (!parts) return null;
+	const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay(); // 0 is Sunday
+	return addFieldDays(date, -((weekday + 6) % 7));
+}

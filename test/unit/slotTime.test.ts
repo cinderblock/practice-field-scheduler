@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addFieldDays, fieldToday, getReservationWindow } from "~/server/util/slotTime";
+import { addFieldDays, fieldToday, fieldWeekStart, getReservationWindow } from "~/server/util/slotTime";
 
 // .env.test sets:
 //   TIME_SLOT_BORDERS="-2, 4, 7, 10"  → absolute hours [10, 16, 19, 22]
@@ -112,5 +112,23 @@ describe("addFieldDays", () => {
 
 	it("returns null on a malformed date", () => {
 		expect(addFieldDays("not-a-date", 1)).toBeNull();
+	});
+});
+
+describe("fieldWeekStart", () => {
+	it("is the Monday on or before the date", () => {
+		expect(fieldWeekStart("2026-11-23")).toBe("2026-11-23"); // Monday
+		expect(fieldWeekStart("2026-11-26")).toBe("2026-11-23"); // Thursday
+		expect(fieldWeekStart("2026-11-29")).toBe("2026-11-23"); // Sunday ends the week
+		expect(fieldWeekStart("2026-11-30")).toBe("2026-11-30"); // Monday starts the next
+	});
+
+	it("crosses month and year boundaries", () => {
+		expect(fieldWeekStart("2026-10-01")).toBe("2026-09-28");
+		expect(fieldWeekStart("2027-01-02")).toBe("2026-12-28");
+	});
+
+	it("returns null on a malformed date", () => {
+		expect(fieldWeekStart("not-a-date")).toBeNull();
 	});
 });

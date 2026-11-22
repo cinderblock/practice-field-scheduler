@@ -5,6 +5,7 @@ import { fieldIssueRouter } from "~/server/api/routers/fieldIssue";
 import { frcEventsRouter } from "~/server/api/routers/frcEvents";
 import { holidayRouter } from "~/server/api/routers/holiday";
 import { reservationRouter } from "~/server/api/routers/reservation";
+import { siteCalendarRouter } from "~/server/api/routers/siteCalendar";
 import { slackRouter } from "~/server/api/routers/slack";
 import { weatherRouter } from "~/server/api/routers/weather";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
@@ -22,6 +23,7 @@ export const appRouter = createTRPCRouter({
 	blackout: blackoutRouter,
 	weather: weatherRouter,
 	frcEvents: frcEventsRouter,
+	siteCalendar: siteCalendarRouter,
 	errors: errorsRouter,
 	fieldIssue: fieldIssueRouter,
 });

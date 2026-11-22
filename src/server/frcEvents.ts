@@ -4,12 +4,18 @@
  * "Our teams" are the team numbers on the site's user accounts. For this season and the next, the
  * server asks FIRST for every event (only to learn each competition week's dates) and then for each
  * team's events, one request per second. The result is cached in memory and refreshed in the
- * background, so page loads never wait on FIRST except briefly for the very first fetch.
+ * background, so page loads never wait on FIRST except briefly for the very first fetch. Each
+ * snapshot is also saved to `DATA_DIR/<year>/frcEvents.json` and loaded at startup, so a restart
+ * has events straight away instead of after a full refresh (a couple of requests per team).
  *
  * Shown on the calendar (a break before each weekend our teams compete) and on /events. The same
  * snapshot is what team prioritization (#8) reads, through `getFrcEvents` and `eventsByTeam`.
  */
 
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { z } from "zod";
+import { env } from "~/env";
 import type { EventDate, FrcEvent, FrcEventsSnapshot, FrcSeasonWeek, Team } from "~/types";
 import { frc, rateLimit as frcRateLimit } from "./frcApi";
 import {
@@ -179,10 +185,81 @@ export function seasonsToFetch(today: Date): number[] {
 	return [year, year + 1];
 }
 
+////// Saved snapshot //////
+
+const eventDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** What a saved snapshot must look like to be used. Anything else is ignored and refetched. */
+const StoredSnapshot = z.object({
+	updated: z.coerce.date().refine(date => !Number.isNaN(date.getTime())),
+	seasons: z.array(z.number().int()),
+	weeks: z.array(z.object({ season: z.number().int(), week: z.number().int(), start: eventDate, end: eventDate })),
+	events: z.array(
+		z.object({
+			season: z.number().int(),
+			code: z.string(),
+			name: z.string(),
+			type: z.string(),
+			week: z.number().int().nullable(),
+			start: eventDate,
+			end: eventDate,
+			venue: z.string(),
+			city: z.string(),
+			stateProv: z.string(),
+			country: z.string(),
+			website: z.string().optional(),
+			teams: z.array(z.number().int()),
+		}),
+	),
+}) satisfies z.ZodType<FrcEventsSnapshot>;
+
+/** Where the snapshot is saved. Per year, like the site's other data. */
+export function snapshotFile(dataDir: string = env.DATA_DIR, year = new Date().getFullYear()): string {
+	return join(resolve(dataDir), String(year), "frcEvents.json");
+}
+
+/** The saved snapshot, or undefined if there's none or it can't be used */
+export async function loadSnapshot(file: string): Promise<FrcEventsSnapshot | undefined> {
+	let text: string;
+	try {
+		text = await readFile(file, "utf-8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+			console.warn(`⚠️ Couldn't read saved FRC events from ${file}: ${describeError(err)}`);
+		}
+		return undefined;
+	}
+
+	try {
+		const parsed = StoredSnapshot.safeParse(JSON.parse(text));
+		if (parsed.success) return parsed.data;
+		console.warn(`⚠️ Ignoring saved FRC events in ${file}: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+	} catch (err) {
+		console.warn(`⚠️ Ignoring saved FRC events in ${file}: ${describeError(err)}`);
+	}
+	return undefined;
+}
+
+/** Save a snapshot. Written to a temporary file and renamed, so a crash never leaves half a file. */
+export async function saveSnapshot(file: string, snapshot: FrcEventsSnapshot): Promise<void> {
+	const temporary = `${file}.tmp`;
+	try {
+		await mkdir(dirname(file), { recursive: true });
+		await writeFile(temporary, JSON.stringify(snapshot, null, 2), "utf-8");
+		await rename(temporary, file);
+	} catch (err) {
+		console.error(`⚠️ Couldn't save FRC events to ${file}: ${describeError(err)}`);
+	}
+}
+
 ////// Background refresh and cache //////
 
 type FrcEventsState = {
 	snapshot?: FrcEventsSnapshot;
+	/** Reading the saved snapshot at startup */
+	loading?: Promise<void>;
+	/** Set after the first fetch, which logs what it found */
+	fetched?: boolean;
 	refreshing?: Promise<void>;
 	timer?: ReturnType<typeof setInterval>;
 	/** Set while refreshes are failing, so a long outage logs once rather than every interval */
@@ -203,7 +280,21 @@ if (state.timer) {
 	state.timer = undefined;
 }
 
+function load(): Promise<void> {
+	state.loading ??= loadSnapshot(snapshotFile()).then(saved => {
+		// A fetch that finished first is newer
+		if (!saved || state.snapshot) return;
+		state.snapshot = saved;
+		const hours = Math.round((Date.now() - saved.updated.getTime()) / (60 * 60 * 1000));
+		console.log(`🤖 FRC events: ${saved.events.length} loaded from disk, fetched ${hours}h ago`);
+	});
+	return state.loading;
+}
+
 async function updateSnapshot() {
+	// The saved snapshot fills in for anything this fetch can't get
+	await load();
+
 	// Imported here so this module (and its tests) don't load the whole backend just to be imported
 	const { knownTeamNumbers } = await import("./backend");
 	const teams = await knownTeamNumbers();
@@ -214,8 +305,10 @@ async function updateSnapshot() {
 		previous: state.snapshot,
 	});
 
-	const first = !state.snapshot;
+	const first = !state.fetched;
+	state.fetched = true;
 	state.snapshot = snapshot;
+	await saveSnapshot(snapshotFile(), snapshot);
 
 	if (problems.length) console.warn(`⚠️ Some FRC event data couldn't be refreshed: ${problems.join("; ")}`);
 	if (first) {
@@ -271,8 +364,9 @@ async function waitFor(promise: Promise<unknown>, ms: number) {
  */
 export async function getFrcEvents(): Promise<FrcEventsSnapshot | null> {
 	start();
+	await load();
 
-	// Right after startup, give the first fetch a moment rather than rendering without events
+	// Right after startup with nothing saved, give the first fetch a moment rather than rendering without events
 	if (!state.snapshot && state.refreshing) await waitFor(state.refreshing, FirstFetchWaitMs);
 
 	const { snapshot } = state;

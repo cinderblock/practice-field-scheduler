@@ -4,6 +4,7 @@ import { env } from "~/env";
 import { sameTeam } from "~/server/access";
 import { getPublicFeedData } from "~/server/backend";
 import { blackoutEndDate, eachBlackoutDate } from "~/server/util/blackout";
+import { type SlotStanding, slotStandings } from "~/server/util/reservation";
 import type { Reservation } from "~/types";
 
 export type FeedKind = "all" | "site" | "team";
@@ -46,6 +47,16 @@ function parseSlotToDate(date: string, slot: string): { start: Date; end: Date }
 	return { start, end };
 }
 
+/** Every live line's standing in its slot, keyed by reservation id. */
+function waitlistStandings(reservations: readonly Reservation[]): Map<string, SlotStanding> {
+	const bySlot = new Map<string, Reservation[]>();
+	for (const r of reservations) {
+		const key = `${r.date} ${r.slot}`;
+		bySlot.set(key, [...(bySlot.get(key) ?? []), r]);
+	}
+	return new Map([...bySlot.values()].flatMap(lines => [...slotStandings(lines)]));
+}
+
 export async function generateICS({ kind, team }: GenerateOptions): Promise<string> {
 	if (kind === "team" && !team) throw new Error("team number required for team feed");
 
@@ -73,6 +84,10 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 
 	// Add reservations
 	if (kind === "all" || (kind === "team" && team)) {
+		// Standing in a slot depends on every line in it, so work it out before any filtering.
+		const standing = waitlistStandings(reservations);
+		const waitlisted = (r: Reservation) => standing.get(r.id)?.waitlisted ?? false;
+
 		// A team's feed includes the guests it hosts: it's responsible for them.
 		const resList =
 			kind === "all" || !team
@@ -95,17 +110,29 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 			team: Reservation["team"];
 			host?: Reservation["host"];
 			extraRobot?: boolean;
+			waitlisted?: boolean;
 			start: Date;
 			end: Date;
 			description?: string;
 		}
 		const openGroups = new Map<string, Group>();
-		const groupKey = (r: Pick<Reservation, "id" | "team" | "host" | "extraRobot">) =>
-			r.extraRobot ? `${r.team}-extra-${r.id}` : r.host === undefined ? String(r.team) : `${r.team}-guest-of-${r.host}`;
+		// A waitlisted line doesn't merge with the slots its team has a place in.
+		const groupKey = (r: Reservation) => {
+			const key = r.extraRobot
+				? `${r.team}-extra-${r.id}`
+				: r.host === undefined
+					? String(r.team)
+					: `${r.team}-guest-of-${r.host}`;
+			return waitlisted(r) ? `${key}-waitlisted` : key;
+		};
 
 		const flushGroup = (teamKey: string, group: Group) => {
 			const avatar = `${env.NEXTAUTH_URL.replace(/\/$/, "")}/api/team-avatar/${group.team}`;
-			const labels = [group.host === undefined ? "" : `guest of ${group.host}`, group.extraRobot ? "extra robot" : ""];
+			const labels = [
+				group.host === undefined ? "" : `guest of ${group.host}`,
+				group.extraRobot ? "extra robot" : "",
+				group.waitlisted ? "waitlisted" : "",
+			];
 			const label = labels.filter(Boolean).join(", ");
 			push({
 				id: `${group.start.toISOString()}-${teamKey}`,
@@ -140,6 +167,7 @@ export async function generateICS({ kind, team }: GenerateOptions): Promise<stri
 					team: r.team,
 					host: r.host,
 					extraRobot: r.extraRobot,
+					waitlisted: waitlisted(r),
 					start: dateTimes.start,
 					end: dateTimes.end,
 					description: r.notes ?? undefined,

@@ -53,6 +53,8 @@ import {
 	type NameFixReason,
 	notifyTeamOfLink,
 	notifyTeamOfReservation,
+	notifyTeamOfStanding,
+	type StandingChangeKind,
 	selectTeamMemberRecipients,
 	sendLinksDm,
 	sendNameFixDm,
@@ -82,6 +84,7 @@ import {
 } from "./util/fieldIssue";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
+import { type SlotStanding, slotStandings, standingChanges } from "./util/reservation";
 import {
 	checkSlackNames,
 	HOW_TO_LIST_YOUR_TEAM,
@@ -89,7 +92,7 @@ import {
 	type SlackNameIssue,
 	type SuggestedNames,
 } from "./util/slackName";
-import { addFieldDays, fieldToday } from "./util/slotTime";
+import { addFieldDays, fieldToday, getReservationWindow } from "./util/slotTime";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -514,7 +517,7 @@ function fireLinkDms(user: UserEntry, slackId: string): void {
  *
  * Must be called after the caller has released `changeLock`.
  */
-function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
+function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId, standing?: SlotStanding): void {
 	// A guest reservation goes to its host, whose link covers it.
 	const team = accessTeamFor(reservation);
 	const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, excludeUserId);
@@ -522,7 +525,7 @@ function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: User
 
 	void (async () => {
 		const entry = await ensureAccess(teamStore(team));
-		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token);
+		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token, standing);
 
 		const failed = outcomes.filter(o => !o.sent);
 		if (failed.length > 0) {
@@ -539,6 +542,50 @@ function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: User
 			if (user) await markLinksSent(user, [entry.token]);
 		}
 	})().catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
+}
+
+/** Every line booked in one slot, abandoned ones included (the ordering drops those). */
+function slotLines(date: EventDate, slot: TimeSlot): Reservation[] {
+	return reservations.filter(r => r.date === date && r.slot === slot);
+}
+
+/**
+ * Fire-and-forget DMs to the teams whose lines moved onto (or off) the slot's
+ * waitlist. Nothing is sent once the slot has started: by then it's too late to
+ * matter, and the order is just history. `by` is the team whose priority booking
+ * did the bumping.
+ *
+ * Must be called after the caller has released `changeLock`.
+ */
+function fireStandingDms(
+	ids: readonly string[],
+	kind: StandingChangeKind,
+	standings: ReadonlyMap<string, SlotStanding>,
+	excludeUserId: UserId,
+	by?: TeamFull,
+): void {
+	for (const id of ids) {
+		const line = getReservation(id);
+		const standing = standings.get(id);
+		if (!line || !standing) continue;
+		const window = getReservationWindow(line.date, line.slot);
+		if (!window || Date.now() >= window.start.getTime()) continue;
+
+		const { recipients } = selectTeamMemberRecipients(users, slackMappings, accessTeamFor(line), excludeUserId);
+		if (recipients.length === 0) continue;
+
+		void notifyTeamOfStanding(line, kind, standing, recipients, by)
+			.then(outcomes => {
+				const failed = outcomes.filter(o => !o.sent);
+				if (failed.length > 0) {
+					console.warn(
+						`Reservation ${line.id} ${kind}: ${failed.length}/${outcomes.length} DM(s) failed:`,
+						failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+					);
+				}
+			})
+			.catch(err => console.error(`Reservation ${line.id} ${kind} DM batch failed:`, err));
+	}
 }
 
 /** Persist the users file after an in-place change, taking the lock. */
@@ -917,6 +964,7 @@ type LogReservationEntry = LogCommon & {
 	team: TeamFull;
 	host?: TeamFull; // A guest reservation's host
 	extraRobot?: boolean;
+	priority?: boolean;
 	notes?: string;
 };
 
@@ -1128,6 +1176,7 @@ export class Context {
 
 		const res: Reservation = {
 			...reservation,
+			priority: Boolean(reservation.priority),
 			id: crypto.randomUUID(),
 			userId: (await this.user).id,
 			created: ctx.timestamp,
@@ -1136,7 +1185,12 @@ export class Context {
 		console.log(
 			`🟡 [${MODULE_INSTANCE_ID}] Adding to reservations array (current size: ${reservations.length}) - PID: ${process.pid}`,
 		);
+		// Nobody is refused for a full slot. A line past SLOT_CAPACITY is waitlisted,
+		// and a priority line can push an ordinary one there.
+		const standingBefore = slotStandings(slotLines(res.date, res.slot));
 		reservations.push(res);
+		const standingAfter = slotStandings(slotLines(res.date, res.slot));
+		const { bumped } = standingChanges(standingBefore, standingAfter);
 
 		jobs.push(
 			log({
@@ -1147,6 +1201,7 @@ export class Context {
 				team: reservation.team,
 				host: reservation.host,
 				extraRobot: reservation.extraRobot,
+				...(res.priority ? { priority: true } : {}),
 				notes: reservation.notes,
 			}),
 		);
@@ -1165,7 +1220,8 @@ export class Context {
 		// Fire-and-forget DMs to other team members so they get a reminder
 		// + their personal gate link. Excludes the creator (they already know).
 		const creatorId = (await this.user).id;
-		fireReservationDmsForTeam(res, creatorId);
+		fireReservationDmsForTeam(res, creatorId, standingAfter.get(res.id));
+		fireStandingDms(bumped, "bumped", standingAfter, creatorId, res.team);
 
 		return res;
 	}
@@ -1243,8 +1299,12 @@ export class Context {
 			}),
 		);
 
-		// Mark as abandoned instead of deleting
+		// Mark as abandoned instead of deleting. That frees a place, so the
+		// waitlist may move up.
+		const standingBefore = slotStandings(slotLines(reservation.date, reservation.slot));
 		reservation.abandoned = ctx.timestamp;
+		const standingAfter = slotStandings(slotLines(reservation.date, reservation.slot));
+		const { promoted } = standingChanges(standingBefore, standingAfter);
 		// Update the user ID to the current user
 		reservation.userId = (await this.user).id;
 		// Store the reason for the removal
@@ -1256,6 +1316,8 @@ export class Context {
 
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		fireStandingDms(promoted, "promoted", standingAfter, ctx.userId);
 
 		return reservation;
 	}

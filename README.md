@@ -145,6 +145,30 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
   anyone who can cancel the line can change its note.
 - Admins can book for any team, and host a guest as any team.
 
+### Priority and the waitlist
+
+- **A slot has 4 places** (`SLOT_CAPACITY` in `src/server/util/reservation.ts`).
+  Every line takes one: a team's own, a guest's, an extra robot's. Nobody is
+  refused: lines past the places are **waitlisted**. On the calendar they show
+  greyed out, under a "Waitlist" divider.
+- **Lines are ordered priority first**, then the rest, each in booking order.
+  Tick **Prioritize** in the Add dialog and your line goes ahead of every
+  ordinary line, even ones booked earlier. Priority lines show a ★.
+- **A late priority booking can push an ordinary line onto the waitlist**, at
+  any time before the slot starts. That team's members get a Slack DM saying
+  who did it. When a cancellation frees a place, the line that moves up is told
+  too. Nothing is sent once the slot has started. The dialog says beforehand
+  where your line would land, and whom it would push out.
+- **The waitlist is advisory.** Gate links still open around every line,
+  waitlisted or not. The reservation DM and the calendar feeds mark a
+  waitlisted line.
+- The order is never stored. It's worked out from the slot's lines each time,
+  so a cancellation moves the waitlist up by itself.
+- There's no limit yet on how often a team may use priority (#10). A priority
+  line that lands on the waitlist (because the places all went to priority
+  lines first) doesn't hold a priority place: `gotPriorityPlace` is the hook
+  for that limit.
+
 ### Blackouts (admin)
 
 Admins can close the field from the **Blackouts** page (linked from the calendar header, or at `/blackouts`).

@@ -91,3 +91,37 @@ describe("team calendar feed", () => {
 		}
 	});
 });
+
+describe("waitlisted lines in the feed", () => {
+	it("labels a line past the slot's places as waitlisted, judged against every team in the slot", async () => {
+		const full = ["1001", "1002", "1003", "1004"].map((team, i) => ({
+			...base,
+			id: `full-${team}`,
+			slot: "10:00pm",
+			team,
+			created: new Date(Date.UTC(2026, 4, 20, 0, i)),
+		}));
+		reservations.push(...full, {
+			...base,
+			id: "late",
+			slot: "10:00pm",
+			team: "5555",
+			created: new Date(Date.UTC(2026, 4, 20, 1)),
+		});
+		try {
+			expect(summaries(await generateICS({ kind: "team", team: "5555" }))).toEqual([
+				"Team 5555 Reservation (waitlisted)",
+			]);
+			expect(summaries(await generateICS({ kind: "team", team: "1004" }))).toEqual(["Team 1004 Reservation"]);
+
+			// A priority line goes ahead, which pushes the newest ordinary line out
+			reservations.push({ ...base, id: "prio", slot: "10:00pm", team: "7777", priority: true });
+			expect(summaries(await generateICS({ kind: "team", team: "1004" }))).toEqual([
+				"Team 1004 Reservation (waitlisted)",
+			]);
+			reservations.pop();
+		} finally {
+			reservations.splice(-5);
+		}
+	});
+});

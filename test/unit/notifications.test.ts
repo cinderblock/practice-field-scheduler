@@ -19,9 +19,12 @@ const {
 	nameFixMessage,
 	notifyTeamOfLink,
 	notifyTeamOfReservation,
+	notifyTeamOfStanding,
+	reservationNoticeMessage,
 	selectTeamMemberRecipients,
 	sendLinksDm,
 	sendNameFixDm,
+	standingNoticeMessage,
 } = await import("~/server/notifications");
 const { checkSlackNames } = await import("~/server/util/slackName");
 
@@ -504,5 +507,65 @@ describe("sendNameFixDm", () => {
 			sent: false,
 			reason: "slack_not_configured",
 		});
+	});
+});
+
+describe("standing notices", () => {
+	const reservation: Reservation = {
+		id: "res-1",
+		date: "2026-05-27",
+		slot: "04:00pm",
+		created: new Date("2026-05-20T00:00:00Z"),
+		userId: "user-creator",
+		priority: false,
+		team: 1234,
+	};
+
+	it("tells a team it was pushed onto the waitlist, by whom, and that it'll hear if it moves up", () => {
+		const text = standingNoticeMessage(reservation, "bumped", { place: 5, waitlisted: true }, 5678);
+		expect(text).toContain("Team 1234 is now *waitlisted*");
+		expect(text).toContain("2026-05-27 at 04:00pm");
+		expect(text).toContain("Team 5678 booked the slot with priority");
+		expect(text).toContain("#5");
+	});
+
+	it("tells a team it has a place again", () => {
+		const text = standingNoticeMessage(reservation, "promoted", { place: 4, waitlisted: false });
+		expect(text).toContain("Team 1234 has a place on the practice field again");
+		expect(text).toContain("#4 of 4");
+	});
+
+	it("names a guest or extra-robot line as such", () => {
+		expect(
+			standingNoticeMessage({ ...reservation, team: 9999, host: 1234 }, "promoted", { place: 2, waitlisted: false }),
+		).toContain("Team 9999 (your team's guest)");
+		expect(
+			standingNoticeMessage({ ...reservation, extraRobot: true }, "promoted", { place: 2, waitlisted: false }),
+		).toContain("Team 1234, extra robot,");
+	});
+
+	it("DMs every recipient the notice", async () => {
+		fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+		const outcomes = await notifyTeamOfStanding(
+			reservation,
+			"bumped",
+			{ place: 5, waitlisted: true },
+			[{ user, slackUserId: "U111", withLink: false }],
+			5678,
+		);
+		expect(outcomes).toEqual([{ userId: user.id, slackUserId: "U111", sent: true }]);
+		expect(bodyOf().text).toContain("waitlisted");
+	});
+
+	it("marks a new booking that starts out waitlisted, and one booked with priority", () => {
+		const text = reservationNoticeMessage({ ...reservation, priority: true }, undefined, true, {
+			place: 6,
+			waitlisted: true,
+		});
+		expect(text).toContain("• Priority");
+		expect(text).toContain("• Waitlisted: #6");
+		expect(reservationNoticeMessage(reservation, undefined, true, { place: 2, waitlisted: false })).not.toContain(
+			"Waitlisted",
+		);
 	});
 });

@@ -924,6 +924,18 @@
 	border-color: #4d4d8f;
 }
 
+/* An option that can't be taken right now, like Prioritize once the week's priority is used */
+.checkboxLabel:has(input:disabled) {
+	opacity: 0.45;
+	cursor: not-allowed;
+	text-decoration: line-through;
+}
+
+.checkboxLabel:has(input:disabled):hover {
+	background: #1a1a3a;
+	border-color: #35356b;
+}
+
 .checkboxLabel input[type="checkbox"] {
 	width: 1.25rem;
 	height: 1.25rem;

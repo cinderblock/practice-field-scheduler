@@ -164,10 +164,27 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
   waitlisted line.
 - The order is never stored. It's worked out from the slot's lines each time,
   so a cancellation moves the waitlist up by itself.
-- There's no limit yet on how often a team may use priority (#10). A priority
-  line that lands on the waitlist (because the places all went to priority
-  lines first) doesn't hold a priority place: `gotPriorityPlace` is the hook
-  for that limit.
+
+### Weekly limits
+
+Weeks run Monday to Sunday at the field, and a line belongs to the week of the
+day it's for. A guest line is charged to its host. The limits are constants in
+`src/server/util/weeklyLimits.ts`.
+
+- **One priority booking per team per week** (`PRIORITY_PER_WEEK`). A second one
+  is refused, and the dialog greys out Prioritize once it's used. A priority
+  line counts until its day has passed, even while waitlisted; after that it
+  counts only if it had a place, so one that never got the field is given
+  back. Cancelling it gives it back too. Admins are exempt.
+- **Seven bookings per team per week** (`LINES_PER_WEEK`), and nobody is
+  refused for going over. Past the seventh, a line still books, but it sorts
+  after every other line in its slot, so it gets the field only if there's
+  room. It's tagged "Over weekly limit". Extra-robot lines and days before
+  today don't count, so the allowance frees up as the week goes on. A
+  team's earliest bookings keep their places, priority first: a priority
+  booking can push the team's newest ordinary line past the seventh, and that
+  team gets the waitlist DM if it moves. The dialog shows the count.
+- Like the slot order, this is worked out each time and never stored.
 
 ### Blackouts (admin)
 

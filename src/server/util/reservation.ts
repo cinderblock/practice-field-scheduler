@@ -21,15 +21,26 @@ export function isValidTeamNumber(team: TeamFull): boolean {
 /** Where a line stands in its slot. `place` counts from 1. */
 export type SlotStanding = { place: number; waitlisted: boolean };
 
-type Ordered = Pick<Reservation, "id" | "priority" | "created" | "abandoned">;
+type Ordered = Pick<Reservation, "id" | "priority" | "created" | "abandoned" | "overWeeklyCap">;
 
 /**
- * One slot's live lines in field order: priority lines first, then the rest, each in
- * booking order. A late priority line can push an earlier ordinary one below
- * {@link SLOT_CAPACITY}. Abandoned lines are left out.
+ * Which group a line sorts in: priority lines, then ordinary ones, then lines past
+ * their team's weekly booking cap (#10).
+ */
+function tier(line: Ordered): number {
+	if (line.priority) return 0;
+	return line.overWeeklyCap ? 2 : 1;
+}
+
+/**
+ * One slot's live lines in field order: priority lines first, then ordinary ones, then
+ * lines past their team's weekly cap, each group in booking order. A late priority line
+ * can push an earlier ordinary one below {@link SLOT_CAPACITY}. Abandoned lines are
+ * left out.
  *
  * The order is never stored. It's worked out from the lines each time, so a
- * cancellation moves the waitlist up by itself.
+ * cancellation moves the waitlist up by itself. Lines need `overWeeklyCap` already
+ * worked out (`withWeeklyCap` on the server; the server sends it to browsers).
  */
 export function orderSlot<T extends Ordered>(lines: readonly T[]): T[] {
 	return lines
@@ -37,9 +48,7 @@ export function orderSlot<T extends Ordered>(lines: readonly T[]): T[] {
 		.map((r, index) => ({ r, index }))
 		.sort(
 			(a, b) =>
-				Number(Boolean(b.r.priority)) - Number(Boolean(a.r.priority)) ||
-				new Date(a.r.created).getTime() - new Date(b.r.created).getTime() ||
-				a.index - b.index,
+				tier(a.r) - tier(b.r) || new Date(a.r.created).getTime() - new Date(b.r.created).getTime() || a.index - b.index,
 		)
 		.map(({ r }) => r);
 }

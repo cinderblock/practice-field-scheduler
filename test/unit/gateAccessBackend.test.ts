@@ -28,6 +28,16 @@ const directory = new Map<string, { real_name: string; display_name: string; del
 /** When set, Slack's user-reading methods fail with this error. */
 let readFailure: string | null = null;
 
+type Dm = { channel: string; text: string };
+
+/**
+ * Every `chat.postMessage`, in order, across the whole file. Kept here rather
+ * than read off `fetchMock.mock.calls`, because Vitest clears mock calls
+ * before each test (`clearMocks` defaults to true since Vitest 5) and these
+ * steps count DMs sent in earlier ones.
+ */
+const sentDms: Dm[] = [];
+
 function setNames(person: Person, real = person.real, display = person.display, deleted = false) {
 	directory.set(person.slack, { real_name: real, display_name: display, deleted, email: person.email });
 }
@@ -58,6 +68,7 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const user = member(id);
 		return Response.json(user ? { ok: true, user } : { ok: false, error: "user_not_found" });
 	}
+	if (method === "chat.postMessage") sentDms.push(JSON.parse(init?.body as string) as Dm);
 	return Response.json({ ok: true, channel: "D1", ts: "1" });
 });
 vi.stubGlobal("fetch", fetchMock);
@@ -70,13 +81,7 @@ afterAll(() => {
 	rmSync(dataDir, { recursive: true, force: true });
 });
 
-type Dm = { channel: string; text: string };
-
-const dms = (): Dm[] =>
-	fetchMock.mock.calls
-		.filter(([url]) => url.endsWith("/chat.postMessage"))
-		.map(([, init]) => JSON.parse(init?.body as string) as Dm);
-const dmsTo = (slackId: string) => dms().filter(d => d.channel === slackId);
+const dmsTo = (slackId: string) => sentDms.filter(d => d.channel === slackId);
 const lastDmTo = (slackId: string) => dmsTo(slackId).at(-1) as Dm;
 const tokensIn = (text: string) => [...text.matchAll(/\/g\/([A-Za-z0-9_-]{32,})/g)].map(m => m[1] as string);
 
@@ -578,7 +583,7 @@ describe("gate access, end to end", () => {
 
 		await settle();
 		// Nothing was DM'd into the void
-		expect(dms().some(d => !d.channel)).toBe(false);
+		expect(sentDms.some(d => !d.channel)).toBe(false);
 		const mappings = JSON.parse(readFileSync(join(dataDir, "slack.json"), "utf-8")) as { slackId: string }[];
 		expect(mappings.filter(m => !m.slackId.startsWith("U_"))).toEqual([]);
 	});

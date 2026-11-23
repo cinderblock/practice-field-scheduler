@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { type EventLister, fetchEventsSnapshot, seasonsToFetch } from "~/server/frcEvents";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	type EventLister,
+	fetchEventsSnapshot,
+	loadSnapshot,
+	saveSnapshot,
+	seasonsToFetch,
+	snapshotFile,
+} from "~/server/frcEvents";
 import {
 	defaultSeason,
+	describeEventLead,
+	eventLeadFor,
 	eventLinks,
 	eventsByTeam,
 	formatDateRange,
@@ -267,6 +279,41 @@ describe("eventsByTeam", () => {
 	});
 });
 
+describe("eventLeadFor", () => {
+	const svr = event("SVR", "2027-03-11", "2027-03-13", [8, 649]);
+	const later = event("LATER", "2027-03-14", "2027-03-16", [8]);
+
+	it("covers the week before an event through its last day", () => {
+		expect(eventLeadFor([svr], 8, "2027-03-03")).toBeUndefined();
+		expect(eventLeadFor([svr], 8, "2027-03-04")).toEqual({ event: svr, daysBefore: 7 });
+		expect(eventLeadFor([svr], 8, "2027-03-11")).toEqual({ event: svr, daysBefore: 0 });
+		expect(eventLeadFor([svr], 8, "2027-03-13")).toEqual({ event: svr, daysBefore: -2 });
+		expect(eventLeadFor([svr], 8, "2027-03-14")).toBeUndefined();
+	});
+
+	it("only flags teams registered for the event", () => {
+		expect(eventLeadFor([svr], 254, "2027-03-08")).toBeUndefined();
+		expect(eventLeadFor([svr], "649", "2027-03-08")).toEqual({ event: svr, daysBefore: 3 });
+		expect(eventLeadFor([svr], "house", "2027-03-08")).toBeUndefined();
+	});
+
+	it("picks the earliest of several events", () => {
+		expect(eventLeadFor([later, svr], 8, "2027-03-09")?.event).toBe(svr);
+		// The first is over, so the next one counts
+		expect(eventLeadFor([later, svr], 8, "2027-03-14")).toEqual({ event: later, daysBefore: 0 });
+	});
+});
+
+describe("describeEventLead", () => {
+	const svr = event("SVR", "2027-03-11", "2027-03-13", [8]);
+	it("counts down to the event, then says it is on", () => {
+		expect(describeEventLead({ event: svr, daysBefore: 3 })).toBe("3 days before SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: 1 })).toBe("Day before SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: 0 })).toBe("First day of SVR Regional");
+		expect(describeEventLead({ event: svr, daysBefore: -1 })).toBe("During SVR Regional");
+	});
+});
+
 describe("formatDateRange", () => {
 	it("is short within a month and spells out both months across one", () => {
 		expect(formatDateRange("2027-03-04", "2027-03-07")).toBe("Mar 4 – 7");
@@ -472,5 +519,67 @@ describe("fetchEventsSnapshot", () => {
 		await expect(
 			fetchEventsSnapshot({ teams: [8], seasons: [2026, 2027], listEvents: list, rateLimit: noWait }),
 		).rejects.toThrow("ENOTFOUND");
+	});
+});
+
+describe("saved snapshot", () => {
+	let dir: string;
+	beforeEach(async () => {
+		dir = await mkdtemp(join(tmpdir(), "frc-events-"));
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	const snapshot: FrcEventsSnapshot = {
+		updated: new Date("2026-11-21T12:00:00Z"),
+		seasons: [2026, 2027],
+		weeks: [{ season: 2027, week: 1, start: "2027-03-01", end: "2027-03-07" }],
+		events: [
+			event("CASJ", "2027-03-04", "2027-03-07", [8, 649]),
+			event("CC", "2026-11-26", "2026-11-28", [8], { type: "OffSeason", week: null, website: "https://x" }),
+		],
+	};
+
+	it("lives in the year's data directory", () => {
+		expect(snapshotFile("data", 2026)).toBe(join(process.cwd(), "data", "2026", "frcEvents.json"));
+	});
+
+	it("round-trips, dates included, creating the year's directory", async () => {
+		const file = join(dir, "2026", "frcEvents.json");
+		await saveSnapshot(file, snapshot);
+		const loaded = await loadSnapshot(file);
+		expect(loaded).toEqual(snapshot);
+		expect(loaded?.updated).toBeInstanceOf(Date);
+	});
+
+	it("replaces an earlier save and leaves no temporary file", async () => {
+		const file = join(dir, "frcEvents.json");
+		await saveSnapshot(file, { ...snapshot, events: [] });
+		await saveSnapshot(file, snapshot);
+		expect((await loadSnapshot(file))?.events).toHaveLength(2);
+		await expect(readFile(`${file}.tmp`)).rejects.toThrow();
+	});
+
+	it("is quietly absent when nothing has been saved", async () => {
+		expect(await loadSnapshot(join(dir, "missing.json"))).toBeUndefined();
+		expect(console.warn).not.toHaveBeenCalled();
+	});
+
+	it("ignores a file that isn't JSON", async () => {
+		const file = join(dir, "frcEvents.json");
+		await writeFile(file, '{"updated": "2026-11', "utf-8");
+		expect(await loadSnapshot(file)).toBeUndefined();
+		expect(console.warn).toHaveBeenCalled();
+	});
+
+	it("ignores a file in another shape", async () => {
+		const file = join(dir, "frcEvents.json");
+		await writeFile(file, JSON.stringify({ ...snapshot, events: [{ code: "CASJ" }] }), "utf-8");
+		expect(await loadSnapshot(file)).toBeUndefined();
+		await writeFile(file, JSON.stringify({ ...snapshot, updated: "not a date" }), "utf-8");
+		expect(await loadSnapshot(file)).toBeUndefined();
 	});
 });

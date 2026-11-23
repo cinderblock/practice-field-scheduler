@@ -1,18 +1,43 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReportFieldIssueButton } from "~/app/_components/ReportFieldIssue";
 import { findBlackoutForSlot, findWholeDayBlackout } from "~/server/util/blackout";
-import { isValidTeamNumber, RESERVATION_NOTES_MAX } from "~/server/util/reservation";
+import {
+	describeEventLead,
+	type EventLead,
+	eventLeadFor,
+	formatDateRange,
+	placeEventBreaks,
+} from "~/server/util/frcEvents";
+import {
+	isValidTeamNumber,
+	orderSlot,
+	RESERVATION_NOTES_MAX,
+	SLOT_CAPACITY,
+	slotStandings,
+	standingChanges,
+} from "~/server/util/reservation";
 import { HOW_TO_LIST_YOUR_TEAM } from "~/server/util/slackName";
 import { createDateFromDateStringHour, hourToTimeSlot } from "~/server/util/timeSlots";
 import { api } from "~/trpc/react";
-import type { Blackout, Holiday, Reservation, TeamFull, WeatherForecast } from "~/types";
+import type {
+	Blackout,
+	FrcEvent,
+	FrcEventsSnapshot,
+	Holiday,
+	Reservation,
+	SiteCalendarEvent,
+	TeamFull,
+	WeatherForecast,
+} from "~/types";
 import styles from "../index.module.css";
 import { useAppConfig } from "./AppConfig";
 import { describeRequestError } from "./clientErrors";
 import { DayWeather } from "./DayWeather";
+import { EventBreak } from "./EventBreak";
 import { useHistory } from "./HistoryContext";
+import { DaySiteEvents, SiteEventsProvider } from "./SiteEvents";
 import { TeamAvatar } from "./TeamAvatar";
 import { useHoldUpdate } from "./UpdateWatcher";
 import { useInterval } from "./useInterval";
@@ -213,6 +238,14 @@ interface ReservationPillProps {
 	guestOf?: TeamFull;
 	notes?: string;
 	extraRobot?: boolean;
+	/** Booked with priority: goes ahead of ordinary lines in the slot */
+	priority?: boolean;
+	/** Past the slot's places: on the waitlist */
+	waitlisted?: boolean;
+	/** Past its team's weekly booking cap: sorts after the slot's other lines */
+	overWeeklyCap?: boolean;
+	/** The FRC event this team is preparing for on the pill's date */
+	eventLead?: EventLead;
 	onRemove?: () => void;
 	onEditNote?: () => void;
 	isTemp?: boolean;
@@ -227,6 +260,10 @@ function ReservationPill({
 	guestOf,
 	notes,
 	extraRobot = false,
+	priority = false,
+	waitlisted = false,
+	overWeeklyCap = false,
+	eventLead,
 	onRemove,
 	onEditNote,
 	isTemp = false,
@@ -266,6 +303,7 @@ function ReservationPill({
 	if (isPendingDeletion) pillClasses.push(styles.pendingDeletion);
 	if (isPendingAddition) pillClasses.push(styles.pendingAddition);
 	if (isActive) pillClasses.push(styles.active);
+	if (waitlisted) pillClasses.push(styles.waitlisted);
 
 	const displayText = teamStr || (isTemp ? "New Reservation" : teamStr);
 
@@ -282,7 +320,16 @@ function ReservationPill({
 			<span className={styles.reservationPillText} style={isTemp ? { userSelect: "none" } : {}}>
 				{displayText}
 				{guestOf !== undefined && guestOf !== "" && <span className={styles.guestOf}>guest of {guestOf}</span>}
+				{priority && (
+					<span className={styles.priorityMark} role="img" aria-label="priority">
+						★
+					</span>
+				)}
+				{eventLead && (
+					<span className={`${styles.pillNote} ${styles.pillEventLead}`}>🏁 {describeEventLead(eventLead)}</span>
+				)}
 				{extraRobot && <span className={styles.pillNote}>Extra robot</span>}
+				{overWeeklyCap && <span className={styles.pillNote}>Over weekly limit</span>}
 				{notes && <span className={styles.pillNote}>{notes}</span>}
 			</span>
 			{onEditNote && !hasEnded && (
@@ -317,6 +364,8 @@ export function ReservationCalendar({
 	initialHolidays,
 	initialBlackouts,
 	initialWeather,
+	initialEvents,
+	initialSiteEvents,
 	isAdmin = false,
 }: {
 	initialReservations: InitialReservations;
@@ -324,6 +373,10 @@ export function ReservationCalendar({
 	initialBlackouts: Blackout[];
 	/** Null when weather is disabled or no forecast is available */
 	initialWeather: WeatherForecast | null;
+	/** Our teams' FRC events. Null until the server has fetched them. */
+	initialEvents: FrcEventsSnapshot | null;
+	/** Events from the site's own calendar; empty when none are configured */
+	initialSiteEvents: SiteCalendarEvent[];
 	/** Admins may book over a blackout, so they still get the add button on a closed slot */
 	isAdmin?: boolean;
 }) {
@@ -370,6 +423,19 @@ export function ReservationCalendar({
 	// The server refreshes its cached forecast on its own schedule; this just picks up the latest
 	const { data: weather = initialWeather } = api.weather.forecast.useQuery(undefined, {
 		initialData: initialWeather,
+		refetchInterval: 15 * 60 * 1000,
+	});
+
+	// Registrations change slowly, but right after a server restart the first fetch can outlast
+	// the page load, so check back sooner until there is something to show
+	const { data: frcEvents = initialEvents } = api.frcEvents.list.useQuery(undefined, {
+		initialData: initialEvents,
+		refetchInterval: query => (query.state.data ? 60 * 60 * 1000 : 60 * 1000),
+	});
+
+	// The site's own calendar, which the server re-reads every 15 minutes
+	const { data: siteEvents = initialSiteEvents } = api.siteCalendar.events.useQuery(undefined, {
+		initialData: initialSiteEvents,
 		refetchInterval: 15 * 60 * 1000,
 	});
 
@@ -429,18 +495,21 @@ export function ReservationCalendar({
 
 	return (
 		<>
-			<div className={styles.calendarGrid}>
-				<Days
-					start={startDate}
-					days={reservationDays + 1}
-					daysHistory={historyDays}
-					initialReservations={allReservations}
-					initialHolidays={initialHolidays}
-					blackouts={blackouts}
-					weather={weather}
-					isAdmin={isAdmin}
-				/>
-			</div>
+			<SiteEventsProvider events={siteEvents}>
+				<div className={styles.calendarGrid}>
+					<Days
+						start={startDate}
+						days={reservationDays + 1}
+						daysHistory={historyDays}
+						initialReservations={allReservations}
+						initialHolidays={initialHolidays}
+						blackouts={blackouts}
+						weather={weather}
+						events={frcEvents?.events ?? []}
+						isAdmin={isAdmin}
+					/>
+				</div>
+			</SiteEventsProvider>
 			<p>
 				We only allow reservations for the next {daysText}.
 				<br />
@@ -499,6 +568,7 @@ function Days({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 }: {
 	start: string;
@@ -508,6 +578,8 @@ function Days({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	/** Our teams' FRC events; a break listing them goes before the first day of each weekend */
+	events: FrcEvent[];
 	isAdmin: boolean;
 }) {
 	// Ensure good type
@@ -516,11 +588,20 @@ function Days({
 	const { timeSlotBorders } = useAppConfig();
 	const dates = Array.from({ length: days }, (_, i) => addDaysToDateString(start, i));
 	const datesHistory = Array.from({ length: daysHistory }, (_, i) => addDaysToDateString(start, i - daysHistory));
+	const breaks = useMemo(() => {
+		const shown = Array.from({ length: daysHistory + days }, (_, i) => addDaysToDateString(start, i - daysHistory));
+		return placeEventBreaks(shown, events);
+	}, [start, days, daysHistory, events]);
+	const eventBreak = (date: string) => {
+		const group = breaks.get(date);
+		return group ? <EventBreak key={`events_${date}`} events={group} /> : null;
+	};
 
 	return (
 		<>
 			{/* History columns */}
-			{datesHistory.map(date => (
+			{datesHistory.flatMap(date => [
+				eventBreak(date),
 				<DayWrapper
 					key={date}
 					date={date}
@@ -528,10 +609,11 @@ function Days({
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
 					weather={weather}
+					events={events}
 					isAdmin={isAdmin}
 					isHistory={true}
-				/>
-			))}
+				/>,
+			])}
 
 			{/* Time slot headers */}
 			<div
@@ -556,7 +638,8 @@ function Days({
 				})}
 			</div>
 			{/* Day columns */}
-			{dates.map(date => (
+			{dates.flatMap(date => [
+				eventBreak(date),
 				<DayWrapper
 					key={date}
 					date={date}
@@ -564,9 +647,10 @@ function Days({
 					initialHolidays={initialHolidays}
 					blackouts={blackouts}
 					weather={weather}
+					events={events}
 					isAdmin={isAdmin}
-				/>
-			))}
+				/>,
+			])}
 		</>
 	);
 }
@@ -577,6 +661,7 @@ function DayWrapper({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 	isHistory = false,
 }: {
@@ -585,6 +670,7 @@ function DayWrapper({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	events: FrcEvent[];
 	isAdmin: boolean;
 	isHistory?: boolean;
 }) {
@@ -596,6 +682,7 @@ function DayWrapper({
 				initialHolidays={initialHolidays}
 				blackouts={blackouts}
 				weather={weather}
+				events={events}
 				isAdmin={isAdmin}
 			/>
 		</div>
@@ -608,6 +695,7 @@ function Day({
 	initialHolidays,
 	blackouts,
 	weather,
+	events,
 	isAdmin,
 }: {
 	date: string;
@@ -615,6 +703,7 @@ function Day({
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
 	weather: WeatherForecast | null;
+	events: FrcEvent[];
 	isAdmin: boolean;
 }) {
 	const { timeSlotBorders } = useAppConfig();
@@ -637,6 +726,7 @@ function Day({
 				{closedAllDay && <span className={styles.dayClosedChip}>Field closed</span>}
 				<DayDate date={date} holidays={initialHolidays} />
 			</div>
+			<DaySiteEvents date={date} />
 			<div
 				className={styles.timeSlotRow}
 				style={
@@ -679,6 +769,7 @@ function Day({
 							initialReservations={initialReservations}
 							initialHolidays={initialHolidays}
 							blackouts={blackouts}
+							events={events}
 							isAdmin={isAdmin}
 							closedAllDay={closedAllDay}
 							// The closed-day block covers the whole row, so the slots can no longer be placed
@@ -702,6 +793,7 @@ function TimeSlot({
 	initialReservations,
 	initialHolidays,
 	blackouts,
+	events,
 	isAdmin,
 	closedAllDay,
 	column,
@@ -712,6 +804,8 @@ function TimeSlot({
 	initialReservations: InitialReservations;
 	initialHolidays: Holiday[];
 	blackouts: Blackout[];
+	/** Our teams' FRC events, to flag teams preparing for one */
+	events: FrcEvent[];
 	isAdmin: boolean;
 	/** The whole day is closed, so this slot gives up its panel and notice to the day's one block */
 	closedAllDay: boolean;
@@ -801,8 +895,10 @@ function TimeSlot({
 		throw new Error("reservations is not an array");
 	}
 
-	// Filter reservations for this specific time slot
-	const slotReservations = reservations.filter(r => r.slot === slot);
+	// This slot's lines in field order: priority first, then booking order. Past
+	// SLOT_CAPACITY they're waitlisted. The server orders them the same way.
+	const slotReservations = orderSlot(reservations.filter(r => r.slot === slot));
+	const standings = slotStandings(slotReservations);
 
 	// A team already in this slot can only be coming back with another robot
 	const teamInSlot = pending.team !== "" && slotReservations.some(r => Number(r.team) === Number(pending.team));
@@ -815,6 +911,61 @@ function TimeSlot({
 				? `Team ${guestTeam} can't be its own guest`
 				: null;
 	const canSubmit = bookerTeam !== "" && pending.team !== "" && problem === null;
+	const pendingLead = pending.team === "" ? undefined : eventLeadFor(events, pending.team, date);
+
+	// The weekly limits (#10) are charged to the booker's team: the host, for a guest
+	const { data: weekly } = api.reservation.weeklyUsage.useQuery(
+		{ team: bookerTeam, date },
+		{ enabled: isAdding && bookerTeam !== "" && isValidTeamNumber(bookerTeam) },
+	);
+	const priorityUsedUp = weekly !== undefined && weekly.priorityUsed.length >= weekly.priorityAllowance;
+	// Admins are exempt from the priority limit, as they are from the window and blackouts
+	const priorityBlocked = priorityUsedUp && !isAdmin;
+	const prioritized = priority && !priorityBlocked;
+	const priorityLeft = weekly === undefined ? 0 : Math.max(0, weekly.priorityAllowance - weekly.priorityUsed.length);
+	const priorityNote =
+		weekly === undefined
+			? null
+			: priorityUsedUp
+				? `Team ${bookerTeam} has used its priority for the week of ${weekly.weekStart}: ${weekly.priorityUsed.map(u => `${u.date} at ${u.slot}`).join(", ")}.${isAdmin ? " Admins can add another." : ""}`
+				: `Team ${bookerTeam} has ${priorityLeft} priority booking${priorityLeft === 1 ? "" : "s"} left this week. One that ends up waitlisted is given back once its day has passed.`;
+	// Extra robots don't count toward the weekly cap; everything else the team books does
+	const previewOverCap = weekly !== undefined && !prioritized && !extraRobot && weekly.lines >= weekly.cap;
+	const weeklyNote =
+		weekly === undefined || extraRobot
+			? null
+			: previewOverCap
+				? `This would be team ${bookerTeam}'s booking #${weekly.lines + 1} this week, past its ${weekly.cap}. It goes after the slot's other bookings, so it gets the field only if there's room.`
+				: prioritized && weekly.lines >= weekly.cap
+					? `Team ${bookerTeam} already has ${weekly.lines} bookings this week. Priority counts first, so its newest other booking would go past the ${weekly.cap}.`
+					: `Booking ${weekly.lines + 1} of ${weekly.cap} for team ${bookerTeam} this week.`;
+
+	// Where the line being added would land, and whom it would push onto the waitlist
+	const previewId = "pending-preview";
+	const previewLine: Reservation = {
+		id: previewId,
+		date,
+		slot,
+		...pending,
+		notes,
+		extraRobot,
+		priority: prioritized,
+		...(previewOverCap ? { overWeeklyCap: true as const } : {}),
+		created: new Date(),
+		userId: "",
+	};
+	const withPending = orderSlot([...slotReservations, previewLine]);
+	const standingsWithPending = slotStandings(withPending);
+	const previewStanding = standingsWithPending.get(previewId);
+	const wouldBump = standingChanges(standings, standingsWithPending)
+		.bumped.map(id => slotReservations.find(r => r.id === id)?.team)
+		.filter(team => team !== undefined);
+	const placesTaken = Math.min(slotReservations.length, SLOT_CAPACITY);
+	const placeNote = previewStanding?.waitlisted
+		? `All ${SLOT_CAPACITY} places are taken${prioritized ? " by priority bookings" : ""}, so you'd be waitlisted (#${previewStanding.place}).${prioritized || priorityBlocked ? "" : " Priority would put you ahead of ordinary bookings."}`
+		: wouldBump.length > 0
+			? `Priority puts you ahead of team ${wouldBump.join(", ")}, who'd move to the waitlist and be told.`
+			: `${placesTaken} of ${SLOT_CAPACITY} places taken.`;
 
 	const addReservation = api.reservation.add.useMutation({
 		onMutate: async newReservation => {
@@ -852,6 +1003,10 @@ function TimeSlot({
 			});
 			setIsAdding(false);
 			resetForm();
+			// The weekly cap reaches across slots: a priority line can push the team's
+			// newest line elsewhere past it, so refresh every day's lines
+			void utils.reservation.list.invalidate();
+			void utils.reservation.weeklyUsage.invalidate();
 		},
 		onError: (err, _newReservation, context) => {
 			// Rollback on error. The dialog is still open, so its pending pill comes back with it.
@@ -895,6 +1050,9 @@ function TimeSlot({
 				next.delete(id);
 				return next;
 			});
+			// A cancellation can bring the team's line in another slot back within its weekly cap
+			void utils.reservation.list.invalidate();
+			void utils.reservation.weeklyUsage.invalidate();
 		},
 		onError: (err, variables, context) => {
 			// Rollback on error
@@ -952,9 +1110,15 @@ function TimeSlot({
 	if (blackout && !closedAllDay) style.push(styles.timeSlotBlackedOut);
 	if (closedAllDay) style.push(styles.timeSlotMerged);
 
+	// The form's line is shown in place only while there's a form to fill in
+	const showPreview = isAdding && !addReservation.isPending && bookable !== undefined && ownTeams?.length !== 0;
+	const shownLines = showPreview ? withPending : slotReservations;
+	const shownStandings = showPreview ? standingsWithPending : standings;
+	const firstWaitlisted = shownLines.find(r => shownStandings.get(r.id)?.waitlisted)?.id;
+
 	const handleAddReservation = () => {
 		if (!canSubmit) return;
-		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority });
+		addReservation.mutate({ date, slot, ...pending, notes, extraRobot, priority: prioritized });
 	};
 
 	const handleOpenAddModal = useCallback(() => {
@@ -974,41 +1138,51 @@ function TimeSlot({
 				</div>
 			)}
 			<div className={styles.reservationStack}>
-				{/* Existing reservations */}
-				{slotReservations.map(r => (
-					<ReservationPill
-						key={r.id}
-						teamNumber={r.team}
-						guestOf={r.host}
-						notes={r.notes}
-						extraRobot={r.extraRobot}
-						isPendingDeletion={pendingDeletions.has(r.id)}
-						isPendingAddition={r.id === "temp-id"}
-						hasEnded={hasEnded}
-						disabled={pendingDeletions.has(r.id)}
-						onEditNote={() => setEditingNote({ id: r.id, team: r.team, notes: r.notes ?? "" })}
-						onRemove={() => {
-							console.log("Removing reservation:", {
-								id: r.id,
-							});
-							removeReservation.mutate({
-								id: r.id,
-							});
-						}}
-					/>
+				{/* Lines in field order. While the form is open, the line being added shows where it would
+				    land; once sent, the optimistic entry stands in for it. */}
+				{shownLines.map(r => (
+					<Fragment key={r.id}>
+						{r.id === firstWaitlisted && <div className={styles.waitlistDivider}>Waitlist</div>}
+						{r.id === previewId ? (
+							<ReservationPill
+								teamNumber={pending.team}
+								guestOf={pending.host}
+								notes={notes}
+								extraRobot={extraRobot}
+								priority={prioritized}
+								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								overWeeklyCap={previewOverCap}
+								eventLead={pendingLead}
+								isTemp={true}
+								isPendingAddition={true}
+							/>
+						) : (
+							<ReservationPill
+								teamNumber={r.team}
+								guestOf={r.host}
+								notes={r.notes}
+								extraRobot={r.extraRobot}
+								priority={r.priority}
+								waitlisted={shownStandings.get(r.id)?.waitlisted}
+								overWeeklyCap={r.overWeeklyCap}
+								eventLead={eventLeadFor(events, r.team, date)}
+								isPendingDeletion={pendingDeletions.has(r.id)}
+								isPendingAddition={r.id === "temp-id"}
+								hasEnded={hasEnded}
+								disabled={pendingDeletions.has(r.id)}
+								onEditNote={() => setEditingNote({ id: r.id, team: r.team, notes: r.notes ?? "" })}
+								onRemove={() => {
+									console.log("Removing reservation:", {
+										id: r.id,
+									});
+									removeReservation.mutate({
+										id: r.id,
+									});
+								}}
+							/>
+						)}
+					</Fragment>
 				))}
-				{/* Pending addition, while there's a form to fill in. Once sent, the optimistic entry above
-				    stands in for it. */}
-				{isAdding && !addReservation.isPending && bookable && ownTeams?.length !== 0 && (
-					<ReservationPill
-						teamNumber={pending.team}
-						guestOf={pending.host}
-						notes={notes}
-						extraRobot={extraRobot}
-						isTemp={true}
-						isPendingAddition={true}
-					/>
-				)}
 			</div>
 			{/* A failed removal has no dialog to report into. Tap to dismiss. */}
 			{error && !isAdding && !editing && (
@@ -1075,13 +1249,20 @@ function TimeSlot({
 									<label className={styles.checkboxLabel}>
 										<input
 											type="checkbox"
-											checked={priority}
+											checked={prioritized}
+											disabled={priorityBlocked}
 											onChange={e => setPriority(e.target.checked)}
 											className={styles.hiddenCheckbox}
 										/>
-										<span className={styles.checkboxEmoji}>{priority ? "✔️" : ""}</span>
+										<span className={styles.checkboxEmoji}>{prioritized ? "✔️" : ""}</span>
 										<span className={styles.checkboxText}>Prioritize</span>
 									</label>
+									<p className={styles.modalNote}>
+										{placeNote} Priority bookings go ahead of ordinary ones; the first {SLOT_CAPACITY} get the field and
+										the rest wait.
+									</p>
+									{priorityNote && <p className={styles.modalNote}>{priorityNote}</p>}
+									{weeklyNote && <p className={styles.modalNote}>{weeklyNote}</p>}
 								</div>
 								<div className={styles.formGroup}>
 									<label htmlFor={`team-${date}-${slot}`}>{isGuest ? "Host team" : "Team"}</label>
@@ -1116,6 +1297,12 @@ function TimeSlot({
 												</option>
 											))}
 										</select>
+									)}
+									{pendingLead && (
+										<p className={styles.modalNote}>
+											🏁 {describeEventLead(pendingLead)} (
+											{formatDateRange(pendingLead.event.start, pendingLead.event.end)})
+										</p>
 									)}
 								</div>
 								<div className={styles.formGroup}>

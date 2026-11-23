@@ -2,7 +2,9 @@ import { env } from "~/env";
 import type { Reservation, TeamFull, UserEntry, UserId } from "~/types";
 import { describeSiteHours, formatHour, hasValidSlackNames, SITE_CLOSE_HOUR, SITE_OPEN_HOUR, sameTeam } from "./access";
 import { isSlackConfigured, SlackApiError, SlackNotConfiguredError, sendDirectMessage } from "./slack";
+import { SLOT_CAPACITY, type SlotStanding } from "./util/reservation";
 import { describeSlackNameIssue, type SlackNameCheck, type SlackNameIssue, type SlackNames } from "./util/slackName";
+import { LINES_PER_WEEK } from "./util/weeklyLimits";
 
 /**
  * Build a gate access URL (team or personal — same shape). Returns null when
@@ -104,6 +106,7 @@ export function reservationNoticeMessage(
 	reservation: Reservation,
 	token: string | undefined,
 	withLink: boolean,
+	standing?: SlotStanding,
 ): string {
 	const lines = [
 		reservation.host === undefined
@@ -112,6 +115,12 @@ export function reservationNoticeMessage(
 		`• Date: ${reservation.date}`,
 		`• Slot: ${reservation.slot}`,
 	];
+	if (reservation.priority) lines.push("• Priority");
+	if (standing?.waitlisted) lines.push(`• Waitlisted: #${standing.place}, with ${SLOT_CAPACITY} places in the slot`);
+	if (reservation.overWeeklyCap)
+		lines.push(
+			`• Past your team's ${LINES_PER_WEEK} bookings for the week, so it goes after the slot's other bookings`,
+		);
 	if (reservation.extraRobot) lines.push("• Extra robot");
 	if (reservation.notes) lines.push(`• Notes: ${slackText(reservation.notes)}`);
 	const url = gateAccessUrl(token);
@@ -218,8 +227,64 @@ export async function notifyTeamOfReservation(
 	reservation: Reservation,
 	recipients: readonly TeamMemberRecipient[],
 	token: string | undefined,
+	standing?: SlotStanding,
 ): Promise<TeamDmOutcome[]> {
-	return fanOut(recipients, r => reservationNoticeMessage(reservation, token, r.withLink));
+	return fanOut(recipients, r => reservationNoticeMessage(reservation, token, r.withLink, standing));
+}
+
+/** A line moving onto the waitlist, or back off it. */
+export type StandingChangeKind = "bumped" | "promoted";
+
+/** Who a line is, as its team reads it. */
+function lineName(reservation: Reservation): string {
+	const who =
+		reservation.host === undefined ? `Team ${reservation.team}` : `Team ${reservation.team} (your team's guest)`;
+	return reservation.extraRobot ? `${who}, extra robot,` : who;
+}
+
+/**
+ * Tell a team its line was pushed onto the waitlist, or got a place back. Exported for
+ * tests. `by` is the team whose priority booking did the pushing. `weeklyCap` says the
+ * move came from the team's weekly booking cap instead: the line went past it (bumped)
+ * or came back within it (promoted).
+ */
+export function standingNoticeMessage(
+	reservation: Reservation,
+	kind: StandingChangeKind,
+	standing: SlotStanding,
+	by?: TeamFull,
+	weeklyCap = false,
+): string {
+	const when = `${reservation.date} at ${reservation.slot}`;
+	if (kind === "promoted") {
+		return [
+			`${lineName(reservation)} has a place on the practice field again: ${when}. ✅`,
+			...(weeklyCap ? [`It's back within your team's ${LINES_PER_WEEK} bookings for the week.`] : []),
+			`It's #${standing.place} of ${SLOT_CAPACITY}.`,
+		].join("\n");
+	}
+	return [
+		`${lineName(reservation)} is now *waitlisted* for the practice field: ${when}.`,
+		weeklyCap
+			? `It's past your team's ${LINES_PER_WEEK} bookings for the week (a priority booking counts first), so it goes after the slot's other bookings.`
+			: by === undefined
+				? "A priority booking took its place."
+				: `Team ${by} booked the slot with priority, which goes ahead of ordinary bookings.`,
+		`It's #${standing.place}, with ${SLOT_CAPACITY} places in the slot. If someone cancels, it moves up and you'll hear.`,
+	].join("\n");
+}
+
+/** DM a team that one of its lines moved onto, or off, the waitlist. Best-effort. */
+export async function notifyTeamOfStanding(
+	reservation: Reservation,
+	kind: StandingChangeKind,
+	standing: SlotStanding,
+	recipients: readonly TeamMemberRecipient[],
+	by?: TeamFull,
+	weeklyCap = false,
+): Promise<TeamDmOutcome[]> {
+	const text = standingNoticeMessage(reservation, kind, standing, by, weeklyCap);
+	return fanOut(recipients, () => text);
 }
 
 /**

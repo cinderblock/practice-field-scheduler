@@ -53,6 +53,8 @@ import {
 	type NameFixReason,
 	notifyTeamOfLink,
 	notifyTeamOfReservation,
+	notifyTeamOfStanding,
+	type StandingChangeKind,
 	selectTeamMemberRecipients,
 	sendLinksDm,
 	sendNameFixDm,
@@ -82,6 +84,7 @@ import {
 } from "./util/fieldIssue";
 import type { JsonData } from "./util/JsonData";
 import { Lock } from "./util/Lock";
+import { type SlotStanding, standingChanges } from "./util/reservation";
 import {
 	checkSlackNames,
 	HOW_TO_LIST_YOUR_TEAM,
@@ -89,7 +92,8 @@ import {
 	type SlackNameIssue,
 	type SuggestedNames,
 } from "./util/slackName";
-import { addFieldDays, fieldToday } from "./util/slotTime";
+import { addFieldDays, fieldToday, getReservationWindow } from "./util/slotTime";
+import { linesInWeekOf, standingsBySlot, weeklyUsage, withWeeklyCap } from "./util/weeklyLimits";
 import {
 	tellClientsAboutBlackoutChange,
 	tellClientsAboutReservationChange,
@@ -514,7 +518,7 @@ function fireLinkDms(user: UserEntry, slackId: string): void {
  *
  * Must be called after the caller has released `changeLock`.
  */
-function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId): void {
+function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: UserId, standing?: SlotStanding): void {
 	// A guest reservation goes to its host, whose link covers it.
 	const team = accessTeamFor(reservation);
 	const { recipients } = selectTeamMemberRecipients(users, slackMappings, team, excludeUserId);
@@ -522,7 +526,7 @@ function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: User
 
 	void (async () => {
 		const entry = await ensureAccess(teamStore(team));
-		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token);
+		const outcomes = await notifyTeamOfReservation(reservation, recipients, entry.token, standing);
 
 		const failed = outcomes.filter(o => !o.sent);
 		if (failed.length > 0) {
@@ -539,6 +543,65 @@ function fireReservationDmsForTeam(reservation: Reservation, excludeUserId: User
 			if (user) await markLinksSent(user, [entry.token]);
 		}
 	})().catch(err => console.error(`Reservation ${reservation.id} DM batch failed:`, err));
+}
+
+/**
+ * Every line's standing in the booking week of `date`, with the weekly cap (#10)
+ * applied, and which lines are past it. The whole week, not one slot: a booking or a
+ * cancellation can move a team's line in another slot past the cap or back within it.
+ */
+function weekStandings(date: EventDate): { standings: Map<string, SlotStanding>; overCap: Set<string> } {
+	const week = withWeeklyCap(linesInWeekOf(reservations, date), fieldToday());
+	return {
+		standings: standingsBySlot(week),
+		overCap: new Set(week.filter(l => l.overWeeklyCap).map(l => l.id)),
+	};
+}
+
+/** A copy of `line` for a browser or feed, with `overWeeklyCap` worked out. */
+function withCapFlag(line: Reservation): Reservation {
+	const week = withWeeklyCap(linesInWeekOf(reservations, line.date), fieldToday());
+	return { ...(week.find(l => l.id === line.id) ?? line) };
+}
+
+/**
+ * Fire-and-forget DMs to the teams whose lines moved onto (or off) the slot's
+ * waitlist. Nothing is sent once the slot has started: by then it's too late to
+ * matter, and the order is just history. `by` is the team whose priority booking
+ * did the bumping; `weeklyCap` means the team's weekly cap moved the line instead.
+ *
+ * Must be called after the caller has released `changeLock`.
+ */
+function fireStandingDms(
+	ids: readonly string[],
+	kind: StandingChangeKind,
+	standings: ReadonlyMap<string, SlotStanding>,
+	excludeUserId: UserId,
+	by?: TeamFull,
+	weeklyCap = false,
+): void {
+	for (const id of ids) {
+		const line = getReservation(id);
+		const standing = standings.get(id);
+		if (!line || !standing) continue;
+		const window = getReservationWindow(line.date, line.slot);
+		if (!window || Date.now() >= window.start.getTime()) continue;
+
+		const { recipients } = selectTeamMemberRecipients(users, slackMappings, accessTeamFor(line), excludeUserId);
+		if (recipients.length === 0) continue;
+
+		void notifyTeamOfStanding(line, kind, standing, recipients, by, weeklyCap)
+			.then(outcomes => {
+				const failed = outcomes.filter(o => !o.sent);
+				if (failed.length > 0) {
+					console.warn(
+						`Reservation ${line.id} ${kind}: ${failed.length}/${outcomes.length} DM(s) failed:`,
+						failed.map(f => `${f.userId}/${f.slackUserId}: ${f.error ?? f.reason}`),
+					);
+				}
+			})
+			.catch(err => console.error(`Reservation ${line.id} ${kind} DM batch failed:`, err));
+	}
 }
 
 /** Persist the users file after an in-place change, taking the lock. */
@@ -917,6 +980,7 @@ type LogReservationEntry = LogCommon & {
 	team: TeamFull;
 	host?: TeamFull; // A guest reservation's host
 	extraRobot?: boolean;
+	priority?: boolean;
 	notes?: string;
 };
 
@@ -1123,11 +1187,22 @@ export class Context {
 			throw new InvalidRequestError(`Team ${reservation.team} already has this slot. Tick Extra robot to add another.`);
 		}
 
+		// Checked under the lock, so two priority bookings sent at once can't both get in.
+		if (reservation.priority) {
+			try {
+				await this.restrictPriority(reservation);
+			} catch (err) {
+				release();
+				throw err;
+			}
+		}
+
 		const ctx = await this.getContext();
 		const jobs: Promise<unknown>[] = [];
 
 		const res: Reservation = {
 			...reservation,
+			priority: Boolean(reservation.priority),
 			id: crypto.randomUUID(),
 			userId: (await this.user).id,
 			created: ctx.timestamp,
@@ -1136,7 +1211,18 @@ export class Context {
 		console.log(
 			`🟡 [${MODULE_INSTANCE_ID}] Adding to reservations array (current size: ${reservations.length}) - PID: ${process.pid}`,
 		);
+		// Nobody is refused for a full slot. A line past SLOT_CAPACITY is waitlisted,
+		// and a priority line can push an ordinary one there. Nobody is refused for
+		// the weekly cap either: a line past it sorts last. A priority line counts
+		// first, so it can push the team's newest ordinary line in another slot past
+		// the cap.
+		const before = weekStandings(res.date);
 		reservations.push(res);
+		const after = weekStandings(res.date);
+		const standingAfter = after.standings;
+		const { bumped } = standingChanges(before.standings, standingAfter);
+		const pastCap = (id: string) => after.overCap.has(id) && !before.overCap.has(id);
+		const sent = after.overCap.has(res.id) ? { ...res, overWeeklyCap: true as const } : { ...res };
 
 		jobs.push(
 			log({
@@ -1147,6 +1233,7 @@ export class Context {
 				team: reservation.team,
 				host: reservation.host,
 				extraRobot: reservation.extraRobot,
+				...(res.priority ? { priority: true } : {}),
 				notes: reservation.notes,
 			}),
 		);
@@ -1165,9 +1252,17 @@ export class Context {
 		// Fire-and-forget DMs to other team members so they get a reminder
 		// + their personal gate link. Excludes the creator (they already know).
 		const creatorId = (await this.user).id;
-		fireReservationDmsForTeam(res, creatorId);
+		fireReservationDmsForTeam(sent, creatorId, standingAfter.get(res.id));
+		fireStandingDms(
+			bumped.filter(id => !pastCap(id)),
+			"bumped",
+			standingAfter,
+			creatorId,
+			res.team,
+		);
+		fireStandingDms(bumped.filter(pastCap), "bumped", standingAfter, creatorId, undefined, true);
 
-		return res;
+		return sent;
 	}
 
 	/** Set or clear a reservation's note. Whoever may cancel it may change it. */
@@ -1210,7 +1305,7 @@ export class Context {
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
 
-		return { ...reservation };
+		return withCapFlag(reservation);
 	}
 
 	async removeReservation({ id, reason }: RemoveReservationArgs) {
@@ -1243,8 +1338,15 @@ export class Context {
 			}),
 		);
 
-		// Mark as abandoned instead of deleting
+		// Mark as abandoned instead of deleting. That frees a place, so the
+		// waitlist may move up. It may also bring one of the team's lines in another
+		// slot back within the weekly cap.
+		const before = weekStandings(reservation.date);
 		reservation.abandoned = ctx.timestamp;
+		const after = weekStandings(reservation.date);
+		const standingAfter = after.standings;
+		const { promoted } = standingChanges(before.standings, standingAfter);
+		const backInCap = (id: string) => before.overCap.has(id) && !after.overCap.has(id);
 		// Update the user ID to the current user
 		reservation.userId = (await this.user).id;
 		// Store the reason for the removal
@@ -1256,6 +1358,14 @@ export class Context {
 
 		const done = Promise.all(jobs);
 		await (ContinueOnError ? done.finally(release) : done.then(release));
+
+		fireStandingDms(
+			promoted.filter(id => !backInCap(id)),
+			"promoted",
+			standingAfter,
+			ctx.userId,
+		);
+		fireStandingDms(promoted.filter(backInCap), "promoted", standingAfter, ctx.userId, undefined, true);
 
 		return reservation;
 	}
@@ -2535,6 +2645,34 @@ export class Context {
 	}
 
 	/**
+	 * Refuse a priority booking past the team's weekly allowance (#10). The team is the
+	 * one the line is charged to: the host, for a guest. A priority line counts until
+	 * its day has passed, waitlisted or not; after that only if it held a place.
+	 * Admins are exempt, as they are for the window and blackouts.
+	 *
+	 * Call it holding `changeLock`.
+	 */
+	private async restrictPriority(line: Pick<Reservation, "date" | "team" | "host">) {
+		if (await this.isAdmin()) return;
+
+		const team = accessTeamFor(line);
+		const today = fieldToday();
+		const usage = weeklyUsage(reservations, team, line.date, today);
+		if (usage.priorityUsed.length < usage.priorityAllowance) return;
+
+		const which = usage.priorityUsed.map(l => `${l.date} at ${l.slot}`).join(", ");
+		const has =
+			usage.priorityAllowance === 1
+				? "its priority booking"
+				: `all ${usage.priorityAllowance} of its priority bookings`;
+		const canCancel = usage.priorityUsed.some(l => l.date >= today);
+		await this.refuse(
+			`Team ${team} already has ${has} for the week of ${usage.weekStart} (${which}). Book without priority${canCancel ? ", or cancel that one first" : ""}.`,
+			{ team, weekStart: usage.weekStart, used: usage.priorityUsed.map(l => l.id) },
+		);
+	}
+
+	/**
 	 * Refuse a reservation outside the bookable window: today through today plus
 	 * AdvancedReservationDays, on the field's calendar. Admins are exempt.
 	 *
@@ -2573,8 +2711,20 @@ export class Context {
 		// First check if user is logged in
 		if (!(await this.user)) throw new PermissionError("Not authenticated");
 
-		// Return only non-abandoned reservations for the given date from in-memory array
-		return reservations.filter(reservation => reservation.date === date && !reservation.abandoned);
+		// Live lines for the date, with the weekly cap worked out over their whole week
+		const week = linesInWeekOf(reservations, date).filter(r => !r.abandoned);
+		return withWeeklyCap(week, fieldToday()).filter(r => r.date === date);
+	}
+
+	/** Where `team` stands against the weekly limits in the week of `date`, for the Add dialog. */
+	async getWeeklyUsage({ team, date }: { team: TeamFull; date: EventDate }) {
+		if (!(await this.user)) throw new PermissionError("Not authenticated");
+
+		const usage = weeklyUsage(reservations, team, date, fieldToday());
+		return {
+			...usage,
+			priorityUsed: usage.priorityUsed.map(({ id, date, slot, team, host }) => ({ id, date, slot, team, host })),
+		};
 	}
 }
 
@@ -2618,6 +2768,25 @@ const initializationLock = changeLock.acquire();
 async function initialized() {
 	const lock = await changeLock.acquire();
 	lock();
+}
+
+/**
+ * Our teams: every FRC team number on an enabled user account, ascending. Teams that aren't
+ * plain numbers (and so can't be FRC teams) are left out.
+ */
+export async function knownTeamNumbers(): Promise<Team[]> {
+	await initialized();
+
+	const teams = new Set<Team>();
+	for (const user of users) {
+		if (user.disabled || user.teams === "admin") continue;
+		for (const team of user.teams) {
+			const number = Number(team);
+			if (Number.isInteger(number) && number > 0) teams.add(number);
+		}
+	}
+
+	return [...teams].sort((a, b) => a - b);
 }
 
 // Make sure we're never running across a year's boundary
@@ -2984,7 +3153,10 @@ export async function checkAccess(token: string, tool: string): Promise<AccessCh
 export async function getPublicFeedData() {
 	await initialized();
 	// Return shallow copies to avoid accidental mutation by callers
-	const res = reservations.filter(r => !r.abandoned).map(r => ({ ...r }));
+	const res = withWeeklyCap(
+		reservations.filter(r => !r.abandoned),
+		fieldToday(),
+	).map(r => ({ ...r }));
 	const bl = blackouts.filter(b => !b.deleted).map(b => ({ ...b }));
 	const ev = siteEvents.filter(e => !e.deleted).map(e => ({ ...e }));
 	const hol = holidays.filter(h => !h.deleted).map(h => ({ ...h }));

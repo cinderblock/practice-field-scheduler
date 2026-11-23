@@ -47,6 +47,11 @@ export const env = createEnv({
 			.max(16, "Open-Meteo forecasts at most 16 days")
 			.default(10),
 
+		// Events from the site's own calendar, shown on the days they fall on (display only: they
+		// never affect booking). An iCalendar URL, such as a Google Calendar's "Secret address in
+		// iCal format". It is a credential: anyone with it can read the calendar, so it's never logged.
+		SITE_CALENDAR_ICS_URL: z.string().url().optional(),
+
 		// Field issue reports can include a still from the shop's cameras. FIELD_CAMERAS is a
 		// comma-separated list of `Label=<source>`, where a source is a URL that answers with
 		// an image (restitch's /api/still/<stream>) or a Home Assistant camera entity id,
@@ -119,6 +124,7 @@ export const env = createEnv({
 		WEATHER_API_KEY: process.env.WEATHER_API_KEY,
 		WEATHER_UPDATES_PER_DAY: process.env.WEATHER_UPDATES_PER_DAY,
 		WEATHER_FORECAST_DAYS: process.env.WEATHER_FORECAST_DAYS,
+		SITE_CALENDAR_ICS_URL: process.env.SITE_CALENDAR_ICS_URL,
 		HOME_ASSISTANT_URL: process.env.HOME_ASSISTANT_URL,
 		HOME_ASSISTANT_TOKEN: process.env.HOME_ASSISTANT_TOKEN,
 		FIELD_CAMERAS: process.env.FIELD_CAMERAS,

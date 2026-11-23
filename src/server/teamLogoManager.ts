@@ -1,31 +1,17 @@
 // This file manages loading and caching logos from the FIRST API.
 
-import FRC from "first-events-api";
-import { env } from "~/env";
-
-const CURRENT_YEAR = new Date().getFullYear();
+import { frc, rateLimit } from "./frcApi";
 
 // Global state for HMR persistence
 declare global {
 	var __avatarCache: Map<number, { avatar: Buffer | undefined; timestamp: number }> | undefined;
-	var __lastRequestTime: number | undefined;
 }
 
 // Initialize global state
 globalThis.__avatarCache ||= new Map();
-globalThis.__lastRequestTime ||= 0;
 
 const avatarCache = globalThis.__avatarCache;
-let lastRequestTime = globalThis.__lastRequestTime;
 
-const frc = FRC({
-	username: env.FIRST_API_USERNAME,
-	auth: env.FIRST_API_AUTH_TOKEN,
-	season: CURRENT_YEAR,
-});
-
-// Rate limiting: 1 request per second
-const RATE_LIMIT_MS = 1000;
 // Cache non-existent logos for 1 hour
 const NON_EXISTENT_CACHE_MS = 60 * 60 * 1000;
 // Refresh known avatars daily
@@ -33,21 +19,6 @@ const AVATAR_REFRESH_MS = 24 * 60 * 60 * 1000;
 
 // Track in-flight requests to prevent duplicate API calls
 const inFlightRequests = new Map<number, Promise<Buffer | undefined>>();
-
-/**
- * Rate limits API requests to 1 per second
- */
-async function rateLimit(): Promise<void> {
-	while (true) {
-		const timeSinceLastRequest = Date.now() - lastRequestTime;
-
-		if (timeSinceLastRequest < RATE_LIMIT_MS) {
-			await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS - timeSinceLastRequest));
-		} else break;
-	}
-
-	lastRequestTime = Date.now();
-}
 
 /**
  * Fetches the avatar for a team from the FIRST API.

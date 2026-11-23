@@ -145,6 +145,47 @@ The `test` script runs unit/integration tests with Vitest first and then the bro
   anyone who can cancel the line can change its note.
 - Admins can book for any team, and host a guest as any team.
 
+### Priority and the waitlist
+
+- **A slot has 4 places** (`SLOT_CAPACITY` in `src/server/util/reservation.ts`).
+  Every line takes one: a team's own, a guest's, an extra robot's. Nobody is
+  refused: lines past the places are **waitlisted**. On the calendar they show
+  greyed out, under a "Waitlist" divider.
+- **Lines are ordered priority first**, then the rest, each in booking order.
+  Tick **Prioritize** in the Add dialog and your line goes ahead of every
+  ordinary line, even ones booked earlier. Priority lines show a ★.
+- **A late priority booking can push an ordinary line onto the waitlist**, at
+  any time before the slot starts. That team's members get a Slack DM saying
+  who did it. When a cancellation frees a place, the line that moves up is told
+  too. Nothing is sent once the slot has started. The dialog says beforehand
+  where your line would land, and whom it would push out.
+- **The waitlist is advisory.** Gate links still open around every line,
+  waitlisted or not. The reservation DM and the calendar feeds mark a
+  waitlisted line.
+- The order is never stored. It's worked out from the slot's lines each time,
+  so a cancellation moves the waitlist up by itself.
+
+### Weekly limits
+
+Weeks run Monday to Sunday at the field, and a line belongs to the week of the
+day it's for. A guest line is charged to its host. The limits are constants in
+`src/server/util/weeklyLimits.ts`.
+
+- **One priority booking per team per week** (`PRIORITY_PER_WEEK`). A second one
+  is refused, and the dialog greys out Prioritize once it's used. A priority
+  line counts until its day has passed, even while waitlisted; after that it
+  counts only if it had a place, so one that never got the field is given
+  back. Cancelling it gives it back too. Admins are exempt.
+- **Seven bookings per team per week** (`LINES_PER_WEEK`), and nobody is
+  refused for going over. Past the seventh, a line still books, but it sorts
+  after every other line in its slot, so it gets the field only if there's
+  room. It's tagged "Over weekly limit". Extra-robot lines and days before
+  today don't count, so the allowance frees up as the week goes on. A
+  team's earliest bookings keep their places, priority first: a priority
+  booking can push the team's newest ordinary line past the seventh, and that
+  team gets the waitlist DM if it moves. The dialog shows the count.
+- Like the slot order, this is worked out each time and never stored.
+
 ### Blackouts (admin)
 
 Admins can close the field from the **Blackouts** page (linked from the calendar header, or at `/blackouts`).
@@ -234,6 +275,31 @@ Forecasts come from Open-Meteo, which needs no API key for non-commercial use. I
 CC BY 4.0, so the calendar credits it whenever weather is shown. The server logs the resolved place
 when it first fetches a forecast; if a place name picks the wrong town, use coordinates instead. If Open-Meteo is
 unreachable, the last forecast keeps being shown for up to a day.
+
+### FRC events
+
+The scheduler shows the FRC events our teams are registered for. "Our teams" are the team numbers
+on enabled user accounts. Off-season events count too.
+
+- **On the calendar**, a dashed break goes before the first day of each weekend our teams compete.
+  It lists the events, which of our teams are at each, and links to The Blue Alliance and Statbotics.
+  Overlapping events share one break.
+- **`/events`** (the Events button) lays out a whole season. It has a row for every competition week
+  (weeks with none of our teams included, so it reads like a calendar), the Championship, and other
+  events by month. A picker switches seasons. Finished events are dimmed.
+- **On each reservation**, a team preparing for an event gets a 🏁 line ("3 days before …",
+  "During …"), from 7 days before the event's first day through its last. The Add dialog shows the
+  same line for the team being booked. It's informational for now; giving these teams precedence
+  waits on reservation priority (#9) and limits (#10).
+
+The data comes from FIRST's [FRC Events API](https://frc-events.firstinspires.org/services/API) with
+the same `FIRST_API_USERNAME` / `FIRST_API_AUTH_TOKEN` as team avatars, so nothing else needs
+configuring. The server fetches this season and the next every 6 hours, one request per second
+shared with avatars: one listing of every event per season, for the week dates, plus one per team
+per season. The results are cached in memory and saved to `DATA_DIR/<year>/frcEvents.json`, which is
+loaded at startup so a restart shows events straight away. If FIRST is unreachable or refuses the
+credentials, the last data keeps being shown for up to 3 days after it was fetched. The Blue Alliance and Statbotics are only linked,
+never called.
 
 ### Calendar Feeds (public)
 

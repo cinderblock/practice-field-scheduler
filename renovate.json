@@ -1,4 +1,11 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
-	"extends": ["github>cinderblock/ops//renovate/app"]
+	"extends": ["github>cinderblock/ops//renovate/app"],
+	"packageRules": [
+		{
+			"description": "Allure's JS packages (allure-vitest, allure-playwright, allure-js-commons) share allure-js-commons with exact-version peers, so they must move together: a lone bump leaves the lockfile unsatisfiable and npm ci fails.",
+			"matchPackageNames": ["allure-*"],
+			"groupName": "allure"
+		}
+	]
 }
